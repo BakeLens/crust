@@ -41,12 +41,12 @@ Crust is a transparent, local gateway between your AI agents and LLM providers. 
 
 **macOS / Linux:**
 ```bash
-curl -fsSL https://install.cat/BakeLens/crust | bash
+curl -fsSL install.cat/BakeLens/crust | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://install.cat/BakeLens/crust | iex
+irm install.cat/BakeLens/crust | iex
 ```
 
 **Docker:**
