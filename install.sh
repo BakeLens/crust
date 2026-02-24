@@ -6,11 +6,11 @@
 # Installs the Crust Go binary only.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/BakeLens/crust/main/install.sh | bash
+#   curl -fsSL https://install.cat/BakeLens/crust | bash
 #
 # Or with options:
-#   curl -fsSL https://raw.githubusercontent.com/BakeLens/crust/main/install.sh | bash -s -- --version v2.0.0
-#   curl -fsSL https://raw.githubusercontent.com/BakeLens/crust/main/install.sh | bash -s -- --version main
+#   curl -fsSL https://install.cat/BakeLens/crust | bash -s -- --version v2.0.0
+#   curl -fsSL https://install.cat/BakeLens/crust | bash -s -- --version main
 #
 
 set -e

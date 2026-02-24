@@ -23,7 +23,7 @@
     Show usage help.
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/BakeLens/crust/main/install.ps1 | iex
+    irm https://install.cat/BakeLens/crust | iex
 
 .EXAMPLE
     .\install.ps1 -Version v2.0.0
