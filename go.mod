@@ -17,9 +17,8 @@ require (
 	github.com/mutecomm/go-sqlcipher/v4 v4.4.2
 	github.com/posener/complete/v2 v2.1.0
 	github.com/zalando/go-keyring v0.2.6
-	golang.org/x/crypto v0.46.0
-	golang.org/x/sys v0.40.0
-	golang.org/x/term v0.39.0
+	golang.org/x/sys v0.41.0
+	golang.org/x/term v0.40.0
 	golang.org/x/text v0.32.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.12.0
@@ -76,6 +75,7 @@ require (
 	github.com/ugorji/go/codec v1.3.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/arch v0.20.0 // indirect
+	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/net v0.47.0 // indirect
 	google.golang.org/protobuf v1.36.9 // indirect
 )
