@@ -18,14 +18,14 @@ jobs:
     name: Go Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
 
       - name: go fix (check for pending modernizations)
         run: |
@@ -48,9 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -110,9 +110,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -168,12 +168,12 @@ jobs:
         if: github.ref != 'refs/heads/main'
         run: echo "Platform tests run on main only — skipping to reduce CI costs"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: github.ref == 'refs/heads/main'
 
       # setup-go must run before msys2/setup-msys2 so the toolchain is in PATH
       # when the MSYS2 shell inherits it via path-type: inherit.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         if: github.ref == 'refs/heads/main'
         with:
           go-version-file: go.mod
@@ -214,7 +214,7 @@ jobs:
         if: github.ref != 'refs/heads/main'
         run: echo "FreeBSD tests run on main only — skipping to reduce CI costs"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: github.ref == 'refs/heads/main'
 
       - uses: vmactions/freebsd-vm@v1
@@ -235,13 +235,13 @@ jobs:
     needs: [lint-go]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
 
@@ -264,7 +264,7 @@ jobs:
     name: Docker
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build image
         run: docker build -t crust-test .
