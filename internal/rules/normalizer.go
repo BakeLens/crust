@@ -5,6 +5,7 @@ import (
 	pathpkg "path"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/BakeLens/crust/internal/pathutil"
 	"golang.org/x/text/unicode/norm"
@@ -113,7 +114,8 @@ func (n *Normalizer) Normalize(path string) string {
 
 	// SECURITY: Strip cross-script confusables — maps Cyrillic/Greek
 	// lookalikes to ASCII. Prevents bypass via homoglyph substitution
-	// like "/etc/pаsswd" (Cyrillic а U+0430).
+	// like "/etc/pаsswd" (Cyrillic а U+0430). Case-folds non-ASCII
+	// first so uppercase confusables (e.g., Ʀ U+01A6) are also caught.
 	path = stripConfusables(path)
 
 	// SECURITY: Re-normalize after confusable replacement — replacing a
@@ -569,6 +571,17 @@ func stripConfusables(s string) string {
 	return strings.Map(func(r rune) rune {
 		if ascii, ok := confusableMap[r]; ok {
 			return ascii
+		}
+		// Case-fold non-ASCII and retry — the confusableMap contains
+		// lowercase forms only, so uppercase confusables (e.g., Ʀ U+01A6
+		// → ʀ U+0280) need lowering first.
+		if r > 0x7F {
+			lr := unicode.ToLower(r)
+			if lr != r {
+				if ascii, ok := confusableMap[lr]; ok {
+					return ascii
+				}
+			}
 		}
 		return r
 	}, s)
