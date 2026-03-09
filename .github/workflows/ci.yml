@@ -314,6 +314,8 @@ jobs:
             pkg install -y bash git
           run: |
             go version
+            # Mark checkout dir safe — VM user differs from checkout owner after rsync
+            git config --global --add safe.directory '*'
             # Test install.sh on FreeBSD (builds from source)
             bash install.sh --local . --prefix /usr/local/bin --no-font --no-completion
             which crust && crust version
