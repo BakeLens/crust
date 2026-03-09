@@ -53,11 +53,17 @@ var errTimeout = errors.New("plugin evaluation timed out")
 // Returns errPoolExhausted if no slot is available within the timeout.
 // Returns errTimeout if the plugin does not complete in time.
 func (p *Pool) Run(ctx context.Context, fn func(ctx context.Context) *Result) (result *Result, err error) {
-	// Acquire slot with context timeout — never blocks indefinitely.
+	// Acquire slot — prefer an available slot over context cancellation.
+	// If ctx is already canceled but a slot is free, acquire it so that
+	// fast plugins aren't blocked by a concurrent cancel from another plugin.
 	select {
 	case p.sem <- struct{}{}:
 	case <-ctx.Done():
-		return nil, errPoolExhausted
+		select {
+		case p.sem <- struct{}{}:
+		default:
+			return nil, errPoolExhausted
+		}
 	}
 	defer func() { <-p.sem }()
 
@@ -79,26 +85,29 @@ func (p *Pool) Run(ctx context.Context, fn func(ctx context.Context) *Result) (r
 		done <- runResult{result: fn(evalCtx)}
 	}()
 
-	select {
-	case r := <-done:
+	// Always wait for the goroutine to complete. The goroutine will
+	// finish because evalCtx carries a timeout and well-behaved plugins
+	// observe ctx.Done(). This avoids the race where evalCtx.Done() and
+	// the done channel are both ready but select non-deterministically
+	// picks cancellation, discarding an already-computed result.
+	r := <-done
+
+	// If the function produced a meaningful result or error, return it
+	// regardless of context state. This ensures results computed before
+	// or concurrently with context cancellation are never lost.
+	if r.result != nil || r.err != nil {
 		return r.result, r.err
-	case <-evalCtx.Done():
-		// The goroutine may have already finished and sent its result
-		// to the buffered channel concurrently with context cancellation.
-		// Prefer the completed result over discarding it.
-		select {
-		case r := <-done:
-			return r.result, r.err
-		default:
-		}
-		// Distinguish parent-cancel (short-circuit from another plugin)
-		// from our own timeout expiring. Only report errTimeout for
-		// genuine timeouts — parent-cancel is not the plugin's fault.
+	}
+
+	// nil result with nil error: function returned because it observed
+	// ctx.Done(). Classify the cancellation cause.
+	if evalCtx.Err() != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		return nil, errTimeout
 	}
+	return nil, nil
 }
 
 // Size returns the pool capacity.
