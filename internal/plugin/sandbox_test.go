@@ -359,3 +359,66 @@ func TestBuildDenyRules_MaxRulesClamped(t *testing.T) {
 		t.Errorf("expected %d rules (clamped), got %d", maxRules, len(result))
 	}
 }
+
+func TestClampName_Truncation(t *testing.T) {
+	seen := make(map[string]bool)
+	long := strings.Repeat("x", 200)
+	got := clampName(long, seen)
+	if len(got) != maxRuleName {
+		t.Errorf("expected name truncated to %d, got %d", maxRuleName, len(got))
+	}
+}
+
+func TestClampName_Uniqueness(t *testing.T) {
+	seen := make(map[string]bool)
+	n1 := clampName("my-rule", seen)
+	n2 := clampName("my-rule", seen)
+	if n1 == n2 {
+		t.Errorf("expected unique names, both got %q", n1)
+	}
+	if n2 != "my-rule:2" {
+		t.Errorf("expected 'my-rule:2', got %q", n2)
+	}
+}
+
+func TestClampPatterns_DedupsAndCaps(t *testing.T) {
+	// Duplicates should be removed.
+	patterns := []string{"/a", "/b", "/a", "/c"}
+	got := clampPatterns(patterns, 64)
+	if len(got) != 3 {
+		t.Errorf("expected 3 unique patterns, got %d: %v", len(got), got)
+	}
+
+	// Max count should be respected.
+	many := make([]string, 100)
+	for i := range many {
+		many[i] = fmt.Sprintf("/path/%d", i)
+	}
+	got = clampPatterns(many, maxPatterns)
+	if len(got) != maxPatterns {
+		t.Errorf("expected %d patterns, got %d", maxPatterns, len(got))
+	}
+
+	// Long patterns should be truncated.
+	longPat := "/" + strings.Repeat("x", 600)
+	got = clampPatterns([]string{longPat}, 64)
+	if len(got[0]) != maxPatternLen {
+		t.Errorf("expected pattern truncated to %d, got %d", maxPatternLen, len(got[0]))
+	}
+}
+
+func TestOperationsToStrings_Dedup(t *testing.T) {
+	ops := []rules.Operation{rules.OpRead, rules.OpWrite, rules.OpRead}
+	got := operationsToStrings(ops)
+	if len(got) != 2 {
+		t.Errorf("expected 2 unique ops, got %d: %v", len(got), got)
+	}
+}
+
+func TestSandboxConfig_ValidateDuplicatePorts(t *testing.T) {
+	sp := &SandboxPlugin{binaryPath: "/usr/bin/bakelens-sandbox"}
+	cfg := json.RawMessage(`{"extra_ports":{"tcp":[80,80]}}`)
+	if err := sp.Init(cfg); err == nil {
+		t.Fatal("expected error for duplicate ports")
+	}
+}

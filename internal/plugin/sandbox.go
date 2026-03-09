@@ -92,10 +92,15 @@ func (s *SandboxPlugin) Init(cfg json.RawMessage) error {
 
 // Sandbox schema limits (from bakelens-sandbox docs/schema.json).
 const (
-	maxRuleName    = 128
-	maxHostName    = 253
-	maxResolvedIPs = 64
-	maxRules       = 256
+	maxRuleName     = 128
+	maxHostName     = 253
+	maxResolvedIPs  = 64
+	maxRules        = 256
+	maxPatterns     = 64
+	maxExcept       = 64
+	maxPatternLen   = 512
+	maxHostsPerRule = 256
+	maxExtraPorts   = 1024
 )
 
 // validate checks SandboxConfig against sandbox schema constraints.
@@ -104,10 +109,18 @@ func (c *SandboxConfig) validate() error {
 		if proto != "tcp" && proto != "udp" && proto != "sctp" {
 			return fmt.Errorf("extra_ports: invalid protocol %q (must be tcp/udp/sctp)", proto)
 		}
+		if len(ports) > maxExtraPorts {
+			return fmt.Errorf("extra_ports[%s]: %d ports exceeds max %d", proto, len(ports), maxExtraPorts)
+		}
+		seen := make(map[int]bool, len(ports))
 		for _, p := range ports {
 			if p < 1 || p > 65535 {
 				return fmt.Errorf("extra_ports[%s]: port %d out of range 1-65535", proto, p)
 			}
+			if seen[p] {
+				return fmt.Errorf("extra_ports[%s]: duplicate port %d", proto, p)
+			}
+			seen[p] = true
 		}
 	}
 	if c.Resources != nil {
@@ -241,6 +254,7 @@ func splitCommand(cmd string) []string {
 
 // buildDenyRules translates RuleSnapshots into sandbox DenyRules.
 func buildDenyRules(snapshots []RuleSnapshot) []DenyRule {
+	seen := make(map[string]bool)
 	var denyRules []DenyRule
 	for _, snap := range snapshots {
 		if !snap.Enabled {
@@ -251,10 +265,11 @@ func buildDenyRules(snapshots []RuleSnapshot) []DenyRule {
 		if len(snap.BlockPaths) > 0 {
 			ops := operationsToStrings(snap.Actions)
 			if len(ops) > 0 {
+				name := clampName(snap.Name, seen)
 				dr := DenyRule{
-					Name:       snap.Name,
-					Patterns:   absolutePatterns(snap.BlockPaths),
-					Except:     absolutePatterns(snap.BlockExcept),
+					Name:       name,
+					Patterns:   clampPatterns(absolutePatterns(snap.BlockPaths), maxPatterns),
+					Except:     clampPatterns(absolutePatterns(snap.BlockExcept), maxExcept),
 					Operations: ops,
 				}
 				denyRules = append(denyRules, dr)
@@ -262,10 +277,15 @@ func buildDenyRules(snapshots []RuleSnapshot) []DenyRule {
 		}
 		// Build network deny rule if hosts are present.
 		if len(snap.BlockHosts) > 0 {
+			name := clampName(snap.Name+":network", seen)
+			hosts := resolveHosts(snap.BlockHosts)
+			if len(hosts) > maxHostsPerRule {
+				hosts = hosts[:maxHostsPerRule]
+			}
 			dr := DenyRule{
-				Name:       snap.Name + ":network",
+				Name:       name,
 				Operations: []string{}, // network-only rule; filesystem ops empty
-				Hosts:      resolveHosts(snap.BlockHosts),
+				Hosts:      hosts,
 			}
 			denyRules = append(denyRules, dr)
 		}
@@ -277,6 +297,52 @@ func buildDenyRules(snapshots []RuleSnapshot) []DenyRule {
 		denyRules = denyRules[:maxRules]
 	}
 	return denyRules
+}
+
+// clampName truncates to maxRuleName and ensures uniqueness by appending a suffix.
+func clampName(name string, seen map[string]bool) string {
+	if len(name) > maxRuleName {
+		name = name[:maxRuleName]
+	}
+	if !seen[name] {
+		seen[name] = true
+		return name
+	}
+	// Append numeric suffix for uniqueness.
+	for i := 2; ; i++ {
+		suffix := fmt.Sprintf(":%d", i)
+		candidate := name
+		if len(candidate)+len(suffix) > maxRuleName {
+			candidate = candidate[:maxRuleName-len(suffix)]
+		}
+		candidate += suffix
+		if !seen[candidate] {
+			seen[candidate] = true
+			return candidate
+		}
+	}
+}
+
+// clampPatterns deduplicates, truncates each to maxPatternLen, and caps the count.
+func clampPatterns(patterns []string, maxCount int) []string { //nolint:unparam // maxPatterns and maxExcept are separate schema limits
+	if len(patterns) == 0 {
+		return patterns
+	}
+	seen := make(map[string]bool, len(patterns))
+	out := make([]string, 0, len(patterns))
+	for _, p := range patterns {
+		if len(p) > maxPatternLen {
+			p = p[:maxPatternLen]
+		}
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+		if len(out) >= maxCount {
+			break
+		}
+	}
+	return out
 }
 
 // resolveHosts converts host strings to HostEntry objects.
@@ -357,11 +423,14 @@ var sandboxOperations = map[rules.Operation]bool{
 }
 
 // operationsToStrings converts []rules.Operation to []string,
-// filtering out operations not supported by the sandbox schema.
+// filtering out operations not supported by the sandbox schema
+// and deduplicating (sandbox requires uniqueItems).
 func operationsToStrings(ops []rules.Operation) []string {
+	seen := make(map[rules.Operation]bool, len(ops))
 	out := make([]string, 0, len(ops))
 	for _, op := range ops {
-		if sandboxOperations[op] {
+		if sandboxOperations[op] && !seen[op] {
+			seen[op] = true
 			out = append(out, string(op))
 		}
 	}
