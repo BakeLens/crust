@@ -52,23 +52,14 @@ var errTimeout = errors.New("plugin evaluation timed out")
 // Run executes fn in a goroutine with panic recovery and timeout.
 // Returns errPoolExhausted if no slot is available within the timeout.
 // Returns errTimeout if the plugin does not complete in time.
-func (p *Pool) Run(ctx context.Context, fn func(ctx context.Context) *Result) (result *Result, err error) {
-	// Acquire slot — prefer an available slot over context cancellation.
-	// If ctx is already canceled but a slot is free, acquire it so that
-	// fast plugins aren't blocked by a concurrent cancel from another plugin.
-	select {
-	case p.sem <- struct{}{}:
-	case <-ctx.Done():
-		select {
-		case p.sem <- struct{}{}:
-		default:
-			return nil, errPoolExhausted
-		}
+func (p *Pool) Run(ctx context.Context, fn func(ctx context.Context) *Result) (*Result, error) {
+	if !p.acquireSem(ctx) {
+		return nil, errPoolExhausted
 	}
-	defer func() { <-p.sem }()
+	defer p.releaseSem()
 
-	// Create a child context with the pool timeout so plugins can
-	// cooperatively cancel via ctx.Done().
+	// Child context with pool timeout — plugins observe ctx.Done()
+	// for cooperative cancellation.
 	evalCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 
@@ -76,7 +67,6 @@ func (p *Pool) Run(ctx context.Context, fn func(ctx context.Context) *Result) (r
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				// Capture stack trace for debugging.
 				buf := make([]byte, 4096)
 				n := runtime.Stack(buf, false)
 				done <- runResult{err: fmt.Errorf("panic: %v\n%s", r, buf[:n])}
@@ -85,30 +75,72 @@ func (p *Pool) Run(ctx context.Context, fn func(ctx context.Context) *Result) (r
 		done <- runResult{result: fn(evalCtx)}
 	}()
 
-	// Always wait for the goroutine to complete. The goroutine will
-	// finish because evalCtx carries a timeout and well-behaved plugins
-	// observe ctx.Done(). This avoids the race where evalCtx.Done() and
-	// the done channel are both ready but select non-deterministically
-	// picks cancellation, discarding an already-computed result.
-	r := <-done
-
-	// If the function produced a meaningful result or error, return it
-	// regardless of context state. This ensures results computed before
-	// or concurrently with context cancellation are never lost.
-	if r.result != nil || r.err != nil {
-		return r.result, r.err
+	// Two-stage wait: first try the fast path (result before timeout),
+	// then handle timeout by waiting for the goroutine to deliver.
+	//
+	// Stage 1: race-free when only one channel is ready. If both fire
+	// simultaneously (plugin returns concurrently with cancel), either
+	// outcome is fine — stage 2 catches the result if stage 1 picked cancel.
+	select {
+	case r := <-done:
+		return p.classifyResult(ctx, evalCtx, r)
+	case <-evalCtx.Done():
 	}
 
-	// nil result with nil error: function returned because it observed
-	// ctx.Done(). Classify the cancellation cause.
-	if evalCtx.Err() != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
+	// Stage 2: context expired. Wait for the goroutine to finish.
+	// Well-behaved plugins observe ctx.Done() and return promptly.
+	// Hard deadline prevents blocking forever on misbehaving plugins.
+	deadline := time.NewTimer(p.timeout)
+	defer deadline.Stop()
+	select {
+	case r := <-done:
+		return p.classifyResult(ctx, evalCtx, r)
+	case <-deadline.C:
+		// Plugin ignored ctx.Done() for a full extra timeout period.
+		// Give up — the goroutine leaks but the caller is unblocked.
 		return nil, errTimeout
 	}
-	return nil, nil
 }
+
+// classifyResult interprets a goroutine's result in context of cancellation state.
+func (p *Pool) classifyResult(parent context.Context, eval context.Context, r runResult) (*Result, error) {
+	// Panics and real results are returned regardless of context state.
+	if r.err != nil {
+		return nil, r.err
+	}
+	if r.result != nil {
+		return r.result, nil
+	}
+
+	// nil result: plugin returned nil, possibly because it saw ctx.Done().
+	if eval.Err() != nil {
+		if parent.Err() != nil {
+			return nil, parent.Err() // parent cancel (short-circuit)
+		}
+		return nil, errTimeout // pool timeout
+	}
+	return nil, nil // plugin legitimately returned nil (allow)
+}
+
+// acquireSem tries to acquire a pool slot. Prefers an available slot over
+// context cancellation so that fast plugins aren't blocked by a concurrent
+// cancel from another plugin in the same fan-out group.
+func (p *Pool) acquireSem(ctx context.Context) bool {
+	select {
+	case p.sem <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		// Context canceled, but try once more — slot may be available.
+		select {
+		case p.sem <- struct{}{}:
+			return true
+		default:
+			return false
+		}
+	}
+}
+
+func (p *Pool) releaseSem() { <-p.sem }
 
 // Size returns the pool capacity.
 func (p *Pool) Size() int {
