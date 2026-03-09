@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BakeLens/crust/internal/plugin"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
 	"github.com/BakeLens/crust/internal/types"
@@ -17,6 +18,7 @@ import (
 type Manager struct {
 	storage       *telemetry.Storage
 	interceptor   *Interceptor
+	registry      *plugin.Registry
 	apiServer     *APIServer
 	retentionDays int
 
@@ -89,11 +91,25 @@ func Init(cfg Config) (*Manager, error) {
 		}
 	}
 
+	// Initialize plugin registry and sandbox plugin.
+	pool := plugin.NewPool(0, 0)
+	m.registry = plugin.NewRegistry(pool)
+	if sp, err := plugin.NewSandboxPlugin(); err == nil {
+		if regErr := m.registry.Register(sp, nil); regErr != nil {
+			log.Warn("sandbox plugin registration failed: %v", regErr)
+		} else {
+			log.Info("sandbox plugin registered (binary: %s)", sp.BinaryPath())
+		}
+	} else {
+		log.Info("sandbox plugin not available: %v", err)
+	}
+
 	// Initialize interceptor if security is enabled and rules engine exists
 	if cfg.SecurityEnabled {
 		ruleEngine := rules.GetGlobalEngine()
 		if ruleEngine != nil {
 			m.interceptor = NewInterceptor(ruleEngine, storage)
+			m.interceptor.SetRegistry(m.registry)
 		}
 	}
 
@@ -170,6 +186,12 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 
 	m.wg.Wait()
 
+	if m.registry != nil {
+		if err := m.registry.Close(); err != nil {
+			log.Error("Plugin registry close error: %v", err)
+		}
+	}
+
 	if m.storage != nil {
 		if err := m.storage.Close(); err != nil {
 			log.Error("Storage close error: %v", err)
@@ -194,6 +216,14 @@ func (m *Manager) GetInterceptor() *Interceptor {
 		return nil
 	}
 	return m.interceptor
+}
+
+// GetRegistry returns the plugin registry
+func (m *Manager) GetRegistry() *plugin.Registry {
+	if m == nil {
+		return nil
+	}
+	return m.registry
 }
 
 // GetStorage returns the storage

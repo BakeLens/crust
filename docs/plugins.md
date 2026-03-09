@@ -2,18 +2,18 @@
 
 ## Overview
 
-Plugins are **late-stage protection layers** that run after the built-in 13-step evaluation pipeline. When the engine determines a tool call is allowed, it passes the call through registered plugins before returning the final verdict. The first plugin to return a non-nil result blocks the call.
+Plugins are **post-engine protection layers** that operate after the built-in 13-step evaluation pipeline decides to allow a tool call. They do not re-evaluate rules — they **enforce** policy at a different layer (e.g., OS-level sandboxing at exec time).
 
 ```text
-Tool Call ──▶ [Steps 0-12: Built-in Pipeline] ──▶ allowed? ──▶ [Step 13: Plugins] ──▶ Final Verdict
-                                                     │                  │
-                                                  ↓ BLOCK           ↓ BLOCK
-                                              (built-in)         (plugin)
+Tool Call ──▶ [Steps 0-12: Engine Pipeline] ──▶ allowed? ──▶ [Exec Time: Plugins] ──▶ Command Runs
+                                                    │               │
+                                                 ↓ BLOCK      enforce sandbox
+                                              (engine)        (OS-level policy)
 ```
 
-Plugins are general-purpose — they can implement sandboxing, rate limiting, audit logging, custom policy enforcement, or any other protection logic. They receive the same extracted information that the built-in pipeline computed (paths, hosts, operations, commands), plus a **read-only snapshot of all active engine rules**.
+Plugins can implement sandboxing, rate limiting, audit logging, custom policy enforcement, or any other protection logic. They receive the same extracted information that the built-in pipeline computed (paths, hosts, operations, commands), plus a **read-only snapshot of all active engine rules**.
 
-Plugins communicate over a **JSON wire protocol** (newline-delimited JSON over stdin/stdout). This means plugins can be written in **any language** — Go, Python, Rust, Node.js, etc. The engine spawns plugin processes at startup and communicates via IPC. This also provides **OS-level crash isolation**: a plugin segfault cannot crash the engine.
+External plugins communicate over a **JSON wire protocol** (newline-delimited JSON over stdin/stdout). This means plugins can be written in **any language** — Go, Python, Rust, Node.js, etc. In-process plugins (like the sandbox plugin) implement the `plugin.Plugin` Go interface directly. Both types benefit from the **worker pool** with crash isolation, circuit breakers, and timeout handling.
 
 ---
 
@@ -278,43 +278,48 @@ If a `ProcessPlugin`'s external process crashes or times out during IPC, it is k
 
 ---
 
-## Engine Integration
+## Integration
 
-The engine holds a `*plugin.Registry` and calls it as step 13:
+The plugin registry is created and managed by the **security manager**. After the engine's 13-step pipeline allows a tool call, plugins enforce additional policy at exec time (e.g., OS-level sandboxing).
+
+```text
+Tool Call ──▶ [Steps 0-12: Engine Pipeline] ──▶ allowed? ──▶ [Exec Time] ──▶ Plugin (sandbox)
+                                                    │              │
+                                                 ↓ BLOCK     wraps command
+                                              (engine)    with OS-level policy
+```
+
+### Current wiring
 
 ```go
-func (e *Engine) Evaluate(call ToolCall) MatchResult {
-    // Steps 0-12: existing pipeline ...
-    result := e.matchRules(&info, allPaths, call.Name)
-    if result.Matched {
-        return result  // built-in blocked — skip plugins
-    }
-
-    // Step 13: Plugin evaluation (post-pipeline).
-    if e.plugins != nil {
-        if pr := e.plugins.Evaluate(ctx, plugin.Request{
-            ToolName:   call.Name,
-            Arguments:  call.Arguments,
-            Operation:  info.Operation,
-            Operations: info.Operations,
-            Command:    info.Command,
-            Paths:      allPaths,
-            Hosts:      info.Hosts,
-            Content:    cmp.Or(info.RawJSON, info.Content),
-            Rules:      e.ruleSnapshots(),  // current rule snapshot
-        }); pr != nil {
-            return NewMatch(
-                pr.RuleName,
-                pr.EffectiveSeverity(),
-                pr.EffectiveAction(),
-                pr.Message,
-            )
-        }
-    }
-
-    return result  // allowed
+// security/manager.go — Init()
+pool := plugin.NewPool(0, 0)
+m.registry = plugin.NewRegistry(pool)
+if sp, err := plugin.NewSandboxPlugin(); err == nil {
+    m.registry.Register(sp, nil)
 }
+m.interceptor.SetRegistry(m.registry)
 ```
+
+The registry is accessible via `manager.GetRegistry()`. The **sandbox plugin** (`plugin/sandbox.go`) is an in-process plugin that wraps the `bakelens-sandbox` binary. It builds an OS-level enforcement policy from the engine's rule snapshots, translating them into process-level sandbox constraints.
+
+Plugins are registered only when their backing binary is available on `$PATH` — graceful degradation when absent.
+
+### Sandbox plugin
+
+The sandbox plugin implements `plugin.Plugin` in-process (not over the wire protocol). It translates crust's rule snapshots into a sandbox `InputPolicy`:
+
+| plugin.Request field | sandbox InputPolicy field |
+|---------------------|--------------------------|
+| `req.Command` | `policy.command` (split into `[]string`) |
+| `req.Rules[].BlockPaths` | `DenyRule.patterns` |
+| `req.Rules[].BlockExcept` | `DenyRule.except` |
+| `req.Rules[].Actions` | `DenyRule.operations` |
+| `req.Rules[].BlockHosts` | `DenyRule.hosts` |
+| `SandboxConfig.ExtraPorts` | `policy.extra_ports` |
+| `SandboxConfig.Resources` | `policy.resources` |
+
+The actual exec-time wrapping (spawning `bakelens-sandbox` with the policy on stdin) is a follow-up.
 
 ---
 
