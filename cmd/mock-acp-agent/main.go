@@ -9,16 +9,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
-)
 
-type jsonRPCMessage struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   json.RawMessage `json:"error,omitempty"`
-}
+	"github.com/BakeLens/crust/internal/jsonrpc"
+)
 
 var nextID = 100
 
@@ -72,7 +65,7 @@ func main() {
 			continue
 		}
 
-		var msg jsonRPCMessage
+		var msg jsonrpc.Message
 		if err := json.Unmarshal(line, &msg); err != nil {
 			fmt.Fprintf(os.Stderr, "[mock-agent] invalid JSON: %s\n", line)
 			continue

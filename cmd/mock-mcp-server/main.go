@@ -7,14 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-)
 
-type jsonRPCMessage struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
+	"github.com/BakeLens/crust/internal/jsonrpc"
+)
 
 type jsonRPCResponse struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -46,12 +41,12 @@ func main() {
 			continue
 		}
 
-		var msg jsonRPCMessage
+		var msg jsonrpc.Message
 		if err := json.Unmarshal(line, &msg); err != nil {
 			continue
 		}
 
-		if msg.Method == "" || len(msg.ID) == 0 {
+		if !msg.IsRequest() {
 			continue // not a request
 		}
 

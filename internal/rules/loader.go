@@ -255,9 +255,9 @@ func (l *Loader) AddRuleFile(srcPath string) (string, error) {
 	return destPath, nil
 }
 
-// ValidateSafeFilename checks if a filename is safe (no path traversal)
+// validateSafeFilename checks if a filename is safe (no path traversal)
 // Returns the sanitized filename or an error
-func ValidateSafeFilename(filename string) (string, error) {
+func validateSafeFilename(filename string) (string, error) {
 	// Extract just the base name to prevent path traversal
 	base := filepath.Base(filename)
 
@@ -286,7 +286,7 @@ func ValidateSafeFilename(filename string) (string, error) {
 // Resolves symlinks to prevent symlink-based path traversal
 func (l *Loader) ValidatePathInDirectory(filename string) (string, error) {
 	// First validate the filename itself
-	safeFilename, err := ValidateSafeFilename(filename)
+	safeFilename, err := validateSafeFilename(filename)
 	if err != nil {
 		return "", err
 	}
