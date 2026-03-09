@@ -363,7 +363,7 @@ var vectors = []dlpVector{
 	},
 	{
 		name:  "builtin:dlp-twilio-api-key",
-		regex: `SK[a-f0-9]{32}`,
+		regex: `SK[a-fA-F0-9]{32}`,
 		mustHit: []string{
 			"SK" + pad(32),
 		},
@@ -516,7 +516,7 @@ func main() {
 
 	// 3. Verify SHA-512 of dlp.go source.
 	hash := fmt.Sprintf("%x", sha512.Sum512(data))
-	const expectedHash = "7607229785b28392f4e554b24c80ff20f9fef0d6c887e8326c5c65ea5ea846eb495d1841e76563b2d530bc0bc1e9045a53bbcfa932c5587f5160617bd5a4fa6e"
+	const expectedHash = "e862e8bfa6735807725acfeb5de4b841108411e0cf3d6a35d6f81fc401d81634c41d00b1a7e7e072226fd4e79b7025b90e8e58977f963ff57eb232111fd2b9fb"
 	if hash != expectedHash {
 		fmt.Fprintf(os.Stderr, "FAIL: dlp.go SHA-512 mismatch\n  got:  %s\n  want: %s\n", hash, expectedHash)
 		failed++

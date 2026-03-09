@@ -223,7 +223,7 @@ var dlpPatterns = []dlpPattern{
 	// Twilio
 	{
 		name:    "builtin:dlp-twilio-api-key",
-		re:      regexp.MustCompile(`SK[a-f0-9]{32}`),
+		re:      regexp.MustCompile(`SK[a-fA-F0-9]{32}`),
 		message: "Cannot write Twilio API key — potential credential leak",
 	},
 
