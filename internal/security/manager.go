@@ -82,7 +82,7 @@ func Init(cfg Config) (*Manager, error) {
 
 	// Run initial cleanup
 	if cfg.RetentionDays > 0 {
-		if deleted, err := storage.CleanupOldData(cfg.RetentionDays); err != nil {
+		if deleted, err := storage.CleanupOldData(context.Background(), cfg.RetentionDays); err != nil {
 			log.Warn("Initial cleanup failed: %v", err)
 		} else if deleted > 0 {
 			log.Info("Initial cleanup: removed %d old records", deleted)
@@ -141,7 +141,7 @@ func (m *Manager) cleanupLoop() {
 			return
 		case <-ticker.C:
 			if m.retentionDays > 0 {
-				if _, err := m.storage.CleanupOldData(m.retentionDays); err != nil {
+				if _, err := m.storage.CleanupOldData(context.Background(), m.retentionDays); err != nil {
 					log.Warn("Periodic cleanup failed: %v", err)
 				}
 			}

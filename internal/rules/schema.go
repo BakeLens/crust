@@ -196,8 +196,8 @@ func (m *Match) Validate() error {
 	return nil
 }
 
-// ValidateRuleSet validates all rules in a ruleset
-func ValidateRuleSet(rs *RuleSet) error {
+// validateRuleSet validates all rules in a ruleset
+func validateRuleSet(rs *RuleSet) error {
 	if rs.Version != 1 {
 		return fmt.Errorf("unsupported version: %d (expected 1)", rs.Version)
 	}

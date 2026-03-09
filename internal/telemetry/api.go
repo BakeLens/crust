@@ -36,7 +36,7 @@ func (h *APIHandler) HandleSessions(c *gin.Context) {
 		query.Limit = 50
 	}
 
-	sessions, err := h.storage.GetSessions(query.Minutes, query.Limit)
+	sessions, err := h.storage.GetSessions(c.Request.Context(), query.Minutes, query.Limit)
 	if err != nil {
 		api.Error(c, http.StatusInternalServerError, "Failed to get sessions")
 		return
@@ -65,7 +65,7 @@ func (h *APIHandler) HandleSessionEvents(c *gin.Context) {
 		query.Limit = 50
 	}
 
-	events, err := h.storage.GetSessionEvents(types.SessionID(sessionID), query.Limit)
+	events, err := h.storage.GetSessionEvents(c.Request.Context(), types.SessionID(sessionID), query.Limit)
 	if err != nil {
 		api.Error(c, http.StatusInternalServerError, "Failed to get session events")
 		return
@@ -104,7 +104,7 @@ func (h *APIHandler) HandleTraces(c *gin.Context) {
 		query.Limit = 100
 	}
 
-	traces, err := h.storage.ListRecentTraces(query.Limit)
+	traces, err := h.storage.ListRecentTraces(c.Request.Context(), query.Limit)
 	if err != nil {
 		api.Error(c, http.StatusInternalServerError, "Failed to list traces")
 		return
@@ -124,7 +124,7 @@ func (h *APIHandler) HandleTraces(c *gin.Context) {
 
 	result := make([]TraceWithStats, 0, len(traces))
 	for _, trace := range traces {
-		spans, err := h.storage.GetTraceSpans(trace.TraceID)
+		spans, err := h.storage.GetTraceSpans(c.Request.Context(), trace.TraceID)
 		if err != nil {
 			log.Debug("Failed to get spans for trace %s: %v", trace.TraceID, err)
 		}
@@ -158,7 +158,7 @@ func (h *APIHandler) HandleTrace(c *gin.Context) {
 	}
 
 	// Get spans for this trace
-	spans, err := h.storage.GetTraceSpans(types.TraceID(traceID))
+	spans, err := h.storage.GetTraceSpans(c.Request.Context(), types.TraceID(traceID))
 	if err != nil {
 		api.Error(c, http.StatusInternalServerError, "Failed to get spans")
 		return
@@ -210,7 +210,7 @@ func (h *APIHandler) HandleTrace(c *gin.Context) {
 
 // HandleStats handles GET /api/telemetry/stats
 func (h *APIHandler) HandleStats(c *gin.Context) {
-	stats, err := h.storage.GetTraceStats()
+	stats, err := h.storage.GetTraceStats(c.Request.Context())
 	if err != nil {
 		api.Error(c, http.StatusInternalServerError, "Failed to get stats")
 		return

@@ -232,14 +232,14 @@ func TestValidateRuleSet(t *testing.T) {
 				},
 			},
 		}
-		if err := ValidateRuleSet(rs); err != nil {
+		if err := validateRuleSet(rs); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
 
 	t.Run("invalid version", func(t *testing.T) {
 		rs := &RuleSet{Version: 2}
-		err := ValidateRuleSet(rs)
+		err := validateRuleSet(rs)
 		if err == nil {
 			t.Error("expected error for invalid version")
 		}
@@ -263,7 +263,7 @@ func TestValidateRuleSet(t *testing.T) {
 				},
 			},
 		}
-		err := ValidateRuleSet(rs)
+		err := validateRuleSet(rs)
 		if err == nil {
 			t.Error("expected error for duplicate rule names")
 		}
@@ -278,7 +278,7 @@ func TestValidateRuleSet(t *testing.T) {
 				},
 			},
 		}
-		err := ValidateRuleSet(rs)
+		err := validateRuleSet(rs)
 		if err == nil {
 			t.Error("expected error for invalid rule")
 		}

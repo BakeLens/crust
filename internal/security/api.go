@@ -126,7 +126,7 @@ func (s *APIServer) handleLogs(c *gin.Context) {
 		query.Limit = 100
 	}
 
-	logs, err := s.storage.GetRecentLogs(query.Minutes, query.Limit)
+	logs, err := s.storage.GetRecentLogs(c.Request.Context(), query.Minutes, query.Limit)
 	if err != nil {
 		api.Error(c, http.StatusInternalServerError, "Failed to get logs")
 		return

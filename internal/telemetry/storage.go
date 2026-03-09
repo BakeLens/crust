@@ -295,8 +295,7 @@ type ToolCallLog struct {
 
 // GetOrCreateTrace gets an existing trace or creates a new one.
 // Uses INSERT ... ON CONFLICT to avoid TOCTOU races between concurrent goroutines.
-func (s *Storage) GetOrCreateTrace(traceID types.TraceID, sessionID types.SessionID) (*Trace, error) {
-	ctx := context.Background()
+func (s *Storage) GetOrCreateTrace(ctx context.Context, traceID types.TraceID, sessionID types.SessionID) (*Trace, error) {
 	now := time.Now().UTC()
 
 	// Atomic upsert — no TOCTOU race
@@ -319,8 +318,7 @@ func (s *Storage) GetOrCreateTrace(traceID types.TraceID, sessionID types.Sessio
 }
 
 // UpdateTraceEndTime updates the end time of a trace
-func (s *Storage) UpdateTraceEndTime(traceID types.TraceID, endTime time.Time) error {
-	ctx := context.Background()
+func (s *Storage) UpdateTraceEndTime(ctx context.Context, traceID types.TraceID, endTime time.Time) error {
 	t := endTime.UTC()
 	return s.queries.UpdateTraceEndTime(ctx, db.UpdateTraceEndTimeParams{
 		TraceID: traceID.String(),
@@ -348,9 +346,7 @@ func spanToInsertParams(span *Span) db.InsertSpanParams {
 }
 
 // InsertSpan inserts a new span
-func (s *Storage) InsertSpan(span *Span) error {
-	ctx := context.Background()
-
+func (s *Storage) InsertSpan(ctx context.Context, span *Span) error {
 	id, err := s.queries.InsertSpan(ctx, spanToInsertParams(span))
 	if err != nil {
 		return fmt.Errorf("failed to insert span: %w", err)
@@ -363,9 +359,7 @@ func (s *Storage) InsertSpan(span *Span) error {
 // RecordSpanTx atomically records a trace, main span, tool spans, and updates
 // the trace end time in a single transaction. This prevents partial writes
 // (e.g., trace without spans) if an error occurs mid-sequence.
-func (s *Storage) RecordSpanTx(traceID types.TraceID, sessionID types.SessionID, mainSpan *Span, toolSpans []*Span) error {
-	ctx := context.Background()
-
+func (s *Storage) RecordSpanTx(ctx context.Context, traceID types.TraceID, sessionID types.SessionID, mainSpan *Span, toolSpans []*Span) error {
 	tx, err := s.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -422,9 +416,7 @@ func (s *Storage) RecordSpanTx(traceID types.TraceID, sessionID types.SessionID,
 }
 
 // GetTraceSpans returns all spans for a trace
-func (s *Storage) GetTraceSpans(traceID types.TraceID) ([]Span, error) {
-	ctx := context.Background()
-
+func (s *Storage) GetTraceSpans(ctx context.Context, traceID types.TraceID) ([]Span, error) {
 	dbSpans, err := s.queries.GetTraceSpans(ctx, traceID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to query spans: %w", err)
@@ -439,9 +431,7 @@ func (s *Storage) GetTraceSpans(traceID types.TraceID) ([]Span, error) {
 }
 
 // ListRecentTraces returns recent traces
-func (s *Storage) ListRecentTraces(limit int) ([]Trace, error) {
-	ctx := context.Background()
-
+func (s *Storage) ListRecentTraces(ctx context.Context, limit int) ([]Trace, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -469,8 +459,7 @@ type TraceStats struct {
 }
 
 // GetTraceStats returns trace and span statistics.
-func (s *Storage) GetTraceStats() (*TraceStats, error) {
-	ctx := context.Background()
+func (s *Storage) GetTraceStats(ctx context.Context) (*TraceStats, error) {
 	stats := &TraceStats{}
 
 	traceCount, err := s.queries.GetTraceCount(ctx)
@@ -546,7 +535,7 @@ func parseSQLiteTime(s string) time.Time {
 
 // GetSessions returns recent sessions aggregated from tool_call_logs, ordered by
 // most-recently-active first. Each row corresponds to one unique session_id.
-func (s *Storage) GetSessions(minutes int, limit int) ([]SessionSummary, error) {
+func (s *Storage) GetSessions(ctx context.Context, minutes int, limit int) ([]SessionSummary, error) {
 	if minutes <= 0 {
 		minutes = 60
 	} else if minutes > MaxRecentMinutes {
@@ -556,7 +545,6 @@ func (s *Storage) GetSessions(minutes int, limit int) ([]SessionSummary, error) 
 		limit = 50
 	}
 
-	ctx := context.Background()
 	rows, err := s.conn.QueryContext(ctx, `
 		SELECT
 			session_id,
@@ -598,12 +586,11 @@ func (s *Storage) GetSessions(minutes int, limit int) ([]SessionSummary, error) 
 
 // GetSessionEvents returns the most recent tool call events for a specific session,
 // ordered newest-first.
-func (s *Storage) GetSessionEvents(sessionID types.SessionID, limit int) ([]ToolCallLog, error) {
+func (s *Storage) GetSessionEvents(ctx context.Context, sessionID types.SessionID, limit int) ([]ToolCallLog, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 
-	ctx := context.Background()
 	rows, err := s.conn.QueryContext(ctx, `
 		SELECT id, timestamp, trace_id, session_id, tool_name, tool_arguments,
 		       api_type, was_blocked, blocked_by_rule, model, layer
@@ -654,9 +641,7 @@ func (s *Storage) GetSessionEvents(sessionID types.SessionID, limit int) ([]Tool
 // =============================================================================
 
 // LogToolCall logs a tool call
-func (s *Storage) LogToolCall(toolLog ToolCallLog) error {
-	ctx := context.Background()
-
+func (s *Storage) LogToolCall(ctx context.Context, toolLog ToolCallLog) error {
 	var argsStr *string
 	if toolLog.ToolArguments != nil {
 		str := string(toolLog.ToolArguments)
@@ -685,9 +670,7 @@ func (s *Storage) LogToolCall(toolLog ToolCallLog) error {
 const MaxRecentMinutes = 10080
 
 // GetRecentLogs returns recent tool call logs
-func (s *Storage) GetRecentLogs(minutes int, limit int) ([]ToolCallLog, error) {
-	ctx := context.Background()
-
+func (s *Storage) GetRecentLogs(ctx context.Context, minutes int, limit int) ([]ToolCallLog, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -719,7 +702,7 @@ func (s *Storage) GetRecentLogs(minutes int, limit int) ([]ToolCallLog, error) {
 const MaxRetentionDays = 36500 // 100 years
 
 // CleanupOldData deletes data older than the specified number of days
-func (s *Storage) CleanupOldData(days int) (int64, error) {
+func (s *Storage) CleanupOldData(ctx context.Context, days int) (int64, error) {
 	if days <= 0 {
 		return 0, nil
 	}
@@ -729,7 +712,6 @@ func (s *Storage) CleanupOldData(days int) (int64, error) {
 		days = MaxRetentionDays
 	}
 
-	ctx := context.Background()
 	timeOffset := fmt.Sprintf("-%d days", days)
 
 	// Use a transaction for atomic cleanup across all tables

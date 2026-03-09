@@ -1,6 +1,7 @@
 package security
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/BakeLens/crust/internal/telemetry"
@@ -77,7 +78,7 @@ func RecordEvent(event Event) {
 		Layer:         event.Layer,
 	}
 
-	if err := storage.LogToolCall(tcLog); err != nil {
+	if err := storage.LogToolCall(context.Background(), tcLog); err != nil {
 		log.Warn("Failed to log security event: %v", err)
 	}
 }

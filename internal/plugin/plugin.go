@@ -103,7 +103,7 @@ func SnapshotRule(r *rules.Rule) RuleSnapshot {
 }
 
 // MarshalJSON ensures nil slices are encoded as [] not null.
-func (r Request) MarshalJSON() ([]byte, error) {
+func (r *Request) MarshalJSON() ([]byte, error) {
 	if r.Operations == nil {
 		r.Operations = []rules.Operation{}
 	}
@@ -120,14 +120,14 @@ func (r Request) MarshalJSON() ([]byte, error) {
 		r.Rules[i] = ensureRuleSlices(r.Rules[i])
 	}
 	type noMethod Request // prevent infinite recursion
-	return json.Marshal(noMethod(r))
+	return json.Marshal(noMethod(*r))
 }
 
 // MarshalJSON ensures nil slices are encoded as [] not null.
-func (r RuleSnapshot) MarshalJSON() ([]byte, error) {
-	r = ensureRuleSlices(r)
+func (r *RuleSnapshot) MarshalJSON() ([]byte, error) {
+	*r = ensureRuleSlices(*r)
 	type noMethod RuleSnapshot
-	return json.Marshal(noMethod(r))
+	return json.Marshal(noMethod(*r))
 }
 
 // ensureRuleSlices normalizes nil slices to empty in a RuleSnapshot.

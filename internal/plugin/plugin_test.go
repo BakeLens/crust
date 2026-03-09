@@ -1591,7 +1591,7 @@ func TestRequest_NilSlicesMarshalAsEmptyArrays(t *testing.T) {
 		ToolName: "Bash",
 		// All slice fields left nil.
 	}
-	data, err := json.Marshal(req)
+	data, err := json.Marshal(&req)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
@@ -1615,7 +1615,7 @@ func TestRequest_NilSlicesMarshalAsEmptyArrays(t *testing.T) {
 
 func TestRuleSnapshot_NilSlicesMarshalAsEmptyArrays(t *testing.T) {
 	snap := RuleSnapshot{Name: "test"}
-	data, err := json.Marshal(snap)
+	data, err := json.Marshal(&snap)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}

@@ -51,7 +51,7 @@ func TestNewStorage_WALMode(t *testing.T) {
 func TestGetOrCreateTrace_NewTrace(t *testing.T) {
 	s := newTestStorage(t)
 
-	trace, err := s.GetOrCreateTrace("trace-1", "session-1")
+	trace, err := s.GetOrCreateTrace(context.Background(), "trace-1", "session-1")
 	if err != nil {
 		t.Fatalf("GetOrCreateTrace: %v", err)
 	}
@@ -69,12 +69,12 @@ func TestGetOrCreateTrace_NewTrace(t *testing.T) {
 func TestGetOrCreateTrace_ExistingTrace(t *testing.T) {
 	s := newTestStorage(t)
 
-	t1, err := s.GetOrCreateTrace("trace-1", "session-1")
+	t1, err := s.GetOrCreateTrace(context.Background(), "trace-1", "session-1")
 	if err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 
-	t2, err := s.GetOrCreateTrace("trace-1", "session-1")
+	t2, err := s.GetOrCreateTrace(context.Background(), "trace-1", "session-1")
 	if err != nil {
 		t.Fatalf("second call: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestGetOrCreateTrace_Concurrent(t *testing.T) {
 
 	for i := range n {
 		wg.Go(func() {
-			_, errs[i] = s.GetOrCreateTrace(traceID, types.SessionID(fmt.Sprintf("session-%d", i)))
+			_, errs[i] = s.GetOrCreateTrace(context.Background(), traceID, types.SessionID(fmt.Sprintf("session-%d", i)))
 		})
 	}
 	wg.Wait()
@@ -145,13 +145,13 @@ func TestRecordSpanTx_Basic(t *testing.T) {
 		StatusCode:   "OK",
 	}
 
-	err := s.RecordSpanTx("trace-tx", "session-1", mainSpan, []*Span{toolSpan})
+	err := s.RecordSpanTx(context.Background(), "trace-tx", "session-1", mainSpan, []*Span{toolSpan})
 	if err != nil {
 		t.Fatalf("RecordSpanTx: %v", err)
 	}
 
 	// Verify trace exists
-	trace, err := s.GetOrCreateTrace("trace-tx", "session-1")
+	trace, err := s.GetOrCreateTrace(context.Background(), "trace-tx", "session-1")
 	if err != nil {
 		t.Fatalf("GetOrCreateTrace after tx: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestRecordSpanTx_Basic(t *testing.T) {
 	}
 
 	// Verify spans
-	spans, err := s.GetTraceSpans("trace-tx")
+	spans, err := s.GetTraceSpans(context.Background(), "trace-tx")
 	if err != nil {
 		t.Fatalf("GetTraceSpans: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestRecordSpanTx_SetsTraceRowID(t *testing.T) {
 		EndTime:   time.Now(),
 	}
 
-	if err := s.RecordSpanTx("trace-fk", "s1", mainSpan, nil); err != nil {
+	if err := s.RecordSpanTx(context.Background(), "trace-fk", "s1", mainSpan, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -194,12 +194,12 @@ func TestForeignKeyCascade(t *testing.T) {
 	s := newTestStorage(t)
 
 	// Create trace + span
-	trace, err := s.GetOrCreateTrace("cascade-test", "s1")
+	trace, err := s.GetOrCreateTrace(context.Background(), "cascade-test", "s1")
 	if err != nil {
 		t.Fatalf("GetOrCreateTrace: %v", err)
 	}
 
-	err = s.InsertSpan(&Span{
+	err = s.InsertSpan(context.Background(), &Span{
 		TraceRowID: trace.ID,
 		SpanID:     "span-1",
 		Name:       "test-span",
@@ -249,13 +249,13 @@ func TestCleanupOldData_CascadesSpans(t *testing.T) {
 	}
 
 	// Get trace to get its rowid
-	trace, err := s.GetOrCreateTrace("old-trace", "s1")
+	trace, err := s.GetOrCreateTrace(context.Background(), "old-trace", "s1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Insert span linked to the old trace
-	err = s.InsertSpan(&Span{
+	err = s.InsertSpan(context.Background(), &Span{
 		TraceRowID: trace.ID,
 		SpanID:     "old-span",
 		Name:       "old-llm-call",
@@ -268,7 +268,7 @@ func TestCleanupOldData_CascadesSpans(t *testing.T) {
 	}
 
 	// Cleanup data older than 1 day
-	deleted, err := s.CleanupOldData(1)
+	deleted, err := s.CleanupOldData(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("CleanupOldData: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestConcurrentWriteAndRead(t *testing.T) {
 				StartTime: time.Now(),
 				EndTime:   time.Now(),
 			}
-			if err := s.RecordSpanTx(traceID, "session", mainSpan, nil); err != nil {
+			if err := s.RecordSpanTx(context.Background(), traceID, "session", mainSpan, nil); err != nil {
 				writeErr = fmt.Errorf("write %d: %w", i, err)
 				return
 			}
@@ -319,11 +319,11 @@ func TestConcurrentWriteAndRead(t *testing.T) {
 	// Reader goroutine — simulates dashboard polling
 	wg.Go(func() {
 		for ctx.Err() == nil {
-			if _, err := s.GetTraceStats(); err != nil {
+			if _, err := s.GetTraceStats(context.Background()); err != nil {
 				readErr = fmt.Errorf("GetTraceStats: %w", err)
 				return
 			}
-			if _, err := s.ListRecentTraces(10); err != nil {
+			if _, err := s.ListRecentTraces(context.Background(), 10); err != nil {
 				readErr = fmt.Errorf("ListRecentTraces: %w", err)
 				return
 			}
@@ -346,7 +346,7 @@ func TestGetSessions_GroupsBySessionID(t *testing.T) {
 
 	// Insert tool calls for two distinct sessions
 	for i := range 3 {
-		err := s.LogToolCall(ToolCallLog{
+		err := s.LogToolCall(context.Background(), ToolCallLog{
 			TraceID:   types.TraceID(fmt.Sprintf("trace-a-%d", i)),
 			SessionID: "session-alpha",
 			ToolName:  "Read",
@@ -356,7 +356,7 @@ func TestGetSessions_GroupsBySessionID(t *testing.T) {
 			t.Fatalf("LogToolCall session-alpha: %v", err)
 		}
 	}
-	err := s.LogToolCall(ToolCallLog{
+	err := s.LogToolCall(context.Background(), ToolCallLog{
 		TraceID:       "trace-b-0",
 		SessionID:     "session-beta",
 		ToolName:      "Bash",
@@ -368,7 +368,7 @@ func TestGetSessions_GroupsBySessionID(t *testing.T) {
 		t.Fatalf("LogToolCall session-beta: %v", err)
 	}
 
-	sessions, err := s.GetSessions(60, 50)
+	sessions, err := s.GetSessions(context.Background(), 60, 50)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestGetSessions_OrderedByLastSeenDesc(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessions, err := s.GetSessions(60, 50)
+	sessions, err := s.GetSessions(context.Background(), 60, 50)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -446,14 +446,14 @@ func TestGetSessions_ExcludesNullSessionID(t *testing.T) {
 	s := newTestStorage(t)
 
 	// Insert a log with no session_id (empty string → stored as NULL via strPtr)
-	if err := s.LogToolCall(ToolCallLog{
+	if err := s.LogToolCall(context.Background(), ToolCallLog{
 		TraceID:  "trace-nosession",
 		ToolName: "Read",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// Insert one with a real session
-	if err := s.LogToolCall(ToolCallLog{
+	if err := s.LogToolCall(context.Background(), ToolCallLog{
 		TraceID:   "trace-with-session",
 		SessionID: "real-session",
 		ToolName:  "Write",
@@ -461,7 +461,7 @@ func TestGetSessions_ExcludesNullSessionID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessions, err := s.GetSessions(60, 50)
+	sessions, err := s.GetSessions(context.Background(), 60, 50)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestGetSessionEvents_FiltersBySessionID(t *testing.T) {
 
 	// Insert events for two sessions
 	for i := range 5 {
-		if err := s.LogToolCall(ToolCallLog{
+		if err := s.LogToolCall(context.Background(), ToolCallLog{
 			TraceID:   types.TraceID(fmt.Sprintf("trace-x-%d", i)),
 			SessionID: "session-x",
 			ToolName:  "Read",
@@ -488,7 +488,7 @@ func TestGetSessionEvents_FiltersBySessionID(t *testing.T) {
 		}
 	}
 	for i := range 2 {
-		if err := s.LogToolCall(ToolCallLog{
+		if err := s.LogToolCall(context.Background(), ToolCallLog{
 			TraceID:   types.TraceID(fmt.Sprintf("trace-y-%d", i)),
 			SessionID: "session-y",
 			ToolName:  "Bash",
@@ -497,7 +497,7 @@ func TestGetSessionEvents_FiltersBySessionID(t *testing.T) {
 		}
 	}
 
-	events, err := s.GetSessionEvents("session-x", 50)
+	events, err := s.GetSessionEvents(context.Background(), "session-x", 50)
 	if err != nil {
 		t.Fatalf("GetSessionEvents: %v", err)
 	}
@@ -515,7 +515,7 @@ func TestGetSessionEvents_RespectsLimit(t *testing.T) {
 	s := newTestStorage(t)
 
 	for i := range 20 {
-		if err := s.LogToolCall(ToolCallLog{
+		if err := s.LogToolCall(context.Background(), ToolCallLog{
 			TraceID:   types.TraceID(fmt.Sprintf("trace-%d", i)),
 			SessionID: "session-limit",
 			ToolName:  "Read",
@@ -524,7 +524,7 @@ func TestGetSessionEvents_RespectsLimit(t *testing.T) {
 		}
 	}
 
-	events, err := s.GetSessionEvents("session-limit", 5)
+	events, err := s.GetSessionEvents(context.Background(), "session-limit", 5)
 	if err != nil {
 		t.Fatalf("GetSessionEvents: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestGetSessionEvents_RespectsLimit(t *testing.T) {
 func TestGetSessionEvents_BlockedFieldPreserved(t *testing.T) {
 	s := newTestStorage(t)
 
-	if err := s.LogToolCall(ToolCallLog{
+	if err := s.LogToolCall(context.Background(), ToolCallLog{
 		TraceID:       "trace-blocked",
 		SessionID:     "session-blocked",
 		ToolName:      "Write",
@@ -547,7 +547,7 @@ func TestGetSessionEvents_BlockedFieldPreserved(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	events, err := s.GetSessionEvents("session-blocked", 10)
+	events, err := s.GetSessionEvents(context.Background(), "session-blocked", 10)
 	if err != nil {
 		t.Fatalf("GetSessionEvents: %v", err)
 	}
@@ -570,7 +570,7 @@ func TestGetSessions_LimitEnforced(t *testing.T) {
 	s := newTestStorage(t)
 
 	for i := range 10 {
-		if err := s.LogToolCall(ToolCallLog{
+		if err := s.LogToolCall(context.Background(), ToolCallLog{
 			TraceID:   types.TraceID(fmt.Sprintf("trace-%d", i)),
 			SessionID: types.SessionID(fmt.Sprintf("session-%d", i)),
 			ToolName:  "Read",
@@ -579,7 +579,7 @@ func TestGetSessions_LimitEnforced(t *testing.T) {
 		}
 	}
 
-	sessions, err := s.GetSessions(60, 3)
+	sessions, err := s.GetSessions(context.Background(), 60, 3)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -599,7 +599,7 @@ func TestNewStorage_RecoverFromStaleWAL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initial NewStorage: %v", err)
 	}
-	if err := s1.LogToolCall(ToolCallLog{
+	if err := s1.LogToolCall(context.Background(), ToolCallLog{
 		TraceID:   "trace-before-crash",
 		SessionID: "s1",
 		ToolName:  "Read",
@@ -618,7 +618,7 @@ func TestNewStorage_RecoverFromStaleWAL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second NewStorage: %v", err)
 	}
-	if err := s2.LogToolCall(ToolCallLog{
+	if err := s2.LogToolCall(context.Background(), ToolCallLog{
 		TraceID:   "trace-in-wal",
 		SessionID: "s1",
 		ToolName:  "Write",
@@ -652,7 +652,7 @@ func TestNewStorage_RecoverFromStaleWAL(t *testing.T) {
 	}
 
 	// Step 5: Verify the DB is still functional after recovery
-	if err := s3.LogToolCall(ToolCallLog{
+	if err := s3.LogToolCall(context.Background(), ToolCallLog{
 		TraceID:   "trace-after-recovery",
 		SessionID: "s1",
 		ToolName:  "Bash",
@@ -675,7 +675,7 @@ func TestNewStorage_StaleWALFilesDoNotPreventOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initial NewStorage: %v", err)
 	}
-	if err := s1.LogToolCall(ToolCallLog{
+	if err := s1.LogToolCall(context.Background(), ToolCallLog{
 		TraceID:  "trace-1",
 		ToolName: "Read",
 	}); err != nil {
@@ -722,7 +722,7 @@ func TestNewStorage_CorruptSHMDoesNotLoseMainDB(t *testing.T) {
 		t.Fatalf("create DB: %v", err)
 	}
 	for i := range 5 {
-		if err := s1.LogToolCall(ToolCallLog{
+		if err := s1.LogToolCall(context.Background(), ToolCallLog{
 			TraceID:   types.TraceID(fmt.Sprintf("trace-%d", i)),
 			SessionID: "s1",
 			ToolName:  "Read",
@@ -766,7 +766,7 @@ func TestNewStorage_CorruptSHMDoesNotLoseMainDB(t *testing.T) {
 	}
 
 	// DB should be fully functional after recovery
-	if err := s2.LogToolCall(ToolCallLog{
+	if err := s2.LogToolCall(context.Background(), ToolCallLog{
 		TraceID:  "trace-after-recovery",
 		ToolName: "Write",
 	}); err != nil {
@@ -783,7 +783,7 @@ func TestLogToolCall_Concurrent(t *testing.T) {
 	for i := range n {
 		wg.Go(func() {
 			for range 10 {
-				err := s.LogToolCall(ToolCallLog{
+				err := s.LogToolCall(context.Background(), ToolCallLog{
 					TraceID:  types.TraceID(fmt.Sprintf("trace-%d", i)),
 					ToolName: "Bash",
 					Layer:    "L1",
