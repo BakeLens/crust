@@ -14,6 +14,7 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#agent-setup">Agent Setup</a> •
   <a href="#protection">Protection</a> •
+  <a href="#plugins">Plugins</a> •
   <a href="#documentation">Docs</a> •
   <a href="https://github.com/BakeLens/crust/issues">Issues</a> •
   <a href="https://github.com/BakeLens/crust/discussions">Discussions</a>
@@ -207,6 +208,36 @@ rules:
 crust add-rule my-rules.yaml    # Rules active immediately (hot reload)
 ```
 
+### Plugins
+
+Plugins are **late-stage protection layers** that run after the built-in 13-step evaluation pipeline. When the engine allows a tool call, it passes through registered plugins before returning the final verdict. Plugins can implement sandboxing, rate limiting, audit logging, or custom policy enforcement.
+
+Plugins communicate over a **JSON wire protocol** (newline-delimited JSON over stdin/stdout) — write them in **any language**: Python, Go, Rust, Node.js, etc.
+
+```python
+# sandbox_plugin.py — restrict file access to project directory
+def handle_evaluate(req):
+    for path in req.get("paths", []):
+        if not path.startswith("/home/user/project"):
+            return {"rule_name": "sandbox:fs-deny", "severity": "high",
+                    "message": f"path {path} is outside sandbox"}
+    return None  # allow
+```
+
+```go
+// Register plugins at startup
+p := plugin.NewProcessPlugin("sandbox", "python3", "sandbox_plugin.py")
+registry.Register(p, json.RawMessage(`{"allowed_dirs":["/home/user/project"]}`))
+```
+
+Key features:
+- **OS-level crash isolation** — plugins run as separate processes; a crash cannot affect the engine
+- **Circuit breaker** — plugins that fail 3 times are auto-disabled with exponential backoff
+- **Rule snapshot access** — plugins receive a read-only view of all active engine rules
+- **First-block wins** — plugins evaluate concurrently; the first block cancels the rest
+
+See the [Plugin System](docs/plugins.md) documentation for the full wire protocol specification, data types, and examples.
+
 ### Crust Self-Security
 
 A security tool must protect itself first. Crust is built to resist tampering — even by the AI agents it monitors:
@@ -241,6 +272,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 |-------|-------------|
 | [CLI Reference](docs/cli.md) | Commands, flags, environment variables |
 | [How It Works](docs/how-it-works.md) | Architecture, rule engine, evaluation pipeline |
+| [Plugin System](docs/plugins.md) | Wire protocol, crash isolation, circuit breaker, examples |
 | [Shell Parsing](docs/shell-parsing.md) | Bash command parsing for path/command extraction |
 | [CVE Tracker](docs/cve-tracker.md) | AI agent vulnerability tracker |
 | [Migration](docs/migration.md) | Upgrade guides for breaking changes |
