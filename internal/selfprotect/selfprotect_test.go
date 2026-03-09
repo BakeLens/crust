@@ -147,8 +147,9 @@ func FuzzSelfProtectBypass(f *testing.F) {
 
 	// Oracle patterns: loopback URL with "crust" in the same URL structure.
 	// Pattern 1: loopback host with "crust" in the path — e.g. http://localhost:9090/crust
-	// Only URL-legal chars (: / . - _ ~ % digits letters) between host and "crust".
-	oracleLoopbackCrust := regexp.MustCompile(`(?i)[a-z][a-z0-9+\-.]*://(?:localhost|127\.0\.0\.1)\b[:/\w.\-~%]*crust`)
+	// Only URL-legal chars (: / . - _ ~ digits letters) between host and "crust".
+	// Excludes % to avoid false triggers on non-decoded percent sequences like "host%Crust".
+	oracleLoopbackCrust := regexp.MustCompile(`(?i)[a-z][a-z0-9+\-.]*://(?:localhost|127\.0\.0\.1)\b[:/\w.\-~]*crust`)
 	// Pattern 2: "crust" scheme with loopback host — e.g. crust://localhost
 	oracleCrustScheme := regexp.MustCompile(`(?i)\bcrust\w*://(?:localhost|127\.0\.0\.1)`)
 
