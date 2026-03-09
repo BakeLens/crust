@@ -114,6 +114,9 @@ func (s *SandboxPlugin) Close() error { return nil }
 // BinaryPath returns the resolved path to the bakelens-sandbox binary.
 func (s *SandboxPlugin) BinaryPath() string { return s.binaryPath }
 
+// Available reports whether the sandbox binary exists and is executable.
+func (s *SandboxPlugin) Available() bool { return s.binaryPath != "" }
+
 // Exec runs a command under the sandbox with the given policy.
 // The policy JSON is sent on stdin to bakelens-sandbox, which executes
 // the command in a sandboxed environment.
@@ -124,6 +127,10 @@ func (s *SandboxPlugin) BinaryPath() string { return s.binaryPath }
 //	125   = sandbox setup error (parse stderr JSON)
 //	128+N = target killed by signal N
 func (s *SandboxPlugin) Exec(ctx context.Context, policy InputPolicy) (*SandboxExecResult, error) {
+	if !s.Available() {
+		return nil, errors.New("sandbox binary not available")
+	}
+
 	policyJSON, err := json.Marshal(policy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal sandbox policy: %w", err)

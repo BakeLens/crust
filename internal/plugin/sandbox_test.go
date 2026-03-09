@@ -211,3 +211,24 @@ func TestSandboxPlugin_EmptyRules(t *testing.T) {
 		t.Fatalf("expected 0 rules, got %d", len(policy.Rules))
 	}
 }
+
+func TestSandboxPlugin_Available(t *testing.T) {
+	sp := &SandboxPlugin{binaryPath: "/usr/bin/bakelens-sandbox"}
+	if !sp.Available() {
+		t.Fatal("expected Available() == true when binaryPath is set")
+	}
+
+	sp2 := &SandboxPlugin{}
+	if sp2.Available() {
+		t.Fatal("expected Available() == false when binaryPath is empty")
+	}
+}
+
+func TestSandboxPlugin_ExecWithoutBinary(t *testing.T) {
+	sp := &SandboxPlugin{} // no binary
+	policy := sp.BuildPolicy(Request{Command: "echo hello"})
+	_, err := sp.Exec(context.Background(), policy)
+	if err == nil {
+		t.Fatal("expected error when binary not available")
+	}
+}
