@@ -85,7 +85,7 @@ var vectors = []dlpVector{
 		name:  "builtin:dlp-slack-webhook",
 		regex: `https://hooks\.slack\.com/services/T[A-Z0-9]{8,}/B[A-Z0-9]{8,}/[a-zA-Z0-9]{20,}`,
 		mustHit: []string{
-			"https://hooks.slack.com/services/T000000000/B000000000/aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"https://hooks.slack.com/services/T" + pad(9) + "/B" + pad(9) + "/" + strings.Repeat("a", 26),
 		},
 		mustMis: []string{
 			"https://hooks.slack.com/services/T01/B01/short",

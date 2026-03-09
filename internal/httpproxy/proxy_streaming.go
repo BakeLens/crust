@@ -53,7 +53,7 @@ func (p *Proxy) handleStreamingRequest(ctx *RequestContext) {
 							Model:        ctx.Model,
 							TargetURL:    ctx.TargetURL,
 							Messages:     ctx.RequestBody,
-							Response:     json.RawMessage(`{"content":"` + escapeJSON(content) + `"}`),
+							Response:     marshalContentJSON(content),
 							ToolCalls:    toolCalls,
 							InputTokens:  in,
 							OutputTokens: out,

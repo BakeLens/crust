@@ -806,6 +806,20 @@ func escapeJSON(s string) string {
 	return string(b[1 : len(b)-1])
 }
 
+// marshalContentJSON builds a {"content":"..."} JSON object safely using
+// json.Marshal for the value, avoiding manual string concatenation that
+// static analyzers (CodeQL) flag as potentially unsafe quoting.
+func marshalContentJSON(content string) json.RawMessage {
+	obj := struct {
+		Content string `json:"content"`
+	}{Content: content}
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return json.RawMessage(`{"content":""}`)
+	}
+	return b
+}
+
 // computeSessionID generates a session ID from system prompt and first user message
 // Same session will have the same system prompt + first user message, so the hash is stable
 func computeSessionID(messages []requestMessage) string {
