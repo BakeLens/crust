@@ -3,7 +3,9 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/BakeLens/crust/internal/rules"
@@ -173,10 +175,40 @@ func TestSandboxPlugin_Init(t *testing.T) {
 		t.Errorf("config not parsed: %+v", sp.config)
 	}
 
-	// Invalid config.
+	// Invalid JSON.
 	bad := json.RawMessage(`{invalid}`)
 	if err := sp.Init(bad); err == nil {
 		t.Fatal("expected error for invalid config JSON")
+	}
+
+	// Invalid protocol.
+	badProto := json.RawMessage(`{"extra_ports":{"http":[80]}}`)
+	if err := sp.Init(badProto); err == nil {
+		t.Fatal("expected error for invalid protocol")
+	}
+
+	// Invalid port range.
+	badPort := json.RawMessage(`{"extra_ports":{"tcp":[0]}}`)
+	if err := sp.Init(badPort); err == nil {
+		t.Fatal("expected error for port 0")
+	}
+
+	// memory_limit_mb too low.
+	badMem := json.RawMessage(`{"resources":{"memory_limit_mb":1}}`)
+	if err := sp.Init(badMem); err == nil {
+		t.Fatal("expected error for memory_limit_mb < 16")
+	}
+
+	// cpu_time_limit_secs too low.
+	badCPU := json.RawMessage(`{"resources":{"cpu_time_limit_secs":0}}`)
+	if err := sp.Init(badCPU); err == nil {
+		t.Fatal("expected error for cpu_time_limit_secs < 1")
+	}
+
+	// max_processes too low.
+	badProc := json.RawMessage(`{"resources":{"max_processes":0}}`)
+	if err := sp.Init(badProc); err == nil {
+		t.Fatal("expected error for max_processes < 1")
 	}
 }
 
@@ -230,5 +262,100 @@ func TestSandboxPlugin_ExecWithoutBinary(t *testing.T) {
 	_, err := sp.Exec(context.Background(), policy)
 	if err == nil {
 		t.Fatal("expected error when binary not available")
+	}
+}
+
+func TestAbsolutePattern(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		// Already absolute — no change.
+		{"/etc/shadow", "/etc/shadow"},
+		{"/home/user/.ssh/**", "/home/user/.ssh/**"},
+		{"~/Documents/**", "~/Documents/**"},
+
+		// Relative ** patterns → prepend "/".
+		{"**/.env", "/**/.env"},
+		{"**/.env.*", "/**/.env.*"},
+		{"**/.crust/**", "/**/.crust/**"},
+		{"**/.git-credentials", "/**/.git-credentials"},
+		{"**/.npmrc", "/**/.npmrc"},
+		{"**/.vscode/settings.json", "/**/.vscode/settings.json"},
+		{"**/.git/hooks/**", "/**/.git/hooks/**"},
+		{"**/terraform.tfstate", "/**/terraform.tfstate"},
+		{"**/.claude/settings*.json", "/**/.claude/settings*.json"},
+
+		// Edge cases.
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := absolutePattern(tt.input)
+			if got != tt.want {
+				t.Errorf("absolutePattern(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAbsolutePatterns_InBuildPolicy(t *testing.T) {
+	sp := &SandboxPlugin{binaryPath: "/usr/bin/bakelens-sandbox"}
+	policy := sp.BuildPolicy(Request{
+		Command: "cat .env",
+		Rules: []RuleSnapshot{{
+			Name:        "protect-env",
+			Enabled:     true,
+			Actions:     []rules.Operation{rules.OpRead},
+			BlockPaths:  []string{"**/.env", "**/.env.*", "/etc/shadow"},
+			BlockExcept: []string{"**/.env.example"},
+		}},
+	})
+
+	if len(policy.Rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(policy.Rules))
+	}
+	r := policy.Rules[0]
+
+	wantPatterns := []string{"/**/.env", "/**/.env.*", "/etc/shadow"}
+	for i, want := range wantPatterns {
+		if r.Patterns[i] != want {
+			t.Errorf("pattern[%d] = %q, want %q", i, r.Patterns[i], want)
+		}
+	}
+
+	wantExcept := []string{"/**/.env.example"}
+	for i, want := range wantExcept {
+		if r.Except[i] != want {
+			t.Errorf("except[%d] = %q, want %q", i, r.Except[i], want)
+		}
+	}
+}
+
+func TestResolveHosts_NameTruncation(t *testing.T) {
+	longHost := strings.Repeat("a", 300)
+	entries := resolveHosts([]string{longHost})
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if len(entries[0].Name) != maxHostName {
+		t.Errorf("expected name truncated to %d, got %d", maxHostName, len(entries[0].Name))
+	}
+}
+
+func TestBuildDenyRules_MaxRulesClamped(t *testing.T) {
+	// Create 300 snapshots to exceed the 256 limit.
+	snaps := make([]RuleSnapshot, 300)
+	for i := range snaps {
+		snaps[i] = RuleSnapshot{
+			Name:       fmt.Sprintf("rule-%d", i),
+			Enabled:    true,
+			Actions:    []rules.Operation{rules.OpRead},
+			BlockPaths: []string{fmt.Sprintf("/tmp/path%d", i)},
+		}
+	}
+	result := buildDenyRules(snaps)
+	if len(result) != maxRules {
+		t.Errorf("expected %d rules (clamped), got %d", maxRules, len(result))
 	}
 }

@@ -84,7 +84,61 @@ func (s *SandboxPlugin) Init(cfg json.RawMessage) error {
 	if len(cfg) == 0 {
 		return nil
 	}
-	return json.Unmarshal(cfg, &s.config)
+	if err := json.Unmarshal(cfg, &s.config); err != nil {
+		return err
+	}
+	return s.config.validate()
+}
+
+// Sandbox schema limits (from bakelens-sandbox docs/schema.json).
+const (
+	maxRuleName    = 128
+	maxHostName    = 253
+	maxResolvedIPs = 64
+	maxRules       = 256
+)
+
+// validate checks SandboxConfig against sandbox schema constraints.
+func (c *SandboxConfig) validate() error {
+	for proto, ports := range c.ExtraPorts {
+		if proto != "tcp" && proto != "udp" && proto != "sctp" {
+			return fmt.Errorf("extra_ports: invalid protocol %q (must be tcp/udp/sctp)", proto)
+		}
+		for _, p := range ports {
+			if p < 1 || p > 65535 {
+				return fmt.Errorf("extra_ports[%s]: port %d out of range 1-65535", proto, p)
+			}
+		}
+	}
+	if c.Resources != nil {
+		if err := c.Resources.validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validate checks ResourcePolicy fields against sandbox schema ranges.
+func (r *ResourcePolicy) validate() error {
+	if r.MemoryLimitMB != nil {
+		v := *r.MemoryLimitMB
+		if v < 16 || v > 1048576 {
+			return fmt.Errorf("resources.memory_limit_mb: %d out of range 16-1048576", v)
+		}
+	}
+	if r.CPUTimeLimitSec != nil {
+		v := *r.CPUTimeLimitSec
+		if v < 1 || v > 922337203 {
+			return fmt.Errorf("resources.cpu_time_limit_secs: %d out of range 1-922337203", v)
+		}
+	}
+	if r.MaxProcesses != nil {
+		v := *r.MaxProcesses
+		if v < 1 {
+			return fmt.Errorf("resources.max_processes: %d must be >= 1", v)
+		}
+	}
+	return nil
 }
 
 // Evaluate builds a sandbox policy from the request.
@@ -192,15 +246,19 @@ func buildDenyRules(snapshots []RuleSnapshot) []DenyRule {
 		if !snap.Enabled {
 			continue
 		}
-		// Build filesystem deny rule if paths are present.
+		// Build filesystem deny rule if paths are present and at least one
+		// sandbox-supported operation exists (filters out network-only rules).
 		if len(snap.BlockPaths) > 0 {
-			dr := DenyRule{
-				Name:       snap.Name,
-				Patterns:   snap.BlockPaths,
-				Except:     snap.BlockExcept,
-				Operations: operationsToStrings(snap.Actions),
+			ops := operationsToStrings(snap.Actions)
+			if len(ops) > 0 {
+				dr := DenyRule{
+					Name:       snap.Name,
+					Patterns:   absolutePatterns(snap.BlockPaths),
+					Except:     absolutePatterns(snap.BlockExcept),
+					Operations: ops,
+				}
+				denyRules = append(denyRules, dr)
 			}
-			denyRules = append(denyRules, dr)
 		}
 		// Build network deny rule if hosts are present.
 		if len(snap.BlockHosts) > 0 {
@@ -215,6 +273,9 @@ func buildDenyRules(snapshots []RuleSnapshot) []DenyRule {
 	if denyRules == nil {
 		return []DenyRule{}
 	}
+	if len(denyRules) > maxRules {
+		denyRules = denyRules[:maxRules]
+	}
 	return denyRules
 }
 
@@ -227,7 +288,11 @@ func resolveHosts(hosts []string) []HostEntry {
 	ctx := context.Background()
 	entries := make([]HostEntry, 0, len(hosts))
 	for _, h := range hosts {
-		entry := HostEntry{Name: h}
+		name := h
+		if len(name) > maxHostName {
+			name = name[:maxHostName]
+		}
+		entry := HostEntry{Name: name}
 		// Check if already an IP or CIDR.
 		if net.ParseIP(h) != nil {
 			entry.ResolvedIPs = []string{h}
@@ -242,6 +307,9 @@ func resolveHosts(hosts []string) []HostEntry {
 				// it won't match real traffic.
 				entry.ResolvedIPs = []string{"0.0.0.0"}
 			} else {
+				if len(ips) > maxResolvedIPs {
+					ips = ips[:maxResolvedIPs]
+				}
 				entry.ResolvedIPs = ips
 			}
 		}
@@ -250,11 +318,52 @@ func resolveHosts(hosts []string) []HostEntry {
 	return entries
 }
 
-// operationsToStrings converts []rules.Operation to []string.
+// absolutePatterns converts "**/" prefixed glob patterns to absolute paths
+// required by the sandbox schema (must start with "/", "~", or "$HOME").
+//
+// The engine expands $HOME before patterns reach plugins, so by the time
+// this runs, all $HOME patterns are already absolute (e.g. "/Users/cyy/.ssh/id_*").
+// The only remaining case is "**/" recursive globs which need a "/" prefix.
+func absolutePatterns(patterns []string) []string {
+	if len(patterns) == 0 {
+		return patterns
+	}
+	out := make([]string, len(patterns))
+	for i, p := range patterns {
+		out[i] = absolutePattern(p)
+	}
+	return out
+}
+
+func absolutePattern(p string) string {
+	if len(p) == 0 || p[0] == '/' || p[0] == '~' {
+		return p
+	}
+	if strings.HasPrefix(p, "**/") {
+		return "/" + p // **/.env → /**/.env
+	}
+	return p
+}
+
+// sandboxOperations is the set of operations supported by the bakelens-sandbox schema.
+// "network" and "all" are crust-only operations that have no sandbox equivalent.
+var sandboxOperations = map[rules.Operation]bool{
+	rules.OpRead:    true,
+	rules.OpWrite:   true,
+	rules.OpDelete:  true,
+	rules.OpCopy:    true,
+	rules.OpMove:    true,
+	rules.OpExecute: true,
+}
+
+// operationsToStrings converts []rules.Operation to []string,
+// filtering out operations not supported by the sandbox schema.
 func operationsToStrings(ops []rules.Operation) []string {
-	out := make([]string, len(ops))
-	for i, op := range ops {
-		out[i] = string(op)
+	out := make([]string, 0, len(ops))
+	for _, op := range ops {
+		if sandboxOperations[op] {
+			out = append(out, string(op))
+		}
 	}
 	return out
 }

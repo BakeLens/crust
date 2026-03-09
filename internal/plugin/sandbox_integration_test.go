@@ -415,15 +415,38 @@ func validateDenyRuleSchema(t *testing.T, idx int, data json.RawMessage) {
 		_ = json.Unmarshal(o, &ops)
 		for _, op := range ops {
 			if !validOps[op] {
-				t.Errorf("%s: invalid operation %q", p, op)
+				t.Errorf("%s: invalid operation %q (sandbox schema only allows read/write/delete/copy/move/execute)", p, op)
 			}
 		}
 	}
+
+	// Validate patterns start with "/", "~", or "$HOME" (sandbox schema requirement).
+	validateAbsolutePatterns := func(field string) {
+		raw, ok := raw[field]
+		if !ok {
+			return
+		}
+		var pats []string
+		_ = json.Unmarshal(raw, &pats)
+		for pi, pat := range pats {
+			if len(pat) == 0 {
+				t.Errorf("%s.%s[%d]: empty pattern", p, field, pi)
+				continue
+			}
+			if pat[0] != '/' && pat[0] != '~' && !strings.HasPrefix(pat, "$HOME") {
+				t.Errorf("%s.%s[%d]: pattern %q must start with '/', '~', or '$HOME'", p, field, pi, pat)
+			}
+		}
+	}
+	validateAbsolutePatterns("patterns")
+	validateAbsolutePatterns("except")
 
 	var hosts []json.RawMessage
 	if h, ok := raw["hosts"]; ok {
 		_ = json.Unmarshal(h, &hosts)
 	}
+	// A rule with empty operations AND empty hosts is a no-op — rejected by schema.
+	// But this is valid for match-only rules that produce no sandbox deny rules.
 	if len(ops) == 0 && len(hosts) == 0 {
 		t.Errorf("%s: must have non-empty operations or hosts", p)
 	}
@@ -459,4 +482,152 @@ func validateDenyRuleSchema(t *testing.T, idx int, data json.RawMessage) {
 			}
 		}
 	}
+}
+
+// TestSandboxSchema_AllBuiltinRulePatterns verifies that representative patterns
+// from all builtin rule categories convert to valid sandbox InputPolicy without
+// schema violations. This catches issues like unsupported operations (e.g. "network").
+func TestSandboxSchema_AllBuiltinRulePatterns(t *testing.T) {
+	sp := &SandboxPlugin{binaryPath: "/usr/bin/bakelens-sandbox"}
+
+	tests := []struct {
+		name      string
+		req       Request
+		wantRules int // expected deny rule count
+	}{
+		{
+			name: "credential_rule_all_ops",
+			req: Request{
+				Command: "cat /etc/shadow",
+				Rules: []RuleSnapshot{{
+					Name:       "protect-credentials",
+					Enabled:    true,
+					Actions:    []rules.Operation{rules.OpRead, rules.OpExecute, rules.OpWrite, rules.OpDelete, rules.OpCopy, rules.OpMove, rules.OpNetwork},
+					BlockPaths: []string{"/home/user/.ssh/**", "/home/user/.gnupg/**"},
+				}},
+			},
+			wantRules: 1, // 1 fs rule (network op filtered out)
+		},
+		{
+			name: "write_delete_only_rule",
+			req: Request{
+				Command: "rm -rf /etc/bashrc",
+				Rules: []RuleSnapshot{{
+					Name:       "protect-shell-rc",
+					Enabled:    true,
+					Actions:    []rules.Operation{rules.OpWrite, rules.OpDelete},
+					BlockPaths: []string{"/home/user/.bashrc", "/home/user/.zshrc"},
+				}},
+			},
+			wantRules: 1,
+		},
+		{
+			name: "host_match_rule",
+			req: Request{
+				Command: "curl http://evil.com",
+				Rules: []RuleSnapshot{{
+					Name:       "block-exfil",
+					Enabled:    true,
+					BlockHosts: []string{"evil.com", "malware.org"},
+				}},
+			},
+			wantRules: 1, // 1 network rule
+		},
+		{
+			name: "mixed_fs_and_network",
+			req: Request{
+				Command: "curl http://internal.corp/secrets",
+				Rules: []RuleSnapshot{{
+					Name:       "mixed-rule",
+					Enabled:    true,
+					Actions:    []rules.Operation{rules.OpRead, rules.OpNetwork},
+					BlockPaths: []string{"/var/secrets/**"},
+					BlockHosts: []string{"internal.corp"},
+				}},
+			},
+			wantRules: 2, // 1 fs + 1 network
+		},
+		{
+			name: "disabled_rule_excluded",
+			req: Request{
+				Command: "echo hello",
+				Rules: []RuleSnapshot{{
+					Name:       "disabled-rule",
+					Enabled:    false,
+					Actions:    []rules.Operation{rules.OpRead},
+					BlockPaths: []string{"/etc/**"},
+				}},
+			},
+			wantRules: 0,
+		},
+		{
+			name: "many_paths_rule",
+			req: Request{
+				Command: "ls /",
+				Rules: []RuleSnapshot{{
+					Name:    "protect-system",
+					Enabled: true,
+					Actions: []rules.Operation{rules.OpRead, rules.OpWrite, rules.OpDelete, rules.OpCopy, rules.OpMove, rules.OpExecute},
+					BlockPaths: []string{
+						"/etc/shadow", "/etc/passwd", "/etc/sudoers",
+						"/root/**", "/var/log/**", "/boot/**",
+					},
+					BlockExcept: []string{"/etc/passwd"},
+				}},
+			},
+			wantRules: 1,
+		},
+		{
+			name: "network_only_ops_skip_fs_rule",
+			req: Request{
+				Command: "wget http://bad.com",
+				Rules: []RuleSnapshot{{
+					Name:       "network-only",
+					Enabled:    true,
+					Actions:    []rules.Operation{rules.OpNetwork},
+					BlockPaths: []string{"/tmp/**"},
+				}},
+			},
+			wantRules: 0, // network-only ops filtered; no valid fs rule produced
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := sp.BuildPolicy(tt.req)
+			if len(policy.Rules) != tt.wantRules {
+				t.Fatalf("expected %d deny rules, got %d: %+v", tt.wantRules, len(policy.Rules), policy.Rules)
+			}
+			validatePolicySchema(t, policy)
+		})
+	}
+}
+
+// TestSandboxSchema_NetworkOpFiltered verifies that the "network" and "all"
+// crust-only operations are stripped from sandbox deny rules.
+func TestSandboxSchema_NetworkOpFiltered(t *testing.T) {
+	sp := &SandboxPlugin{binaryPath: "/usr/bin/bakelens-sandbox"}
+	policy := sp.BuildPolicy(Request{
+		Command: "echo test",
+		Rules: []RuleSnapshot{{
+			Name:       "all-ops",
+			Enabled:    true,
+			Actions:    []rules.Operation{rules.OpRead, rules.OpWrite, rules.OpDelete, rules.OpCopy, rules.OpMove, rules.OpExecute, rules.OpNetwork},
+			BlockPaths: []string{"/tmp/**"},
+		}},
+	})
+
+	if len(policy.Rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(policy.Rules))
+	}
+	ops := policy.Rules[0].Operations
+	if len(ops) != 6 {
+		t.Fatalf("expected 6 operations (network filtered), got %d: %v", len(ops), ops)
+	}
+	for _, op := range ops {
+		if op == "network" || op == "all" {
+			t.Errorf("crust-only operation %q should not appear in sandbox policy", op)
+		}
+	}
+	validatePolicySchema(t, policy)
 }
