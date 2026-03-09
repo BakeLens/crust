@@ -457,8 +457,8 @@ func (e *Extractor) handlePipeToXargs(info *ExtractedInfo, commands []parsedComm
 		otherName, otherArgs := e.resolveCommand(other.Name, other.Args)
 		if (otherName == "echo" || otherName == "printf") && len(otherArgs) > 0 {
 			for _, arg := range otherArgs {
-				// Skip echo flags (-n, -e, -E)
-				if strings.HasPrefix(arg, "-") {
+				// Skip echo flags (-n, -e, -E, -ne, -nE, etc.)
+				if isEchoFlag(arg) {
 					continue
 				}
 				info.Paths = append(info.Paths, arg)
@@ -471,6 +471,23 @@ func (e *Extractor) handlePipeToXargs(info *ExtractedInfo, commands []parsedComm
 		}
 	}
 	return found
+}
+
+// isEchoFlag returns true if arg is a valid echo flag (combinations of n, e, E).
+// Prevents false negatives where "echo -\ /.env | xargs cat" skips "- /.env"
+// as a flag because it starts with "-".
+func isEchoFlag(arg string) bool {
+	if len(arg) < 2 || arg[0] != '-' {
+		return false
+	}
+	for i := 1; i < len(arg); i++ {
+		switch arg[i] {
+		case 'n', 'e', 'E':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // handlePowerShellIEX handles "Invoke-Expression 'Get-Content /etc/passwd'" and
