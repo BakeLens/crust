@@ -722,7 +722,7 @@ func TestValidateContent_CleanWrite(t *testing.T) {
 	}
 }
 
-// TestValidateContent_ObfuscationBlocked verifies step 5 detects base64 obfuscation.
+// TestValidateContent_ObfuscationBlocked verifies step 6 detects base64 obfuscation.
 func TestValidateContent_ObfuscationBlocked(t *testing.T) {
 	e := newMinimalEngine(t)
 	info := ExtractedInfo{
@@ -737,7 +737,7 @@ func TestValidateContent_ObfuscationBlocked(t *testing.T) {
 	}
 }
 
-// TestValidateContent_EvasiveBlocked verifies step 6 blocks evasive commands.
+// TestValidateContent_EvasiveBlocked verifies step 5 blocks evasive commands.
 func TestValidateContent_EvasiveBlocked(t *testing.T) {
 	e := newMinimalEngine(t)
 	info := ExtractedInfo{

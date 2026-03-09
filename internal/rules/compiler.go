@@ -20,6 +20,8 @@ type compiledMatch struct {
 	HostRegex    *regexp.Regexp // non-nil if Match.Host starts with "re:"
 	HostGlob     glob.Glob      // non-nil if Match.Host is a glob pattern
 	ContentRegex *regexp.Regexp // non-nil if Match.Content starts with "re:"
+	ContentLower string         // pre-lowered Match.Content for literal match (empty if regex)
+	CommandLower string         // pre-lowered Match.Command for literal match (empty if regex)
 }
 
 // compiledRule is a rule with pre-compiled matchers
@@ -175,6 +177,8 @@ func compileMatchPattern(m *Match) (*compiledMatch, error) {
 			return nil, fmt.Errorf("match.command regex %q: %w", m.Command, err)
 		}
 		cm.CommandRegex = re
+	} else if m.Command != "" {
+		cm.CommandLower = strings.ToLower(m.Command)
 	}
 
 	// Compile Host (regex or glob)
@@ -193,6 +197,8 @@ func compileMatchPattern(m *Match) (*compiledMatch, error) {
 			return nil, fmt.Errorf("match.content regex %q: %w", m.Content, err)
 		}
 		cm.ContentRegex = re
+	} else if m.Content != "" {
+		cm.ContentLower = strings.ToLower(m.Content)
 	}
 
 	return cm, nil

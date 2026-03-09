@@ -373,7 +373,7 @@ func (e *Engine) Evaluate(call ToolCall) MatchResult {
 	// Step 2: Extract paths and operation.
 	info := e.extractor.Extract(call.Name, call.Arguments)
 
-	// Steps 3-7: Content validation (Unicode, null bytes, obfuscation, evasion, DLP).
+	// Steps 3-7: Content validation (Unicode, null bytes, evasion, obfuscation, DLP).
 	if m := e.validateContent(&info); m != nil {
 		return *m
 	}
@@ -389,7 +389,7 @@ func (e *Engine) Evaluate(call ToolCall) MatchResult {
 }
 
 // validateContent runs content validation (steps 3-7): Unicode normalization,
-// null byte blocking, obfuscation detection, evasion blocking, and DLP.
+// null byte blocking, evasion blocking, obfuscation detection, and DLP.
 // Mutates info fields (Command, Content, RawJSON) via pointer.
 func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
 	// Step 3: Normalize Unicode (NFKC + strip invisible) before any matching.
@@ -399,7 +399,10 @@ func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
 	if info.Content != "" {
 		info.Content = NormalizeUnicode(info.Content)
 	}
-	if info.RawJSON != "" {
+	// Only normalize RawJSON if Content is empty (DLP/content-rules fall back to RawJSON).
+	// When Content is set, it's already normalized above and is a substring of RawJSON —
+	// normalizing both doubles the work for no security benefit.
+	if info.RawJSON != "" && info.Content == "" {
 		info.RawJSON = NormalizeUnicode(info.RawJSON)
 	}
 
@@ -411,7 +414,13 @@ func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
 		}
 	}
 
-	// Step 5: PreFilter — detect obfuscation (base64, hex encoding).
+	// Step 5: Block evasive commands that prevent static analysis.
+	if info.Evasive {
+		m := NewMatch("builtin:block-shell-evasion", SeverityHigh, ActionBlock, info.EvasiveReason)
+		return &m
+	}
+
+	// Step 6: PreFilter — detect obfuscation (base64, hex encoding).
 	if info.Command != "" {
 		if match := e.preFilter.Check(info.Command); match != nil {
 			m := NewMatch("builtin:block-obfuscation", SeverityHigh, ActionBlock, fmt.Sprintf("Blocked: %s (%s)", match.Reason, match.PatternName))
@@ -419,16 +428,11 @@ func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
 		}
 	}
 
-	// Step 6: Block evasive commands that prevent static analysis.
-	if info.Evasive {
-		m := NewMatch("builtin:block-shell-evasion", SeverityHigh, ActionBlock, info.EvasiveReason)
-		return &m
-	}
-
 	// Step 7: DLP — detect API keys/tokens in all operations.
-	dlpContent := info.RawJSON
+	// Prefer Content (already normalized) over RawJSON (may be unnormalized when Content is set).
+	dlpContent := info.Content
 	if dlpContent == "" {
-		dlpContent = info.Content
+		dlpContent = info.RawJSON
 	}
 	return e.ScanDLP(dlpContent)
 }
@@ -476,14 +480,12 @@ func (e *Engine) matchRules(info *ExtractedInfo, allPaths []string, toolName str
 	}
 
 	// Step 12: Fallback content-only rules — matches raw JSON of any tool.
-	contentForRules := info.RawJSON
+	// Prefer Content (already normalized) over RawJSON.
+	contentForRules := info.Content
 	if contentForRules == "" {
-		contentForRules = info.Content
+		contentForRules = info.RawJSON
 	}
 	for _, compiled := range rules {
-		if !compiled.Rule.IsEnabled() {
-			continue
-		}
 		if compiled.Rule.IsContentOnly() && contentForRules != "" {
 			// Respect actions filter; OpNone (unknown/MCP tools) always matches.
 			if info.Operation != OpNone && !compiled.Rule.HasAnyAction(info.Operations) {
@@ -494,7 +496,7 @@ func (e *Engine) matchRules(info *ExtractedInfo, allPaths []string, toolName str
 				if compiled.MatchCompiled.ContentRegex != nil {
 					contentMatched = compiled.MatchCompiled.ContentRegex.MatchString(contentForRules)
 				} else {
-					contentMatched = containsIgnoreCase(contentForRules, compiled.MatchCompiled.Match.Content)
+					contentMatched = strings.Contains(strings.ToLower(contentForRules), compiled.MatchCompiled.ContentLower)
 				}
 			}
 			if contentMatched {
@@ -511,11 +513,6 @@ func (e *Engine) matchRules(info *ExtractedInfo, allPaths []string, toolName str
 func (e *Engine) evaluateOperationRules(rules []compiledRule, info ExtractedInfo, normalizedPaths []string, toolName string) MatchResult {
 	// Evaluate against rules (sorted by priority)
 	for _, compiled := range rules {
-		// Skip disabled rules
-		if !compiled.Rule.IsEnabled() {
-			continue
-		}
-
 		// Skip if rule doesn't apply to any of this command's operations
 		if !compiled.Rule.HasAnyAction(info.Operations) {
 			continue
@@ -604,7 +601,7 @@ func (e *Engine) evaluateMatchCompiled(cm *compiledMatch, info ExtractedInfo, no
 				return false
 			}
 		} else {
-			if !containsIgnoreCase(info.Command, cm.Match.Command) {
+			if !strings.Contains(strings.ToLower(info.Command), cm.CommandLower) {
 				return false
 			}
 		}
@@ -627,8 +624,7 @@ func (e *Engine) evaluateMatchCompiled(cm *compiledMatch, info ExtractedInfo, no
 				return false
 			}
 		} else {
-			// Literal match (case-insensitive substring)
-			if !containsIgnoreCase(info.Content, cm.Match.Content) {
+			if !strings.Contains(strings.ToLower(info.Content), cm.ContentLower) {
 				return false
 			}
 		}
@@ -897,13 +893,22 @@ func mergeUnique(a, b []string) []string {
 	if len(b) == 0 {
 		return a
 	}
-	seen := make(map[string]bool, len(a))
-	result := make([]string, 0, len(a)+len(b))
-	for _, s := range a {
-		if !seen[s] {
-			seen[s] = true
-			result = append(result, s)
+	total := len(a) + len(b)
+	result := make([]string, 0, total)
+	result = append(result, a...)
+	// Linear scan for small inputs (typical: 1-3 paths) avoids map allocation.
+	if total <= 8 {
+		for _, s := range b {
+			found := slices.Contains(result, s)
+			if !found {
+				result = append(result, s)
+			}
 		}
+		return result
+	}
+	seen := make(map[string]bool, len(a))
+	for _, s := range a {
+		seen[s] = true
 	}
 	for _, s := range b {
 		if !seen[s] {
