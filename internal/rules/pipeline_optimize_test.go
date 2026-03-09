@@ -179,15 +179,17 @@ func BenchmarkFinding_ContainsIgnoreCaseAllocs(b *testing.B) {
 	content := strings.Repeat("This is some normal content with no secrets. ", 100)
 	substr := "api_key"
 
-	b.Run("current_containsIgnoreCase", func(b *testing.B) {
+	// Old approach: re-lower substr every call.
+	b.Run("relower_every_call", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			containsIgnoreCase(content, substr)
+			strings.Contains(strings.ToLower(content), strings.ToLower(substr))
 		}
 	})
 
+	// Current approach: substr pre-lowered at compile time.
 	substrLower := strings.ToLower(substr)
-	b.Run("optimized_prelowered_substr", func(b *testing.B) {
+	b.Run("prelowered_substr", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			strings.Contains(strings.ToLower(content), substrLower)

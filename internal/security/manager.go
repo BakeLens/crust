@@ -109,7 +109,6 @@ func Init(cfg Config) (*Manager, error) {
 		ruleEngine := rules.GetGlobalEngine()
 		if ruleEngine != nil {
 			m.interceptor = NewInterceptor(ruleEngine, storage)
-			m.interceptor.SetRegistry(m.registry)
 		}
 	}
 

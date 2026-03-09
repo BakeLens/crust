@@ -96,11 +96,6 @@ func matchTools(tools []string, toolName string) bool {
 	return slices.Contains(tools, toolLower)
 }
 
-// containsIgnoreCase checks if s contains substr (case-insensitive)
-func containsIgnoreCase(s, substr string) bool {
-	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
-}
-
 // sanitizePattern rejects patterns containing null bytes or control characters.
 // Returns an error so the user gets a clear message about what's wrong.
 func sanitizePattern(pattern string) error {

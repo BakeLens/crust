@@ -162,7 +162,7 @@ The shell parser detects several evasion techniques at the AST level:
 | **Base64 encoding** | Pre-filter regex catches `base64 -d` / `base64 --decode` patterns |
 | **Hex encoding** | Pre-filter catches 3+ consecutive `\xNN` escape sequences |
 
-The pre-filter runs before the shell parser (step 5) and catches encoding-based obfuscation where the actual command is hidden in encoded form — invisible to the parser at parse time. Other evasion techniques (fork bombs, eval) are detected at the AST level (step 6) after parsing.
+Evasion techniques (fork bombs, eval) are detected at the AST level (step 5) after parsing. The pre-filter runs next (step 6) and catches encoding-based obfuscation where the actual command is hidden in encoded form — invisible to the parser at parse time.
 
 ---
 

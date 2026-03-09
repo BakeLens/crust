@@ -485,6 +485,7 @@ func (e *Engine) matchRules(info *ExtractedInfo, allPaths []string, toolName str
 	if contentForRules == "" {
 		contentForRules = info.RawJSON
 	}
+	contentForRulesLower := strings.ToLower(contentForRules) // hoist outside loop
 	for _, compiled := range rules {
 		if compiled.Rule.IsContentOnly() && contentForRules != "" {
 			// Respect actions filter; OpNone (unknown/MCP tools) always matches.
@@ -496,7 +497,7 @@ func (e *Engine) matchRules(info *ExtractedInfo, allPaths []string, toolName str
 				if compiled.MatchCompiled.ContentRegex != nil {
 					contentMatched = compiled.MatchCompiled.ContentRegex.MatchString(contentForRules)
 				} else {
-					contentMatched = strings.Contains(strings.ToLower(contentForRules), compiled.MatchCompiled.ContentLower)
+					contentMatched = strings.Contains(contentForRulesLower, compiled.MatchCompiled.ContentLower)
 				}
 			}
 			if contentMatched {
@@ -906,9 +907,13 @@ func mergeUnique(a, b []string) []string {
 		}
 		return result
 	}
-	seen := make(map[string]bool, len(a))
+	seen := make(map[string]bool, total)
+	result = result[:0] // reset; re-add a with dedup
 	for _, s := range a {
-		seen[s] = true
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
 	}
 	for _, s := range b {
 		if !seen[s] {

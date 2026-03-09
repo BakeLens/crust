@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 
 	"github.com/BakeLens/crust/internal/message"
-	"github.com/BakeLens/crust/internal/plugin"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
 	"github.com/BakeLens/crust/internal/types"
@@ -21,10 +20,9 @@ const (
 
 // Interceptor handles tool call interception and response modification
 type Interceptor struct {
-	engine   *rules.Engine
-	storage  *telemetry.Storage
-	registry *plugin.Registry
-	enabled  atomic.Bool
+	engine  *rules.Engine
+	storage *telemetry.Storage
+	enabled atomic.Bool
 }
 
 // NewInterceptor creates a new interceptor
@@ -35,11 +33,6 @@ func NewInterceptor(engine *rules.Engine, storage *telemetry.Storage) *Intercept
 	}
 	i.enabled.Store(true)
 	return i
-}
-
-// SetRegistry attaches a plugin registry for post-engine evaluation.
-func (i *Interceptor) SetRegistry(r *plugin.Registry) {
-	i.registry = r
 }
 
 // SetEnabled enables or disables the interceptor
