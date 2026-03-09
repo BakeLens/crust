@@ -55,7 +55,7 @@ func TestSandboxPlugin_BuildPolicy(t *testing.T) {
 		binaryPath: "/usr/bin/bakelens-sandbox",
 		config: SandboxConfig{
 			ExtraPorts: map[string][]int{"tcp": {8080, 443}},
-			Resources:  &ResourcePolicy{MaxMemoryMB: 512},
+			Resources:  &ResourcePolicy{MemoryLimitMB: new(512)},
 		},
 	}
 
@@ -142,8 +142,8 @@ func TestSandboxPlugin_BuildPolicy(t *testing.T) {
 	if len(policy.ExtraPorts) != 1 {
 		t.Errorf("expected 1 extra_ports entry, got %d", len(policy.ExtraPorts))
 	}
-	if policy.Resources == nil || policy.Resources.MaxMemoryMB != 512 {
-		t.Errorf("expected resources with MaxMemoryMB=512, got %+v", policy.Resources)
+	if policy.Resources == nil || policy.Resources.MemoryLimitMB == nil || *policy.Resources.MemoryLimitMB != 512 {
+		t.Errorf("expected resources with MemoryLimitMB=512, got %+v", policy.Resources)
 	}
 
 	// Verify the policy marshals to valid JSON.
@@ -165,11 +165,11 @@ func TestSandboxPlugin_Init(t *testing.T) {
 	}
 
 	// Valid config.
-	cfg := json.RawMessage(`{"extra_ports":{"tcp":[80]},"resources":{"max_memory_mb":256}}`)
+	cfg := json.RawMessage(`{"extra_ports":{"tcp":[80]},"resources":{"memory_limit_mb":256}}`)
 	if err := sp.Init(cfg); err != nil {
 		t.Fatalf("Init(valid) error: %v", err)
 	}
-	if sp.config.Resources == nil || sp.config.Resources.MaxMemoryMB != 256 {
+	if sp.config.Resources == nil || sp.config.Resources.MemoryLimitMB == nil || *sp.config.Resources.MemoryLimitMB != 256 {
 		t.Errorf("config not parsed: %+v", sp.config)
 	}
 
