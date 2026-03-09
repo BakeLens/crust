@@ -1,7 +1,7 @@
 package selfprotect
 
 import (
-	"strings"
+	"regexp"
 	"testing"
 )
 
@@ -145,19 +145,17 @@ func FuzzSelfProtectBypass(f *testing.F) {
 	f.Add("http://[::1]:9090/crust")
 	f.Add("http://0x7f000001:9090/crust")
 
+	// Oracle patterns: loopback URL with "crust" in the same URL structure.
+	// Pattern 1: loopback host with "crust" in the path — e.g. http://localhost:9090/crust
+	oracleLoopbackCrust := regexp.MustCompile(`(?i)[a-z][a-z0-9+\-.]*://(?:localhost|127\.0\.0\.1)\b[^\s]*crust`)
+	// Pattern 2: "crust" scheme with loopback host — e.g. crust://localhost
+	oracleCrustScheme := regexp.MustCompile(`(?i)\bcrust\w*://(?:localhost|127\.0\.0\.1)`)
+
 	f.Fuzz(func(t *testing.T, input string) {
 		result := Check(input)
 
-		// Oracle: if the input clearly contains a loopback URL targeting crust,
-		// it must be blocked.
-		lower := strings.ToLower(input)
-		hasLoopback := strings.Contains(lower, "127.0.0.1") || strings.Contains(lower, "localhost")
-		hasCrust := strings.Contains(lower, "crust")
-
-		if hasLoopback && hasCrust && result == nil {
-			if strings.Contains(lower, "://127.0.0.1") || strings.Contains(lower, "://localhost") {
-				t.Errorf("BYPASS: %q contains loopback+crust URL but was not blocked", input)
-			}
+		if result == nil && (oracleLoopbackCrust.MatchString(input) || oracleCrustScheme.MatchString(input)) {
+			t.Errorf("BYPASS: %q contains loopback+crust URL but was not blocked", input)
 		}
 	})
 }

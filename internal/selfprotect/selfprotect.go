@@ -37,7 +37,7 @@ var selfProtectAPIRegex = regexp.MustCompile(
 		`lacolhost\.com` + // known rebinding domain → 127.0.0.1
 		`)[:/].*crust` +
 		`|://0[:/].*crust` + // bare 0 as URL host (= 0.0.0.0)
-		`|crust://(?:` + // reverse: "crust" as URL scheme, loopback as host
+		`|crust\w*://(?:` + // reverse: "crust*" as URL scheme, loopback as host
 		`localhost|` +
 		`127\.\d{1,3}\.\d{1,3}\.\d{1,3}|` +
 		`\[?::(?:ffff:)?127\.\d{1,3}\.\d{1,3}\.\d{1,3}\]?|` +

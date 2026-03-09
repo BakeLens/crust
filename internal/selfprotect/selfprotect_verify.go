@@ -31,7 +31,7 @@ var selfProtectAPIRegex = regexp.MustCompile(
 		`lacolhost\.com` +
 		`)[:/].*crust` +
 		`|://0[:/].*crust` +
-		`|crust://(?:` +
+		`|crust\w*://(?:` +
 		`localhost|` +
 		`127\.\d{1,3}\.\d{1,3}\.\d{1,3}|` +
 		`\[?::(?:ffff:)?127\.\d{1,3}\.\d{1,3}\.\d{1,3}\]?|` +
@@ -128,6 +128,7 @@ var apiMustBlock = []struct {
 
 	// Reverse: "crust" as URL scheme, loopback as host
 	{"crust:// scheme localhost", `Crust://loCAlhost`},
+	{"crust0:// scheme bypass", `Crust0://loCAlhost`},
 	{"crust:// scheme localhost mixed", `crust://LOCALHOST`},
 	{"crust:// scheme 127.0.0.1", `crust://127.0.0.1:9090/api`},
 	{"crust:// scheme [::1]", `crust://[::1]:9090/api`},
