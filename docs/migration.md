@@ -1,5 +1,61 @@
 # Migration Guide
 
+## Stats Aggregation API
+
+### What Changed
+
+Three new read-only endpoints provide pre-aggregated stats from `tool_call_logs` for dashboards and GUIs. These run SQL aggregation server-side instead of requiring clients to fetch raw logs and compute stats locally.
+
+### New Endpoints
+
+| Endpoint | Query Params | Description |
+|----------|-------------|-------------|
+| `GET /api/telemetry/stats/trend` | `range` (`7d`, `30d`, `90d`) | Daily total/blocked call counts, grouped by date |
+| `GET /api/telemetry/stats/distribution` | `range` (`7d`, `30d`, `90d`) | Block counts grouped by rule name and by tool name |
+| `GET /api/telemetry/stats/coverage` | `range` (`7d`, `30d`, `90d`) | Detected AI tools with total calls, blocked calls, API type, last seen |
+
+All endpoints default to a sensible range if `range` is omitted (7d for trend, 30d for distribution/coverage). Maximum range is 90 days.
+
+### Example Responses
+
+**Trend:**
+```json
+[
+  {"date": "2026-03-08", "total_calls": 142, "blocked_calls": 3},
+  {"date": "2026-03-09", "total_calls": 87, "blocked_calls": 1}
+]
+```
+
+**Distribution:**
+```json
+{
+  "by_rule": [{"rule": "block-env-files", "count": 12}],
+  "by_tool": [{"tool_name": "Bash", "count": 8}]
+}
+```
+
+**Coverage:**
+```json
+[
+  {"tool_name": "Bash", "api_type": "anthropic", "total_calls": 340, "blocked_calls": 5, "last_seen": "2026-03-10 14:30:00"}
+]
+```
+
+### Architecture
+
+The endpoints use a framework-agnostic `StatsService` (`internal/telemetry/stats.go`) with plain `net/http` handlers. These are mounted in the Gin router via `gin.WrapF`. The service can also be used directly from Go code (CLI, TUI, tests) without any HTTP or Gin dependency.
+
+### TUI
+
+The live dashboard (`crust status --live`) has a new **Stats** tab (press `3`) showing a 7-day block trend chart, top blocked rules/tools, and tool coverage.
+
+### Impact
+
+- No breaking changes. Existing endpoints are unchanged.
+- Available on both Unix socket and TCP (when `--listen-address` is non-loopback).
+
+---
+
 ## Management API on Proxy Port (v2.0 → v2.2)
 
 ### What Changed

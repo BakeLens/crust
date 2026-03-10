@@ -2,11 +2,13 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 )
 
 // StatsService provides stats aggregation queries for dashboards, CLIs, and APIs.
-// It wraps Storage with parameter validation and defaults — no HTTP dependency.
+// It wraps Storage with parameter validation and defaults — no framework dependency.
 type StatsService struct {
 	storage *Storage
 }
@@ -74,4 +76,48 @@ func (s *StatsService) GetCoverage(ctx context.Context, rangeStr string) ([]Cove
 		tools = []CoverageTool{}
 	}
 	return tools, nil
+}
+
+// =============================================================================
+// net/http handlers — no Gin dependency
+// =============================================================================
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v) //nolint:errcheck
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// HandleBlockTrend is a plain net/http handler for GET /api/telemetry/stats/trend?range=7d
+func (s *StatsService) HandleBlockTrend(w http.ResponseWriter, r *http.Request) {
+	points, err := s.GetBlockTrend(r.Context(), r.URL.Query().Get("range"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get trend data")
+		return
+	}
+	writeJSON(w, http.StatusOK, points)
+}
+
+// HandleDistribution is a plain net/http handler for GET /api/telemetry/stats/distribution?range=30d
+func (s *StatsService) HandleDistribution(w http.ResponseWriter, r *http.Request) {
+	dist, err := s.GetDistribution(r.Context(), r.URL.Query().Get("range"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get distribution data")
+		return
+	}
+	writeJSON(w, http.StatusOK, dist)
+}
+
+// HandleCoverage is a plain net/http handler for GET /api/telemetry/stats/coverage?range=30d
+func (s *StatsService) HandleCoverage(w http.ResponseWriter, r *http.Request) {
+	tools, err := s.GetCoverage(r.Context(), r.URL.Query().Get("range"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get coverage data")
+		return
+	}
+	writeJSON(w, http.StatusOK, tools)
 }

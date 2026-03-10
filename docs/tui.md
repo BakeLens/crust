@@ -37,10 +37,34 @@ internal/tui/
   startup/          Interactive huh-based setup wizard with themed forms
   terminal/         Terminal emulator detection and capability bitfield
   progress/         Determinate progress bar for multi-step operations
-  dashboard/        Live status dashboard with auto-refreshing metrics
+  dashboard/        Live status dashboard with auto-refreshing metrics + stats tab
   logview/          Scrollable log viewport with syntax highlighting + block flash
   rulelist/         Interactive filterable rules list with scroll navigation
 ```
+
+## Live Dashboard
+
+The live dashboard (`crust status --live`) is a bubbletea-based interactive TUI with three tabs, auto-refreshing every 2 seconds.
+
+### Tabs
+
+| Tab | Key | Content |
+|-----|-----|---------|
+| **Overview** | `1` | PID, rules, health, security status, blocked call counter with shimmer animation |
+| **Sessions** | `2` | Split-pane: session list (left) with per-session events (right). `↑↓` to navigate sessions |
+| **Stats** | `3` | Block trend chart (7 days), block distribution by rule/tool (30 days), tool coverage |
+
+Press `tab` to cycle tabs, number keys for direct access, `r` to force refresh, `q` to quit.
+
+### Stats Tab
+
+The Stats tab visualizes data from the stats aggregation API endpoints:
+
+- **Block Trend** — Horizontal bar chart showing daily total vs blocked calls over 7 days. Blocked bars render in red, allowed in green. Scaled relative to the busiest day.
+- **Block Distribution** — Top 5 rules and top 5 tools ranked by block count over 30 days.
+- **Tool Coverage** — Detected AI tools with total call count, blocked count, and API type. Tools with blocks show `⊘ N blocked`; clean tools show `✔`.
+
+Data is fetched from `/api/telemetry/stats/trend`, `/api/telemetry/stats/distribution`, and `/api/telemetry/stats/coverage`.
 
 ## Plain Mode
 

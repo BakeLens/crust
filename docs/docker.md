@@ -62,6 +62,11 @@ crust list-rules --api-addr localhost:9090
 curl http://localhost:9090/api/security/status
 curl http://localhost:9090/api/security/stats
 curl http://localhost:9090/api/telemetry/sessions
+
+# Stats aggregation (for dashboards)
+curl http://localhost:9090/api/telemetry/stats/trend?range=7d
+curl http://localhost:9090/api/telemetry/stats/distribution?range=30d
+curl http://localhost:9090/api/telemetry/stats/coverage?range=30d
 ```
 
 The `--api-addr` flag tells CLI commands to connect over TCP instead of the local Unix socket. No extra ports needed — the API shares the existing proxy port. On localhost (the default `--listen-address`), the API is only accessible via Unix socket.
