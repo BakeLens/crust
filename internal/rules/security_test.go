@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -171,7 +172,7 @@ func TestLockedRulesSurviveDisableBuiltin(t *testing.T) {
 // remain active when --disable-builtin is set.
 func TestDynamicProtectionRulesSurviveDisableBuiltin(t *testing.T) {
 	rulesDir := t.TempDir()
-	engine, err := NewEngine(EngineConfig{
+	engine, err := NewEngine(context.Background(), EngineConfig{
 		DisableBuiltin: true,
 		UserRulesDir:   rulesDir,
 	})

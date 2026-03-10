@@ -2,6 +2,7 @@ package rules
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -125,15 +126,18 @@ func GetGlobalEngine() *Engine {
 	return globalEngine
 }
 
-// NewEngine creates a new path-based rule engine
-func NewEngine(cfg EngineConfig) (*Engine, error) {
-	return NewEngineWithNormalizer(cfg, NewNormalizer())
+// NewEngine creates a new path-based rule engine.
+// The context controls the lifetime of worker subprocesses (shell, pwsh);
+// canceling it terminates those subprocesses.
+func NewEngine(ctx context.Context, cfg EngineConfig) (*Engine, error) {
+	return NewEngineWithNormalizer(ctx, cfg, NewNormalizer())
 }
 
 // NewEngineWithNormalizer creates a new engine with a custom normalizer.
 // The normalizer is used from the start so $HOME in YAML rules expands
 // to the normalizer's home directory before pattern compilation.
-func NewEngineWithNormalizer(cfg EngineConfig, normalizer *Normalizer) (*Engine, error) {
+// The context controls the lifetime of worker subprocesses.
+func NewEngineWithNormalizer(ctx context.Context, cfg EngineConfig, normalizer *Normalizer) (*Engine, error) {
 	loader := NewLoader(cfg.UserRulesDir)
 
 	// Build extractor env that matches normalizer so shell interpreter
@@ -162,7 +166,7 @@ func NewEngineWithNormalizer(cfg EngineConfig, normalizer *Normalizer) (*Engine,
 
 	if cfg.SubprocessIsolation {
 		if exe, err := os.Executable(); err == nil {
-			if err := e.extractor.EnableSubprocessIsolation(exe); err != nil {
+			if err := e.extractor.EnableSubprocessIsolation(ctx, exe); err != nil {
 				log.Warn("Shell worker failed to start (falling back to in-process): %v", err)
 			}
 		}
@@ -172,7 +176,7 @@ func NewEngineWithNormalizer(cfg EngineConfig, normalizer *Normalizer) (*Engine,
 		// Windows 10/11 always ships powershell.exe (5.1); pwsh.exe (7+) is
 		// optional. pwsh.FindPwsh() should always succeed on supported platforms.
 		if pwshPath, ok := pwsh.FindPwsh(); ok {
-			if err := e.extractor.EnablePSWorker(pwshPath); err != nil {
+			if err := e.extractor.EnablePSWorker(ctx, pwshPath); err != nil {
 				log.Warn("PS worker failed to start (falling back to heuristic PS transform): %v", err)
 			}
 		} else {

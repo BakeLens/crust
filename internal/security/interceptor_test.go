@@ -2,6 +2,7 @@ package security
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -78,7 +79,7 @@ func createTestInterceptor(t *testing.T, rulesYAML string) (*Interceptor, func()
 
 	tempDir := setupTestRulesDir(t, rulesYAML)
 
-	engine, err := rules.NewEngine(rules.EngineConfig{
+	engine, err := rules.NewEngine(context.Background(), rules.EngineConfig{
 		UserRulesDir:   tempDir,
 		DisableBuiltin: true,
 	})
@@ -1529,7 +1530,7 @@ func FuzzInterceptAnthropicResponse(f *testing.F) {
 	if err := os.WriteFile(filepath.Join(rulesDir, "fuzz-rules.yaml"), []byte(blockBashYAML), 0644); err != nil {
 		f.Fatalf("Failed to write fuzz rules: %v", err)
 	}
-	engine, err := rules.NewEngine(rules.EngineConfig{
+	engine, err := rules.NewEngine(context.Background(), rules.EngineConfig{
 		UserRulesDir:   rulesDir,
 		DisableBuiltin: true,
 	})

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -8,7 +9,7 @@ import (
 // TestDLPFalsePositives verifies DLP patterns do NOT fire on normal code
 // that happens to contain similar-looking strings.
 func TestDLPFalsePositives(t *testing.T) {
-	engine, err := NewEngine(EngineConfig{DisableBuiltin: false})
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestDLPFalsePositives(t *testing.T) {
 
 // TestDLPBypass_Caught tests bypass attempts the normalizer defeats.
 func TestDLPBypass_Caught(t *testing.T) {
-	engine, err := NewEngine(EngineConfig{DisableBuiltin: false})
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -165,7 +166,7 @@ func TestDLPBypass_Caught(t *testing.T) {
 
 // TestDLPBypass_NotCaught documents known gaps where DLP cannot detect secrets.
 func TestDLPBypass_NotCaught(t *testing.T) {
-	engine, err := NewEngine(EngineConfig{DisableBuiltin: false})
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -207,7 +208,7 @@ func TestDLPBypass_NotCaught(t *testing.T) {
 
 // TestDLPSecretDetection tests that the DLP engine blocks writes containing secrets.
 func TestDLPSecretDetection(t *testing.T) {
-	engine, err := NewEngine(EngineConfig{DisableBuiltin: false})
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -461,7 +462,7 @@ func TestDLPSecretDetection(t *testing.T) {
 // TestToolNameSanitization verifies null bytes and control chars in tool names
 // are stripped before extraction, so the tool is still correctly identified.
 func TestToolNameSanitization(t *testing.T) {
-	engine, err := NewEngine(EngineConfig{DisableBuiltin: false})
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -482,7 +483,7 @@ func TestToolNameSanitization(t *testing.T) {
 
 // TestNullByteWriteBlocked verifies that write content with null bytes is blocked.
 func TestNullByteWriteBlocked(t *testing.T) {
-	engine, err := NewEngine(EngineConfig{DisableBuiltin: false})
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -503,7 +504,7 @@ func TestNullByteWriteBlocked(t *testing.T) {
 
 // TestNullByteWriteAllowsCleanContent verifies normal writes are not affected.
 func TestNullByteWriteAllowsCleanContent(t *testing.T) {
-	engine, err := NewEngine(EngineConfig{DisableBuiltin: false})
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -522,7 +523,7 @@ func TestNullByteWriteAllowsCleanContent(t *testing.T) {
 
 // TestDLPScanAllOperations verifies DLP fires on execute/network operations, not just writes.
 func TestScanDLP_CryptoDetection(t *testing.T) {
-	engine, err := NewEngine(EngineConfig{DisableBuiltin: false})
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -539,7 +540,7 @@ func TestScanDLP_CryptoDetection(t *testing.T) {
 }
 
 func TestDLPScanAllOperations(t *testing.T) {
-	engine, err := NewEngine(EngineConfig{DisableBuiltin: false})
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -582,7 +583,7 @@ func TestDLPScanAllOperations(t *testing.T) {
 // TestCommandUnicodeNormalization verifies that commands with zero-width
 // invisible characters are normalized before PreFilter and rule matching.
 func TestCommandUnicodeNormalization(t *testing.T) {
-	engine, err := NewEngine(EngineConfig{DisableBuiltin: false})
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

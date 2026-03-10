@@ -3,6 +3,7 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -222,7 +223,7 @@ func TestPSWorker_BasicExtraction(t *testing.T) {
 	}
 
 	ext := NewExtractorWithEnv(map[string]string{"HOME": "C:\\Users\\user", "USERPROFILE": "C:\\Users\\user"})
-	if err := ext.EnablePSWorker(pwshPath); err != nil {
+	if err := ext.EnablePSWorker(context.Background(), pwshPath); err != nil {
 		t.Fatalf("EnablePSWorker: %v", err)
 	}
 	defer ext.Close()
@@ -306,7 +307,7 @@ func TestPSWorker_EvasionIntegrity(t *testing.T) {
 	}
 
 	ext := NewExtractor()
-	if err := ext.EnablePSWorker(pwshPath); err != nil {
+	if err := ext.EnablePSWorker(context.Background(), pwshPath); err != nil {
 		t.Fatalf("EnablePSWorker: %v", err)
 	}
 	defer ext.Close()
@@ -906,7 +907,7 @@ func TestPSWorker_IEX_OpExecuteOnly(t *testing.T) {
 	}
 
 	ext := NewExtractorWithEnv(nil)
-	if err := ext.EnablePSWorker(pwshPath); err != nil {
+	if err := ext.EnablePSWorker(context.Background(), pwshPath); err != nil {
 		t.Fatalf("EnablePSWorker: %v", err)
 	}
 	defer ext.Close()
@@ -1534,7 +1535,7 @@ func FuzzExtractor_PSCommand(f *testing.F) {
 		"HOME":        "C:\\Users\\user",
 		"USERPROFILE": "C:\\Users\\user",
 	})
-	if err := ext.EnablePSWorker(pwshPath); err != nil {
+	if err := ext.EnablePSWorker(context.Background(), pwshPath); err != nil {
 		f.Fatalf("EnablePSWorker: %v", err)
 	}
 	defer ext.Close()
@@ -2063,7 +2064,7 @@ func TestPSWorker_EnvVarExpansion(t *testing.T) {
 		"USERPROFILE": `C:\Users\user`,
 		"APPDATA":     `C:\Users\user\AppData\Roaming`,
 	})
-	if err := ext.EnablePSWorker(pwshPath); err != nil {
+	if err := ext.EnablePSWorker(context.Background(), pwshPath); err != nil {
 		t.Fatalf("EnablePSWorker: %v", err)
 	}
 	defer ext.Close()

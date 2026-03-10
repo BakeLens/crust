@@ -1,6 +1,9 @@
 package pwsh
 
-import "runtime"
+import (
+	"context"
+	"runtime"
+)
 
 // defaultPoolSize is the number of pwsh workers to keep ready.
 // Capped at 4: each worker is a full pwsh subprocess (~50 MB RSS + JIT warm-up).
@@ -15,13 +18,14 @@ type WorkerPool struct {
 
 // NewWorkerPool creates a pool of size workers, all pointing to pwshPath.
 // size <= 0 uses min(GOMAXPROCS, defaultPoolSize).
-func NewWorkerPool(pwshPath string, size int) (*WorkerPool, error) {
+// The context controls the lifetime of all worker subprocesses.
+func NewWorkerPool(ctx context.Context, pwshPath string, size int) (*WorkerPool, error) {
 	if size <= 0 {
 		size = min(runtime.GOMAXPROCS(0), defaultPoolSize)
 	}
 	workers := make([]*Worker, size)
 	for i := range size {
-		w, err := NewWorker(pwshPath)
+		w, err := NewWorker(ctx, pwshPath)
 		if err != nil {
 			for _, wk := range workers[:i] {
 				wk.Stop()

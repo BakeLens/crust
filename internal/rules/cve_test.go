@@ -5,6 +5,7 @@ package rules
 // blocks the attack.  See docs/cve-tracker.md for the full list.
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -16,7 +17,7 @@ import (
 // production configuration). Used by CVE tests to verify real defense.
 func newBuiltinEngine(t *testing.T) *Engine {
 	t.Helper()
-	engine, err := NewEngine(EngineConfig{DisableBuiltin: false})
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
 	if err != nil {
 		t.Fatalf("Failed to create builtin engine: %v", err)
 	}

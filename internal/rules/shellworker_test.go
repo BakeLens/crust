@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"slices"
@@ -26,7 +27,7 @@ func TestShellWorkerSubprocess(t *testing.T) {
 	}
 
 	ext := NewExtractor()
-	if err := ext.EnableSubprocessIsolation(exe); err != nil {
+	if err := ext.EnableSubprocessIsolation(context.Background(), exe); err != nil {
 		t.Fatalf("EnableSubprocessIsolation failed: %v", err)
 	}
 	defer ext.Close()
@@ -63,7 +64,7 @@ func TestShellWorkerCrashRecovery(t *testing.T) {
 	}
 
 	ext := NewExtractor()
-	if err := ext.EnableSubprocessIsolation(exe); err != nil {
+	if err := ext.EnableSubprocessIsolation(context.Background(), exe); err != nil {
 		t.Fatalf("EnableSubprocessIsolation failed: %v", err)
 	}
 	defer ext.Close()

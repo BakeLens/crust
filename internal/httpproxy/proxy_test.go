@@ -447,7 +447,7 @@ func setupSecurityWithRules(t *testing.T, yamlRules string) func() {
 	}
 
 	// Create rules engine from YAML (no builtin rules)
-	engine, err := rules.NewEngine(rules.EngineConfig{
+	engine, err := rules.NewEngine(context.Background(), rules.EngineConfig{
 		UserRulesDir:   tempDir,
 		DisableBuiltin: true,
 	})

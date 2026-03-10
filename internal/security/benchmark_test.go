@@ -1,6 +1,7 @@
 package security
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -18,7 +19,7 @@ func createBenchInterceptor(b *testing.B) (*Interceptor, func()) {
 
 	tempDir := b.TempDir()
 
-	engine, err := rules.NewEngine(rules.EngineConfig{
+	engine, err := rules.NewEngine(context.Background(), rules.EngineConfig{
 		UserRulesDir:   tempDir,
 		DisableBuiltin: false, // use builtin rules for realistic benchmarks
 	})
@@ -278,7 +279,7 @@ func BenchmarkNewInterceptor(b *testing.B) {
 	_ = os.WriteFile(rulePath, []byte("rules:\n  - block: \"**/.env\"\n"), 0644)
 
 	for b.Loop() {
-		engine, _ := rules.NewEngine(rules.EngineConfig{
+		engine, _ := rules.NewEngine(context.Background(), rules.EngineConfig{
 			UserRulesDir:   tempDir,
 			DisableBuiltin: false,
 		})

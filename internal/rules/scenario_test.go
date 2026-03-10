@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -52,7 +53,7 @@ func createEngineWithBuiltinRules(t *testing.T) *Engine {
 	t.Helper()
 
 	normalizer := NewNormalizerWithEnv("/home/user", "/home/user/project", nil)
-	engine, err := NewEngineWithNormalizer(EngineConfig{
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{
 		UserRulesDir:   "", // No user rules
 		DisableBuiltin: false,
 	}, normalizer)

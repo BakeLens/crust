@@ -2,6 +2,7 @@
 package testutil
 
 import (
+	"context"
 	"testing"
 
 	"github.com/BakeLens/crust/internal/logger"
@@ -27,7 +28,7 @@ func FailOnLogError(t testing.TB) {
 // Accepts *testing.T, *testing.F, or *testing.B.
 func NewEngine(tb testing.TB) *rules.Engine {
 	tb.Helper()
-	engine, err := rules.NewEngine(rules.EngineConfig{
+	engine, err := rules.NewEngine(context.Background(), rules.EngineConfig{
 		UserRulesDir:   tb.TempDir(),
 		DisableBuiltin: false,
 	})
@@ -43,7 +44,7 @@ func NewEngine(tb testing.TB) *rules.Engine {
 func NewEngineWithHome(tb testing.TB, homeDir string) *rules.Engine {
 	tb.Helper()
 	normalizer := rules.NewNormalizerWithEnv(homeDir, homeDir, nil)
-	engine, err := rules.NewEngineWithNormalizer(rules.EngineConfig{
+	engine, err := rules.NewEngineWithNormalizer(context.Background(), rules.EngineConfig{
 		UserRulesDir:   tb.TempDir(),
 		DisableBuiltin: false,
 	}, normalizer)

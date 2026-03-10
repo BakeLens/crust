@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -4085,7 +4086,7 @@ func TestCommandDB_DotNetAPIs(t *testing.T) {
 		t.Skip("skipping: pwsh.exe / powershell.exe not found — .NET API detection requires the pwsh worker")
 	}
 	ext := NewExtractor()
-	if err := ext.EnablePSWorker(pwshPath); err != nil {
+	if err := ext.EnablePSWorker(context.Background(), pwshPath); err != nil {
 		t.Fatalf("EnablePSWorker: %v", err)
 	}
 	defer ext.Close()

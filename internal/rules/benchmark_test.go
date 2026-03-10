@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -15,7 +16,7 @@ func BenchmarkRuleMatching(b *testing.B) {
 		DisableBuiltin: false,
 		UserRulesDir:   b.TempDir(),
 	}
-	engine, err := NewEngine(cfg)
+	engine, err := NewEngine(context.Background(), cfg)
 	if err != nil {
 		b.Fatalf("Failed to create engine: %v", err)
 	}
@@ -116,7 +117,7 @@ func BenchmarkRuleMatchingParallel(b *testing.B) {
 		DisableBuiltin: false,
 		UserRulesDir:   b.TempDir(),
 	}
-	engine, err := NewEngine(cfg)
+	engine, err := NewEngine(context.Background(), cfg)
 	if err != nil {
 		b.Fatalf("Failed to create engine: %v", err)
 	}
@@ -141,7 +142,7 @@ func BenchmarkRegexMatching(b *testing.B) {
 		DisableBuiltin: false,
 		UserRulesDir:   b.TempDir(),
 	}
-	engine, err := NewEngine(cfg)
+	engine, err := NewEngine(context.Background(), cfg)
 	if err != nil {
 		b.Fatalf("Failed to create engine: %v", err)
 	}
@@ -183,7 +184,7 @@ func BenchmarkEngineCreation(b *testing.B) {
 				DisableBuiltin: false,
 				UserRulesDir:   b.TempDir(),
 			}
-			_, _ = NewEngine(cfg)
+			_, _ = NewEngine(context.Background(), cfg)
 		}
 	})
 
@@ -194,7 +195,7 @@ func BenchmarkEngineCreation(b *testing.B) {
 				DisableBuiltin: true,
 				UserRulesDir:   b.TempDir(),
 			}
-			_, _ = NewEngine(cfg)
+			_, _ = NewEngine(context.Background(), cfg)
 		}
 	})
 }
@@ -351,7 +352,7 @@ func BenchmarkExtractor_DualParse(b *testing.B) {
 		})
 		b.Run("dual_parse/"+tc.name, func(b *testing.B) {
 			ext := NewExtractorWithEnv(nil)
-			if err := ext.EnablePSWorker(pwshPath); err != nil {
+			if err := ext.EnablePSWorker(context.Background(), pwshPath); err != nil {
 				b.Skipf("EnablePSWorker: %v", err)
 			}
 			defer ext.Close()
@@ -383,7 +384,7 @@ func BenchmarkPwshWorker_Parse(b *testing.B) {
 	}
 	for _, tc := range commands {
 		b.Run(tc.name, func(b *testing.B) {
-			w, err := pwsh.NewWorker(pwshPath)
+			w, err := pwsh.NewWorker(context.Background(), pwshPath)
 			if err != nil {
 				b.Skipf("NewWorker: %v", err)
 			}
@@ -416,7 +417,7 @@ func BenchmarkExtractor_DualParse_Parallel(b *testing.B) {
 	for _, procs := range []int{1, 2, 4, 8} {
 		b.Run(fmt.Sprintf("goroutines_%d", procs), func(b *testing.B) {
 			ext := NewExtractorWithEnv(nil)
-			if err := ext.EnablePSWorker(pwshPath); err != nil {
+			if err := ext.EnablePSWorker(context.Background(), pwshPath); err != nil {
 				b.Skipf("EnablePSWorker: %v", err)
 			}
 			defer ext.Close()

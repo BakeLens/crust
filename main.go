@@ -449,6 +449,11 @@ func runDaemon(cfg *config.Config, logLevel string, disableBuiltin bool, endpoin
 
 	log.Info("Starting Crust daemon...")
 
+	// engineCtx controls the lifetime of worker subprocesses (shell, pwsh).
+	// Canceled at shutdown to ensure orphaned workers are cleaned up.
+	engineCtx, engineCancel := context.WithCancel(context.Background())
+	defer engineCancel()
+
 	// Initialize rules engine
 	var ruleWatcher *rules.Watcher
 	rulesDir := cfg.Rules.UserDir
@@ -464,7 +469,7 @@ func runDaemon(cfg *config.Config, logLevel string, disableBuiltin bool, endpoin
 			PreChecker:          selfprotect.Check,
 		}
 
-		ruleEngine, err := rules.NewEngine(engineCfg)
+		ruleEngine, err := rules.NewEngine(engineCtx, engineCfg)
 		if err != nil {
 			log.Error("Failed to initialize rules engine: %v", err)
 			os.Exit(1)
@@ -997,7 +1002,7 @@ func loadEngine(name string, cf commonFlags, subprocessIsolation bool) *rules.En
 		os.Exit(1)
 	}
 
-	engine, err := rules.NewEngine(rules.EngineConfig{
+	engine, err := rules.NewEngine(context.Background(), rules.EngineConfig{
 		UserRulesDir:        dir,
 		DisableBuiltin:      *cf.disableBuiltin || cfg.Rules.DisableBuiltin,
 		SubprocessIsolation: subprocessIsolation,

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,7 +14,7 @@ import (
 func newTestEngine(t *testing.T) *Engine {
 	t.Helper()
 	normalizer := NewNormalizerWithEnv("/home/user", "/home/user/project", nil)
-	engine, err := NewEngineWithNormalizer(EngineConfig{}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{}, normalizer)
 	if err != nil {
 		t.Fatalf("setup engine: %v", err)
 	}
@@ -207,7 +208,7 @@ func TestBypassFix_GlobInPath(t *testing.T) {
 	homeSlash := pathutil.ToSlash(home)
 
 	normalizer := NewNormalizerWithEnv(home, project, nil)
-	engine, err := NewEngineWithNormalizer(EngineConfig{}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{}, normalizer)
 	if err != nil {
 		t.Fatalf("setup engine: %v", err)
 	}

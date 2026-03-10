@@ -37,10 +37,11 @@ type shellWorker struct {
 	stdin   io.WriteCloser
 	scanner *bufio.Scanner
 	exePath string
+	ctx     context.Context // lifecycle context; cancellation kills the subprocess
 }
 
-func newShellWorker(exePath string) (*shellWorker, error) {
-	w := &shellWorker{exePath: exePath}
+func newShellWorker(ctx context.Context, exePath string) (*shellWorker, error) {
+	w := &shellWorker{exePath: exePath, ctx: ctx}
 	if err := w.start(); err != nil {
 		return nil, err
 	}
@@ -48,7 +49,7 @@ func newShellWorker(exePath string) (*shellWorker, error) {
 }
 
 func (w *shellWorker) start() error {
-	proc := exec.CommandContext(context.Background(), w.exePath) //nolint:gosec // exePath is from os.Executable(), not user input
+	proc := exec.CommandContext(w.ctx, w.exePath) //nolint:gosec // exePath is from os.Executable(), not user input
 	proc.Env = append(os.Environ(), "_CRUST_SHELL_WORKER=1")
 
 	stdin, err := proc.StdinPipe()

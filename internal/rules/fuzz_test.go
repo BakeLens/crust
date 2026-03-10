@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
 	"net/url"
 	"path"
@@ -450,7 +451,7 @@ func FuzzBuiltinRuleBypass(f *testing.F) {
 		"HOME": "/home/user",
 	})
 
-	engine, err := NewEngineWithNormalizer(EngineConfig{DisableDLP: testing.Short()}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short()}, normalizer)
 	if err != nil {
 		f.Fatalf("setup engine: %v", err)
 	}
@@ -864,7 +865,7 @@ func FuzzJSONUnicodeEscapeBypass(f *testing.F) {
 		"HOME": "/home/user",
 	})
 
-	engine, err := NewEngineWithNormalizer(EngineConfig{DisableDLP: testing.Short()}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short()}, normalizer)
 	if err != nil {
 		f.Fatalf("setup engine: %v", err)
 	}
@@ -1316,7 +1317,7 @@ func FuzzLoopbackRegex(f *testing.F) {
 		"HOME": "/home/user",
 	})
 
-	engine, err := NewEngineWithNormalizer(EngineConfig{DisableDLP: testing.Short()}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short()}, normalizer)
 	if err != nil {
 		f.Fatalf("setup engine: %v", err)
 	}
@@ -1362,7 +1363,7 @@ func FuzzContentConfusableBypass(f *testing.F) {
 		"HOME": "/home/user",
 	})
 
-	engine, err := NewEngineWithNormalizer(EngineConfig{DisableDLP: testing.Short()}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short()}, normalizer)
 	if err != nil {
 		f.Fatalf("setup engine: %v", err)
 	}
@@ -1411,7 +1412,7 @@ func FuzzVariableExpansionEvasion(f *testing.F) {
 		"EMPTY": "",
 	})
 
-	engine, err := NewEngineWithNormalizer(EngineConfig{DisableDLP: testing.Short()}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short()}, normalizer)
 	if err != nil {
 		f.Fatalf("setup engine: %v", err)
 	}
@@ -1544,7 +1545,7 @@ func FuzzShapeDetectionBypass(f *testing.F) {
 		"HOME": "/home/user",
 	})
 
-	engine, err := NewEngineWithNormalizer(EngineConfig{DisableDLP: testing.Short()}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short()}, normalizer)
 	if err != nil {
 		f.Fatalf("setup engine: %v", err)
 	}
@@ -1671,7 +1672,7 @@ func FuzzWebSearchURLBypass(f *testing.F) {
 		"HOME": "/home/user",
 	})
 
-	engine, err := NewEngineWithNormalizer(EngineConfig{DisableDLP: testing.Short()}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short()}, normalizer)
 	if err != nil {
 		f.Fatalf("setup engine: %v", err)
 	}
@@ -1844,7 +1845,7 @@ func FuzzMCPToolBypass(f *testing.F) {
 		"HOME": "/home/user",
 	})
 
-	engine, err := NewEngineWithNormalizer(EngineConfig{DisableDLP: testing.Short()}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short()}, normalizer)
 	if err != nil {
 		f.Fatalf("setup engine: %v", err)
 	}
@@ -2052,7 +2053,7 @@ func FuzzPipeBypass(f *testing.F) {
 		"USER": "user",
 	})
 
-	engine, err := NewEngineWithNormalizer(EngineConfig{DisableDLP: testing.Short()}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short()}, normalizer)
 	if err != nil {
 		f.Fatalf("setup engine: %v", err)
 	}
@@ -2205,7 +2206,7 @@ func FuzzNormalAgentFalsePositive(f *testing.F) {
 	f.Add(`golangci-lint run`)
 
 	normalizer := NewNormalizerWithEnv("/home/user", "/home/user/project", nil)
-	engine, err := NewEngineWithNormalizer(EngineConfig{DisableDLP: testing.Short()}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short()}, normalizer)
 	if err != nil {
 		f.Fatalf("setup engine: %v", err)
 	}

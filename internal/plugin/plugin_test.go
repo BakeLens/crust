@@ -1206,14 +1206,14 @@ func TestRegistry_Stats(t *testing.T) {
 // =============================================================================
 
 func TestProcessPlugin_Name(t *testing.T) {
-	p := NewProcessPlugin("sandbox", "/usr/bin/sandbox-plugin")
+	p := NewProcessPlugin(context.Background(), "sandbox", "/usr/bin/sandbox-plugin")
 	if p.Name() != "sandbox" {
 		t.Errorf("Name() = %q, want %q", p.Name(), "sandbox")
 	}
 }
 
 func TestProcessPlugin_InitFailsWithBadPath(t *testing.T) {
-	p := NewProcessPlugin("bad", "/nonexistent/plugin")
+	p := NewProcessPlugin(context.Background(), "bad", "/nonexistent/plugin")
 	err := p.Init(nil)
 	if err == nil {
 		t.Fatal("expected error for nonexistent plugin binary")
@@ -1221,7 +1221,7 @@ func TestProcessPlugin_InitFailsWithBadPath(t *testing.T) {
 }
 
 func TestProcessPlugin_EvaluateWhenNotStarted(t *testing.T) {
-	p := &ProcessPlugin{name: "dead"}
+	p := &ProcessPlugin{name: "dead", ctx: context.Background()}
 	// Should fail-open when process is not running.
 	result := p.Evaluate(t.Context(), Request{ToolName: "Bash"})
 	if result != nil {

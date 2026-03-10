@@ -61,9 +61,10 @@ type Worker struct {
 	proc       *exec.Cmd
 	stdin      io.WriteCloser
 	scanner    *bufio.Scanner
-	encoder    *json.Encoder // reused across Parse() calls to avoid per-call allocation
-	pwshPath   string        // path to pwsh.exe or powershell.exe
-	scriptPath string        // temp file holding the bootstrap script
+	encoder    *json.Encoder   // reused across Parse() calls to avoid per-call allocation
+	pwshPath   string          // path to pwsh.exe or powershell.exe
+	scriptPath string          // temp file holding the bootstrap script
+	ctx        context.Context // lifecycle context; cancellation kills the subprocess
 }
 
 // FindPwsh returns the path to pwsh.exe or powershell.exe, preferring the
@@ -80,7 +81,8 @@ func FindPwsh() (string, bool) {
 }
 
 // NewWorker creates and starts a pwsh worker subprocess.
-func NewWorker(pwshPath string) (*Worker, error) {
+// The context controls the subprocess lifetime; canceling it kills the process.
+func NewWorker(ctx context.Context, pwshPath string) (*Worker, error) {
 	// Write the bootstrap script to a temp file instead of passing it as a
 	// base64-encoded -EncodedCommand argument. The bootstrap script is ~13 KB,
 	// which encodes to ~35 KB of base64 — exceeding Windows' 32,767-character
@@ -100,6 +102,7 @@ func NewWorker(pwshPath string) (*Worker, error) {
 	w := &Worker{
 		pwshPath:   pwshPath,
 		scriptPath: scriptPath,
+		ctx:        ctx,
 	}
 	if err := w.start(); err != nil {
 		os.Remove(scriptPath)
@@ -151,7 +154,7 @@ func NewWorker(pwshPath string) (*Worker, error) {
 }
 
 func (w *Worker) start() error {
-	proc := exec.CommandContext(context.Background(), w.pwshPath, //nolint:gosec // pwshPath from exec.LookPath
+	proc := exec.CommandContext(w.ctx, w.pwshPath, //nolint:gosec // pwshPath from exec.LookPath
 		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", w.scriptPath)
 	stdin, err := proc.StdinPipe()
 	if err != nil {

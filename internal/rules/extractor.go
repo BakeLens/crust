@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path"
@@ -206,8 +207,8 @@ type Extractor struct {
 // shell interpretation. If the interpreter panics in a goroutine spawned
 // by the mvdan.cc/sh library, the subprocess crashes instead of the main
 // process. Falls back to in-process interpretation if the worker dies.
-func (e *Extractor) EnableSubprocessIsolation(exePath string) error {
-	w, err := newShellWorker(exePath)
+func (e *Extractor) EnableSubprocessIsolation(ctx context.Context, exePath string) error {
+	w, err := newShellWorker(ctx, exePath)
 	if err != nil {
 		return err
 	}
@@ -221,8 +222,8 @@ func (e *Extractor) EnableSubprocessIsolation(exePath string) error {
 // and MSYS2/Cygwin) — the subprocesses are real, not no-ops. The call site
 // in engine.go is gated behind runtime.GOOS == "windows". Falls back to
 // the heuristic PS transform if this method is not called or returns an error.
-func (e *Extractor) EnablePSWorker(pwshPath string) error {
-	pool, err := pwsh.NewWorkerPool(pwshPath, 0) // 0 = auto-size
+func (e *Extractor) EnablePSWorker(ctx context.Context, pwshPath string) error {
+	pool, err := pwsh.NewWorkerPool(ctx, pwshPath, 0) // 0 = auto-size
 	if err != nil {
 		return err
 	}
