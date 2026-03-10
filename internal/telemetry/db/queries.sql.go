@@ -65,7 +65,8 @@ func (q *Queries) DeleteOldTraces(ctx context.Context, datetime interface{}) (sq
 
 const getRecentToolCallLogs = `-- name: GetRecentToolCallLogs :many
 SELECT id, timestamp, trace_id, session_id, tool_name, tool_arguments,
-    api_type, was_blocked, blocked_by_rule, model, layer
+    api_type, was_blocked, blocked_by_rule, model, layer,
+    protocol, direction, method, block_type
 FROM tool_call_logs
 WHERE timestamp > datetime('now', ?)
 ORDER BY timestamp DESC
@@ -98,6 +99,10 @@ func (q *Queries) GetRecentToolCallLogs(ctx context.Context, arg GetRecentToolCa
 			&i.BlockedByRule,
 			&i.Model,
 			&i.Layer,
+			&i.Protocol,
+			&i.Direction,
+			&i.Method,
+			&i.BlockType,
 		); err != nil {
 			return nil, err
 		}

@@ -1,18 +1,19 @@
 package daemon
 
 import (
-	"log"
-
 	"github.com/BakeLens/crust/internal/daemon/registry"
+	"github.com/BakeLens/crust/internal/logger"
 	"github.com/BakeLens/crust/internal/mcpdiscover"
 )
+
+var log = logger.New("daemon")
 
 // PatchAgentConfigs routes all registered agents through the Crust proxy.
 // Called once on daemon startup. Non-fatal: a failed patch is logged and skipped.
 func PatchAgentConfigs(proxyPort int) {
 	crustBin, err := mcpdiscover.CrustBinaryPath()
 	if err != nil {
-		log.Printf("crust: cannot resolve binary path, skipping MCP wrapping: %v", err)
+		log.Warn("cannot resolve binary path, skipping MCP wrapping: %v", err)
 	}
 	registry.Default.PatchAll(proxyPort, crustBin)
 }

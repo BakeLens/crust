@@ -18,7 +18,9 @@
 // It is automatically included in the registry via BuiltinClients().
 package registry
 
-import "log"
+import "github.com/BakeLens/crust/internal/logger"
+
+var log = logger.New("registry")
 
 // Default is the global registry used by the daemon.
 var Default = &Registry{}
@@ -39,7 +41,7 @@ func Register(t Target) { Default.Register(t) }
 func (r *Registry) PatchAll(proxyPort int, crustBin string) {
 	for _, t := range r.targets {
 		if err := t.Patch(proxyPort, crustBin); err != nil {
-			log.Printf("crust: patch %s: %v", t.Name(), err)
+			log.Warn("patch %s: %v", t.Name(), err)
 		}
 	}
 }
@@ -49,7 +51,7 @@ func (r *Registry) PatchAll(proxyPort int, crustBin string) {
 func (r *Registry) RestoreAll() {
 	for _, t := range r.targets {
 		if err := t.Restore(); err != nil {
-			log.Printf("crust: restore %s: %v", t.Name(), err)
+			log.Warn("restore %s: %v", t.Name(), err)
 		}
 	}
 }

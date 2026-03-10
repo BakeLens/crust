@@ -302,7 +302,7 @@ func (b *BufferedSSEWriter) FlushModified(interceptor *security.Interceptor, blo
 		}
 
 		eventlog.Record(eventlog.Event{
-			Layer:      eventlog.LayerL1Buffer,
+			Layer:      eventlog.LayerProxyBuffer,
 			TraceID:    b.traceID,
 			SessionID:  b.sessionID,
 			ToolName:   tc.Name,

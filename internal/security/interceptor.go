@@ -150,7 +150,7 @@ func (i *Interceptor) evaluateToolCall(
 	}
 
 	eventlog.Record(eventlog.Event{
-		Layer:      eventlog.LayerL1,
+		Layer:      eventlog.LayerProxyResponse,
 		TraceID:    ctx.TraceID,
 		SessionID:  ctx.SessionID,
 		ToolName:   tc.Name,

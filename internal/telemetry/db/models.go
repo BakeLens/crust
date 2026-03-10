@@ -38,6 +38,10 @@ type ToolCallLog struct {
 	BlockedByRule *string    `json:"blocked_by_rule"`
 	Model         *string    `json:"model"`
 	Layer         *string    `json:"layer"`
+	Protocol      *string    `json:"protocol"`
+	Direction     *string    `json:"direction"`
+	Method        *string    `json:"method"`
+	BlockType     *string    `json:"block_type"`
 }
 
 type Trace struct {

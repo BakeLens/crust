@@ -22,7 +22,7 @@ func (storageSink) LogEvent(event eventlog.Event) {
 
 	layer := event.Layer
 	if layer == "" {
-		layer = "L1"
+		layer = eventlog.LayerProxyResponse
 	}
 
 	tcLog := telemetry.ToolCallLog{

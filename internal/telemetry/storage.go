@@ -19,6 +19,10 @@ import (
 
 var log = logger.New("telemetry")
 
+// defaultLayer is the fallback layer for tool-call logs without an explicit layer.
+// Matches eventlog.LayerProxyResponse but defined locally to avoid an import cycle.
+const defaultLayer = "proxy_response"
+
 // Storage handles SQLite/SQLCipher database operations
 type Storage struct {
 	conn      *sql.DB
@@ -170,12 +174,18 @@ func (s *Storage) runMigrations() {
 	ctx := context.Background()
 	migrations := []string{
 		// v0.x: Add layer column to tool_call_logs for per-layer telemetry tracking
-		`ALTER TABLE tool_call_logs ADD COLUMN layer TEXT DEFAULT 'L1'`,
+		`ALTER TABLE tool_call_logs ADD COLUMN layer TEXT DEFAULT 'proxy_response'`,
 		// v0.x: Add transport metadata columns for unified event recording
 		`ALTER TABLE tool_call_logs ADD COLUMN protocol TEXT DEFAULT ''`,
 		`ALTER TABLE tool_call_logs ADD COLUMN direction TEXT DEFAULT ''`,
 		`ALTER TABLE tool_call_logs ADD COLUMN method TEXT DEFAULT ''`,
 		`ALTER TABLE tool_call_logs ADD COLUMN block_type TEXT DEFAULT ''`,
+		// v0.x: Rename layer values from opaque L0/L1 to descriptive names
+		`UPDATE tool_call_logs SET layer = 'proxy_request' WHERE layer = 'L0'`,
+		`UPDATE tool_call_logs SET layer = 'proxy_response' WHERE layer = 'L1'`,
+		`UPDATE tool_call_logs SET layer = 'proxy_response_stream' WHERE layer = 'L1_stream'`,
+		`UPDATE tool_call_logs SET layer = 'proxy_response_buffer' WHERE layer = 'L1_buffer'`,
+		`UPDATE tool_call_logs SET layer = 'stdio_pipe' WHERE layer = 'pipe'`,
 	}
 	for _, m := range migrations {
 		_, err := s.conn.ExecContext(ctx, m)
@@ -237,7 +247,7 @@ CREATE TABLE IF NOT EXISTS tool_call_logs (
 	was_blocked BOOLEAN DEFAULT FALSE,
 	blocked_by_rule TEXT,
 	model TEXT,
-	layer TEXT DEFAULT 'L1',
+	layer TEXT DEFAULT 'proxy_response',
 	protocol TEXT DEFAULT '',
 	direction TEXT DEFAULT '',
 	method TEXT DEFAULT '',
@@ -663,7 +673,7 @@ func (s *Storage) LogToolCall(ctx context.Context, toolLog ToolCallLog) error {
 
 	layer := toolLog.Layer
 	if layer == "" {
-		layer = "L1" // default to Layer 1 for backwards compatibility
+		layer = defaultLayer
 	}
 
 	return s.queries.LogToolCall(ctx, db.LogToolCallParams{

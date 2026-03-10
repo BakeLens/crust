@@ -68,7 +68,7 @@ func scanDLP(log *logger.Logger, engine *rules.Engine, data json.RawMessage,
 		protocol, logLabel, dlpResult.RuleName, dlpResult.Message)
 
 	eventlog.Record(eventlog.Event{
-		Layer:      eventlog.LayerPipe,
+		Layer:      eventlog.LayerStdioPipe,
 		ToolName:   logLabel,
 		Protocol:   protocol,
 		WasBlocked: true,
@@ -125,7 +125,7 @@ func processMessage(log *logger.Logger, engine *rules.Engine, line []byte, msg *
 		log.Warn("Blocked %s %s: %v", protocol, msg.Method, err)
 
 		eventlog.Record(eventlog.Event{
-			Layer:      eventlog.LayerPipe,
+			Layer:      eventlog.LayerStdioPipe,
 			ToolName:   msg.Method,
 			Protocol:   protocol,
 			Direction:  label,
@@ -145,7 +145,7 @@ func processMessage(log *logger.Logger, engine *rules.Engine, line []byte, msg *
 	isBlocked := result.Matched && result.Action == rules.ActionBlock
 
 	eventlog.Record(eventlog.Event{
-		Layer:      eventlog.LayerPipe,
+		Layer:      eventlog.LayerStdioPipe,
 		ToolName:   toolCall.Name,
 		Arguments:  toolCall.Arguments,
 		Protocol:   protocol,

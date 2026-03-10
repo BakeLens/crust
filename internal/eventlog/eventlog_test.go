@@ -38,11 +38,11 @@ func TestRecord_LayerMetrics(t *testing.T) {
 		check func(t *testing.T, m *Metrics)
 	}{
 		{
-			name:  "L0 blocked increments Layer0Blocks and TotalToolCalls",
-			event: Event{Layer: LayerL0, WasBlocked: true, ToolName: "test"},
+			name:  "L0 blocked increments ProxyRequestBlocks and TotalToolCalls",
+			event: Event{Layer: LayerProxyRequest, WasBlocked: true, ToolName: "test"},
 			check: func(t *testing.T, m *Metrics) {
-				if m.Layer0Blocks.Load() != 1 {
-					t.Errorf("Layer0Blocks = %d, want 1", m.Layer0Blocks.Load())
+				if m.ProxyRequestBlocks.Load() != 1 {
+					t.Errorf("ProxyRequestBlocks = %d, want 1", m.ProxyRequestBlocks.Load())
 				}
 				if m.TotalToolCalls.Load() != 1 {
 					t.Errorf("TotalToolCalls = %d, want 1", m.TotalToolCalls.Load())
@@ -51,10 +51,10 @@ func TestRecord_LayerMetrics(t *testing.T) {
 		},
 		{
 			name:  "L0 not blocked increments nothing",
-			event: Event{Layer: LayerL0, WasBlocked: false, ToolName: "test"},
+			event: Event{Layer: LayerProxyRequest, WasBlocked: false, ToolName: "test"},
 			check: func(t *testing.T, m *Metrics) {
-				if m.Layer0Blocks.Load() != 0 {
-					t.Errorf("Layer0Blocks = %d, want 0", m.Layer0Blocks.Load())
+				if m.ProxyRequestBlocks.Load() != 0 {
+					t.Errorf("ProxyRequestBlocks = %d, want 0", m.ProxyRequestBlocks.Load())
 				}
 				if m.TotalToolCalls.Load() != 0 {
 					t.Errorf("TotalToolCalls = %d, want 0", m.TotalToolCalls.Load())
@@ -62,11 +62,11 @@ func TestRecord_LayerMetrics(t *testing.T) {
 			},
 		},
 		{
-			name:  "L1 blocked increments Layer1Blocks and TotalToolCalls",
-			event: Event{Layer: LayerL1, WasBlocked: true, ToolName: "test"},
+			name:  "L1 blocked increments ProxyResponseBlocks and TotalToolCalls",
+			event: Event{Layer: LayerProxyResponse, WasBlocked: true, ToolName: "test"},
 			check: func(t *testing.T, m *Metrics) {
-				if m.Layer1Blocks.Load() != 1 {
-					t.Errorf("Layer1Blocks = %d, want 1", m.Layer1Blocks.Load())
+				if m.ProxyResponseBlocks.Load() != 1 {
+					t.Errorf("ProxyResponseBlocks = %d, want 1", m.ProxyResponseBlocks.Load())
 				}
 				if m.TotalToolCalls.Load() != 1 {
 					t.Errorf("TotalToolCalls = %d, want 1", m.TotalToolCalls.Load())
@@ -74,11 +74,11 @@ func TestRecord_LayerMetrics(t *testing.T) {
 			},
 		},
 		{
-			name:  "L1 allowed increments Layer1Allowed and TotalToolCalls",
-			event: Event{Layer: LayerL1, WasBlocked: false, ToolName: "test"},
+			name:  "L1 allowed increments ProxyResponseAllowed and TotalToolCalls",
+			event: Event{Layer: LayerProxyResponse, WasBlocked: false, ToolName: "test"},
 			check: func(t *testing.T, m *Metrics) {
-				if m.Layer1Allowed.Load() != 1 {
-					t.Errorf("Layer1Allowed = %d, want 1", m.Layer1Allowed.Load())
+				if m.ProxyResponseAllowed.Load() != 1 {
+					t.Errorf("ProxyResponseAllowed = %d, want 1", m.ProxyResponseAllowed.Load())
 				}
 				if m.TotalToolCalls.Load() != 1 {
 					t.Errorf("TotalToolCalls = %d, want 1", m.TotalToolCalls.Load())
@@ -86,11 +86,11 @@ func TestRecord_LayerMetrics(t *testing.T) {
 			},
 		},
 		{
-			name:  "L1_stream blocked increments Layer1Blocks",
-			event: Event{Layer: LayerL1Stream, WasBlocked: true, ToolName: "test"},
+			name:  "L1_stream blocked increments ProxyResponseBlocks",
+			event: Event{Layer: LayerProxyStream, WasBlocked: true, ToolName: "test"},
 			check: func(t *testing.T, m *Metrics) {
-				if m.Layer1Blocks.Load() != 1 {
-					t.Errorf("Layer1Blocks = %d, want 1", m.Layer1Blocks.Load())
+				if m.ProxyResponseBlocks.Load() != 1 {
+					t.Errorf("ProxyResponseBlocks = %d, want 1", m.ProxyResponseBlocks.Load())
 				}
 				if m.TotalToolCalls.Load() != 1 {
 					t.Errorf("TotalToolCalls = %d, want 1", m.TotalToolCalls.Load())
@@ -98,11 +98,11 @@ func TestRecord_LayerMetrics(t *testing.T) {
 			},
 		},
 		{
-			name:  "L1_buffer allowed increments Layer1Allowed",
-			event: Event{Layer: LayerL1Buffer, WasBlocked: false, ToolName: "test"},
+			name:  "L1_buffer allowed increments ProxyResponseAllowed",
+			event: Event{Layer: LayerProxyBuffer, WasBlocked: false, ToolName: "test"},
 			check: func(t *testing.T, m *Metrics) {
-				if m.Layer1Allowed.Load() != 1 {
-					t.Errorf("Layer1Allowed = %d, want 1", m.Layer1Allowed.Load())
+				if m.ProxyResponseAllowed.Load() != 1 {
+					t.Errorf("ProxyResponseAllowed = %d, want 1", m.ProxyResponseAllowed.Load())
 				}
 				if m.TotalToolCalls.Load() != 1 {
 					t.Errorf("TotalToolCalls = %d, want 1", m.TotalToolCalls.Load())
@@ -110,11 +110,11 @@ func TestRecord_LayerMetrics(t *testing.T) {
 			},
 		},
 		{
-			name:  "pipe blocked increments PipeBlocks",
-			event: Event{Layer: LayerPipe, WasBlocked: true, ToolName: "test"},
+			name:  "pipe blocked increments StdioPipeBlocks",
+			event: Event{Layer: LayerStdioPipe, WasBlocked: true, ToolName: "test"},
 			check: func(t *testing.T, m *Metrics) {
-				if m.PipeBlocks.Load() != 1 {
-					t.Errorf("PipeBlocks = %d, want 1", m.PipeBlocks.Load())
+				if m.StdioPipeBlocks.Load() != 1 {
+					t.Errorf("StdioPipeBlocks = %d, want 1", m.StdioPipeBlocks.Load())
 				}
 				if m.TotalToolCalls.Load() != 1 {
 					t.Errorf("TotalToolCalls = %d, want 1", m.TotalToolCalls.Load())
@@ -122,11 +122,11 @@ func TestRecord_LayerMetrics(t *testing.T) {
 			},
 		},
 		{
-			name:  "pipe allowed increments PipeAllowed",
-			event: Event{Layer: LayerPipe, WasBlocked: false, ToolName: "test"},
+			name:  "pipe allowed increments StdioPipeAllowed",
+			event: Event{Layer: LayerStdioPipe, WasBlocked: false, ToolName: "test"},
 			check: func(t *testing.T, m *Metrics) {
-				if m.PipeAllowed.Load() != 1 {
-					t.Errorf("PipeAllowed = %d, want 1", m.PipeAllowed.Load())
+				if m.StdioPipeAllowed.Load() != 1 {
+					t.Errorf("StdioPipeAllowed = %d, want 1", m.StdioPipeAllowed.Load())
 				}
 				if m.TotalToolCalls.Load() != 1 {
 					t.Errorf("TotalToolCalls = %d, want 1", m.TotalToolCalls.Load())
@@ -169,7 +169,7 @@ func TestRecord_LayerMetrics(t *testing.T) {
 }
 
 func TestRecord_InferProtocol(t *testing.T) {
-	httpLayers := []string{LayerL0, LayerL1, LayerL1Stream, LayerL1Buffer}
+	httpLayers := []string{LayerProxyRequest, LayerProxyResponse, LayerProxyStream, LayerProxyBuffer}
 	for _, layer := range httpLayers {
 		t.Run(layer+"_defaults_to_HTTP", func(t *testing.T) {
 			resetAll()
@@ -183,7 +183,7 @@ func TestRecord_InferProtocol(t *testing.T) {
 		})
 	}
 
-	nonHTTPLayers := []string{LayerPipe, LayerMCPHTTP}
+	nonHTTPLayers := []string{LayerStdioPipe, LayerMCPHTTP}
 	for _, layer := range nonHTTPLayers {
 		t.Run(layer+"_stays_empty", func(t *testing.T) {
 			resetAll()
@@ -201,7 +201,7 @@ func TestRecord_InferProtocol(t *testing.T) {
 		resetAll()
 		sink := &mockSink{}
 		SetSink(sink)
-		Record(Event{Layer: LayerL0, Protocol: "ACP", ToolName: "test"})
+		Record(Event{Layer: LayerProxyRequest, Protocol: "ACP", ToolName: "test"})
 		got := sink.last().Protocol
 		if got != "ACP" {
 			t.Errorf("Protocol = %q, want %q", got, "ACP")
@@ -217,27 +217,27 @@ func TestRecord_InferBlockType(t *testing.T) {
 	}{
 		{
 			name:      "selfprotect rule",
-			event:     Event{Layer: LayerL0, WasBlocked: true, RuleName: "builtin:protect-crust-socket"},
+			event:     Event{Layer: LayerProxyRequest, WasBlocked: true, RuleName: "builtin:protect-crust-socket"},
 			wantBlock: BlockTypeSelfProtect,
 		},
 		{
 			name:      "regular rule",
-			event:     Event{Layer: LayerL0, WasBlocked: true, RuleName: "user:deny-rm"},
+			event:     Event{Layer: LayerProxyRequest, WasBlocked: true, RuleName: "user:deny-rm"},
 			wantBlock: BlockTypeRule,
 		},
 		{
 			name:      "not blocked has empty BlockType",
-			event:     Event{Layer: LayerL0, WasBlocked: false, RuleName: ""},
+			event:     Event{Layer: LayerProxyRequest, WasBlocked: false, RuleName: ""},
 			wantBlock: "",
 		},
 		{
 			name:      "blocked but no rule name has empty BlockType",
-			event:     Event{Layer: LayerL0, WasBlocked: true, RuleName: ""},
+			event:     Event{Layer: LayerProxyRequest, WasBlocked: true, RuleName: ""},
 			wantBlock: "",
 		},
 		{
 			name:      "explicit BlockType preserved",
-			event:     Event{Layer: LayerL0, WasBlocked: true, RuleName: "x", BlockType: BlockTypeDLP},
+			event:     Event{Layer: LayerProxyRequest, WasBlocked: true, RuleName: "x", BlockType: BlockTypeDLP},
 			wantBlock: BlockTypeDLP,
 		},
 	}
@@ -262,7 +262,7 @@ func TestRecord_SinkCalled(t *testing.T) {
 	SetSink(sink)
 
 	ev := Event{
-		Layer:      LayerL1,
+		Layer:      LayerProxyResponse,
 		ToolName:   "bash",
 		WasBlocked: true,
 		RuleName:   "user:deny-rm",
@@ -276,8 +276,8 @@ func TestRecord_SinkCalled(t *testing.T) {
 	if got.ToolName != "bash" {
 		t.Errorf("ToolName = %q, want %q", got.ToolName, "bash")
 	}
-	if got.Layer != LayerL1 {
-		t.Errorf("Layer = %q, want %q", got.Layer, LayerL1)
+	if got.Layer != LayerProxyResponse {
+		t.Errorf("Layer = %q, want %q", got.Layer, LayerProxyResponse)
 	}
 	if !got.WasBlocked {
 		t.Error("WasBlocked = false, want true")
@@ -293,17 +293,17 @@ func TestRecord_SinkCalled(t *testing.T) {
 func TestRecord_NoSinkNoPanic(t *testing.T) {
 	resetAll()
 	// No sink set — should not panic.
-	Record(Event{Layer: LayerL0, WasBlocked: true, ToolName: "test"})
+	Record(Event{Layer: LayerProxyRequest, WasBlocked: true, ToolName: "test"})
 }
 
 func TestMetrics_GetStats(t *testing.T) {
 	resetAll()
 	m := GetMetrics()
-	m.Layer0Blocks.Store(1)
-	m.Layer1Blocks.Store(2)
-	m.Layer1Allowed.Store(3)
-	m.PipeBlocks.Store(4)
-	m.PipeAllowed.Store(5)
+	m.ProxyRequestBlocks.Store(1)
+	m.ProxyResponseBlocks.Store(2)
+	m.ProxyResponseAllowed.Store(3)
+	m.StdioPipeBlocks.Store(4)
+	m.StdioPipeAllowed.Store(5)
 	m.MCPHTTPBlocks.Store(6)
 	m.MCPHTTPAllowed.Store(7)
 	m.TotalToolCalls.Store(8)
@@ -311,14 +311,14 @@ func TestMetrics_GetStats(t *testing.T) {
 	stats := m.GetStats()
 
 	expected := map[string]int64{
-		"layer0_blocks":    1,
-		"layer1_blocks":    2,
-		"layer1_allowed":   3,
-		"pipe_blocks":      4,
-		"pipe_allowed":     5,
-		"mcp_http_blocks":  6,
-		"mcp_http_allowed": 7,
-		"total_tool_calls": 8,
+		"proxy_request_blocks":   1,
+		"proxy_response_blocks":  2,
+		"proxy_response_allowed": 3,
+		"stdio_pipe_blocks":      4,
+		"stdio_pipe_allowed":     5,
+		"mcp_http_blocks":        6,
+		"mcp_http_allowed":       7,
+		"total_tool_calls":       8,
 	}
 
 	if len(stats) != len(expected) {
@@ -339,11 +339,11 @@ func TestMetrics_GetStats(t *testing.T) {
 
 func TestMetrics_Reset(t *testing.T) {
 	m := GetMetrics()
-	m.Layer0Blocks.Store(10)
-	m.Layer1Blocks.Store(20)
-	m.Layer1Allowed.Store(30)
-	m.PipeBlocks.Store(40)
-	m.PipeAllowed.Store(50)
+	m.ProxyRequestBlocks.Store(10)
+	m.ProxyResponseBlocks.Store(20)
+	m.ProxyResponseAllowed.Store(30)
+	m.StdioPipeBlocks.Store(40)
+	m.StdioPipeAllowed.Store(50)
 	m.MCPHTTPBlocks.Store(60)
 	m.MCPHTTPAllowed.Store(70)
 	m.TotalToolCalls.Store(80)
@@ -358,7 +358,7 @@ func TestMetrics_Reset(t *testing.T) {
 	}
 }
 
-func TestMetrics_Layer1BlockRate(t *testing.T) {
+func TestMetrics_ProxyResponseBlockRate(t *testing.T) {
 	tests := []struct {
 		name       string
 		l1blocks   int64
@@ -376,13 +376,13 @@ func TestMetrics_Layer1BlockRate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := GetMetrics()
 			m.Reset()
-			m.Layer1Blocks.Store(tc.l1blocks)
+			m.ProxyResponseBlocks.Store(tc.l1blocks)
 			m.TotalToolCalls.Store(tc.totalCalls)
 
-			got := m.Layer1BlockRate()
+			got := m.ProxyResponseBlockRate()
 			diff := got - tc.want
 			if diff < -0.01 || diff > 0.01 {
-				t.Errorf("Layer1BlockRate() = %f, want %f", got, tc.want)
+				t.Errorf("ProxyResponseBlockRate() = %f, want %f", got, tc.want)
 			}
 		})
 	}

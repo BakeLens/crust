@@ -56,6 +56,11 @@ func NewHTTPGateway(upstreamURL string, engine *rules.Engine) (*HTTPGateway, err
 func (g *HTTPGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := checkOrigin(r); err != nil {
 		log.Warn("Blocked cross-origin request: %s", err)
+		eventlog.Record(eventlog.Event{
+			Layer:      eventlog.LayerMCPHTTP,
+			WasBlocked: true,
+			BlockType:  eventlog.BlockTypeSelfProtect,
+		})
 		http.Error(w, "Forbidden: "+err.Error(), http.StatusForbidden)
 		return
 	}

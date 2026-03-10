@@ -220,7 +220,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if result.Matched && result.Action == rules.ActionBlock {
 				log.Warn("[Layer0] Request blocked: %s in history (rule: %s)", tc.Name, result.RuleName)
 				eventlog.Record(eventlog.Event{
-					Layer:      eventlog.LayerL0,
+					Layer:      eventlog.LayerProxyRequest,
 					TraceID:    traceID,
 					SessionID:  sessionID,
 					ToolName:   tc.Name,

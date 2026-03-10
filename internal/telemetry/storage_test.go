@@ -542,7 +542,7 @@ func TestGetSessionEvents_BlockedFieldPreserved(t *testing.T) {
 		ToolName:      "Write",
 		WasBlocked:    true,
 		BlockedByRule: "my-rule",
-		Layer:         "L1",
+		Layer:         "proxy_response",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -561,8 +561,8 @@ func TestGetSessionEvents_BlockedFieldPreserved(t *testing.T) {
 	if e.BlockedByRule != "my-rule" {
 		t.Errorf("BlockedByRule = %q, want my-rule", e.BlockedByRule)
 	}
-	if e.Layer != "L1" {
-		t.Errorf("Layer = %q, want L1", e.Layer)
+	if e.Layer != "proxy_response" {
+		t.Errorf("Layer = %q, want proxy_response", e.Layer)
 	}
 }
 
@@ -786,7 +786,7 @@ func TestLogToolCall_Concurrent(t *testing.T) {
 				err := s.LogToolCall(context.Background(), ToolCallLog{
 					TraceID:  types.TraceID(fmt.Sprintf("trace-%d", i)),
 					ToolName: "Bash",
-					Layer:    "L1",
+					Layer:    "proxy_response",
 				})
 				if err != nil {
 					t.Errorf("LogToolCall(%d): %v", i, err)

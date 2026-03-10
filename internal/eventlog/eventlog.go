@@ -30,12 +30,12 @@ var log = logger.New("eventlog")
 
 // Layer constants for telemetry tracking.
 const (
-	LayerL0       = "L0"        // Request-side blocking (HTTP proxy Layer 0)
-	LayerL1       = "L1"        // Response-side blocking (HTTP proxy Layer 1, non-streaming)
-	LayerL1Stream = "L1_stream" // Response-side streaming (unbuffered, log-only)
-	LayerL1Buffer = "L1_buffer" // Response-side buffered streaming
-	LayerPipe     = "pipe"      // JSON-RPC stdio pipe inspection (ACP/MCP/autowrap)
-	LayerMCPHTTP  = "mcp_http"  // MCP Streamable HTTP gateway
+	LayerProxyRequest  = "proxy_request"         // Request-side blocking (HTTP proxy)
+	LayerProxyResponse = "proxy_response"        // Response-side blocking (HTTP proxy, non-streaming)
+	LayerProxyStream   = "proxy_response_stream" // Response-side streaming (unbuffered, log-only)
+	LayerProxyBuffer   = "proxy_response_buffer" // Response-side buffered streaming
+	LayerStdioPipe     = "stdio_pipe"            // JSON-RPC stdio pipe inspection (ACP/MCP/autowrap)
+	LayerMCPHTTP       = "mcp_http"              // MCP Streamable HTTP gateway
 )
 
 // BlockType constants describe what caused a block.
@@ -48,7 +48,7 @@ const (
 
 // Event represents a tool call evaluation event at any layer.
 type Event struct {
-	Layer      string // LayerL0, LayerL1, LayerL1Stream, LayerL1Buffer, LayerPipe, LayerMCPHTTP
+	Layer      string // LayerProxyRequest, LayerProxyResponse, LayerProxyStream, LayerProxyBuffer, LayerStdioPipe, LayerMCPHTTP
 	TraceID    types.TraceID
 	SessionID  types.SessionID
 	ToolName   string
@@ -68,13 +68,13 @@ type Event struct {
 // Metrics tracks blocking statistics for all layers.
 type Metrics struct {
 	// HTTP proxy
-	Layer0Blocks  atomic.Int64
-	Layer1Blocks  atomic.Int64
-	Layer1Allowed atomic.Int64
+	ProxyRequestBlocks   atomic.Int64
+	ProxyResponseBlocks  atomic.Int64
+	ProxyResponseAllowed atomic.Int64
 
 	// JSON-RPC stdio pipes
-	PipeBlocks  atomic.Int64
-	PipeAllowed atomic.Int64
+	StdioPipeBlocks  atomic.Int64
+	StdioPipeAllowed atomic.Int64
 
 	// MCP HTTP gateway
 	MCPHTTPBlocks  atomic.Int64
@@ -87,33 +87,33 @@ type Metrics struct {
 // GetStats returns a copy of current metrics.
 func (m *Metrics) GetStats() map[string]int64 {
 	return map[string]int64{
-		"layer0_blocks":    m.Layer0Blocks.Load(),
-		"layer1_blocks":    m.Layer1Blocks.Load(),
-		"layer1_allowed":   m.Layer1Allowed.Load(),
-		"pipe_blocks":      m.PipeBlocks.Load(),
-		"pipe_allowed":     m.PipeAllowed.Load(),
-		"mcp_http_blocks":  m.MCPHTTPBlocks.Load(),
-		"mcp_http_allowed": m.MCPHTTPAllowed.Load(),
-		"total_tool_calls": m.TotalToolCalls.Load(),
+		"proxy_request_blocks":   m.ProxyRequestBlocks.Load(),
+		"proxy_response_blocks":  m.ProxyResponseBlocks.Load(),
+		"proxy_response_allowed": m.ProxyResponseAllowed.Load(),
+		"stdio_pipe_blocks":      m.StdioPipeBlocks.Load(),
+		"stdio_pipe_allowed":     m.StdioPipeAllowed.Load(),
+		"mcp_http_blocks":        m.MCPHTTPBlocks.Load(),
+		"mcp_http_allowed":       m.MCPHTTPAllowed.Load(),
+		"total_tool_calls":       m.TotalToolCalls.Load(),
 	}
 }
 
-// Layer1BlockRate returns the percentage of calls blocked at Layer 1.
-func (m *Metrics) Layer1BlockRate() float64 {
+// ProxyResponseBlockRate returns the percentage of calls blocked at the proxy response layer.
+func (m *Metrics) ProxyResponseBlockRate() float64 {
 	total := m.TotalToolCalls.Load()
 	if total == 0 {
 		return 0
 	}
-	return float64(m.Layer1Blocks.Load()) / float64(total) * 100
+	return float64(m.ProxyResponseBlocks.Load()) / float64(total) * 100
 }
 
 // Reset clears all metrics (for testing).
 func (m *Metrics) Reset() {
-	m.Layer0Blocks.Store(0)
-	m.Layer1Blocks.Store(0)
-	m.Layer1Allowed.Store(0)
-	m.PipeBlocks.Store(0)
-	m.PipeAllowed.Store(0)
+	m.ProxyRequestBlocks.Store(0)
+	m.ProxyResponseBlocks.Store(0)
+	m.ProxyResponseAllowed.Store(0)
+	m.StdioPipeBlocks.Store(0)
+	m.StdioPipeAllowed.Store(0)
 	m.MCPHTTPBlocks.Store(0)
 	m.MCPHTTPAllowed.Store(0)
 	m.TotalToolCalls.Store(0)
@@ -141,7 +141,7 @@ func Record(event Event) {
 	// Infer defaults for backward compatibility.
 	if event.Protocol == "" {
 		switch event.Layer {
-		case LayerL0, LayerL1, LayerL1Stream, LayerL1Buffer:
+		case LayerProxyRequest, LayerProxyResponse, LayerProxyStream, LayerProxyBuffer:
 			event.Protocol = "HTTP"
 		}
 	}
@@ -159,23 +159,23 @@ func Record(event Event) {
 	m := globalMetrics
 
 	switch event.Layer {
-	case LayerL0:
+	case LayerProxyRequest:
 		if event.WasBlocked {
-			m.Layer0Blocks.Add(1)
+			m.ProxyRequestBlocks.Add(1)
 			m.TotalToolCalls.Add(1)
 		}
-	case LayerL1, LayerL1Stream, LayerL1Buffer:
+	case LayerProxyResponse, LayerProxyStream, LayerProxyBuffer:
 		if event.WasBlocked {
-			m.Layer1Blocks.Add(1)
+			m.ProxyResponseBlocks.Add(1)
 		} else {
-			m.Layer1Allowed.Add(1)
+			m.ProxyResponseAllowed.Add(1)
 		}
 		m.TotalToolCalls.Add(1)
-	case LayerPipe:
+	case LayerStdioPipe:
 		if event.WasBlocked {
-			m.PipeBlocks.Add(1)
+			m.StdioPipeBlocks.Add(1)
 		} else {
-			m.PipeAllowed.Add(1)
+			m.StdioPipeAllowed.Add(1)
 		}
 		m.TotalToolCalls.Add(1)
 	case LayerMCPHTTP:

@@ -112,7 +112,7 @@ func (r *SSEReader) triggerComplete() {
 			}
 
 			eventlog.Record(eventlog.Event{
-				Layer:      eventlog.LayerL1Stream,
+				Layer:      eventlog.LayerProxyStream,
 				TraceID:    r.traceID,
 				SessionID:  r.sessionID,
 				ToolName:   tc.Name,

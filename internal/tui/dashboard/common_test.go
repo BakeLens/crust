@@ -118,8 +118,8 @@ func TestFetchSessions(t *testing.T) {
 
 func TestFetchSessionEvents(t *testing.T) {
 	events := []SessionEvent{
-		{ToolName: "read_file", WasBlocked: false, Layer: "L1"},
-		{ToolName: "bash", WasBlocked: true, BlockedByRule: "block-rm-rf", Layer: "L1"},
+		{ToolName: "read_file", WasBlocked: false, Layer: "proxy_response"},
+		{ToolName: "bash", WasBlocked: true, BlockedByRule: "block-rm-rf", Layer: "proxy_response"},
 	}
 	srv := newTestServer(nil, nil, nil, events)
 	defer srv.Close()
