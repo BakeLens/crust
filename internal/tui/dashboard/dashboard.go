@@ -20,7 +20,8 @@ import (
 const (
 	tabOverview   = 0
 	tabSessions   = 1
-	numTabs       = 2
+	tabStats      = 2
+	numTabs       = 3
 	listPaneWidth = 28 // fixed width of the session list pane
 )
 
@@ -42,6 +43,13 @@ type sessionsMsg struct {
 type sessionEventsMsg struct {
 	sessionID string
 	events    []SessionEvent
+}
+
+// statsAggMsg carries fetched stats aggregation data.
+type statsAggMsg struct {
+	trend    []TrendPoint
+	dist     *Distribution
+	coverage []CoverageTool
 }
 
 // model is the bubbletea model for the live dashboard.
@@ -69,6 +77,11 @@ type model struct {
 	selectedSession int // index into sessions; clamped on every update
 	sessionEvents   []SessionEvent
 	activeSessionID string // ID whose events are currently loaded
+
+	// stats tab state
+	trend    []TrendPoint
+	dist     *Distribution
+	coverage []CoverageTool
 }
 
 func newModel(mgmtClient *http.Client, apiBase string, proxyBaseURL string, pid int) model {
@@ -110,6 +123,17 @@ func (m model) fetchStats() tea.Cmd {
 func (m model) fetchSessions() tea.Cmd {
 	return func() tea.Msg {
 		return sessionsMsg{sessions: FetchSessions(m.mgmtClient, m.apiBase)}
+	}
+}
+
+// fetchStatsAgg fetches all stats aggregation data.
+func (m model) fetchStatsAgg() tea.Cmd {
+	return func() tea.Msg {
+		return statsAggMsg{
+			trend:    FetchBlockTrend(m.mgmtClient, m.apiBase, "7d"),
+			dist:     FetchDistribution(m.mgmtClient, m.apiBase, "30d"),
+			coverage: FetchCoverage(m.mgmtClient, m.apiBase, "30d"),
+		}
 	}
 }
 
@@ -171,8 +195,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds := []tea.Cmd{m.fetchStats()}
 		if m.activeTab == tabSessions {
 			cmds = append(cmds, m.fetchSessions())
+		} else if m.activeTab == tabStats {
+			cmds = append(cmds, m.fetchStatsAgg())
 		}
 		return m, tea.Batch(cmds...)
+
+	// ── Stats aggregation data ───────────────────────────────────────────
+	case statsAggMsg:
+		m.trend = msg.trend
+		m.dist = msg.dist
+		m.coverage = msg.coverage
+		return m, nil
 
 	// ── Sessions data ──────────────────────────────────────────────────────
 	case sessionsMsg:
@@ -246,6 +279,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds := []tea.Cmd{m.fetchStats()}
 			if m.activeTab == tabSessions {
 				cmds = append(cmds, m.fetchSessions())
+			} else if m.activeTab == tabStats {
+				cmds = append(cmds, m.fetchStatsAgg())
 			}
 			return m, tea.Batch(cmds...)
 
@@ -253,6 +288,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTab = (m.activeTab + 1) % numTabs
 			if m.activeTab == tabSessions {
 				return m, m.fetchSessions()
+			} else if m.activeTab == tabStats {
+				return m, m.fetchStatsAgg()
 			}
 			return m, nil
 
@@ -263,6 +300,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "2":
 			m.activeTab = tabSessions
 			return m, m.fetchSessions()
+
+		case "3":
+			m.activeTab = tabStats
+			return m, m.fetchStatsAgg()
 
 		case "up", "k":
 			if m.activeTab == tabSessions && m.selectedSession > 0 {
@@ -304,12 +345,16 @@ func (m model) View() string {
 
 	// Tab content + help line
 	var content, helpStr string
-	if m.activeTab == tabOverview {
+	switch m.activeTab {
+	case tabOverview:
 		content = m.renderOverview()
-		helpStr = tui.StyleMuted.Render("  [tab]/[2] sessions  q quit  r refresh")
-	} else {
+		helpStr = tui.StyleMuted.Render("  [tab]/[2] sessions  [3] stats  q quit  r refresh")
+	case tabSessions:
 		content = m.renderSessions()
-		helpStr = tui.StyleMuted.Render("  [tab]/[1] overview  [↑↓] select  q quit  r refresh")
+		helpStr = tui.StyleMuted.Render("  [tab]/[1] overview  [3] stats  [↑↓] select  q quit  r refresh")
+	case tabStats:
+		content = m.renderStatsTab()
+		helpStr = tui.StyleMuted.Render("  [tab]/[1] overview  [2] sessions  q quit  r refresh")
 	}
 
 	var sb strings.Builder
@@ -321,23 +366,26 @@ func (m model) View() string {
 	return tui.StyleBox.Render(sb.String()) + "\n"
 }
 
-// renderTabBar renders the two tab labels with the active one highlighted.
+// renderTabBar renders tab labels with the active one highlighted.
 func (m model) renderTabBar() string {
 	activeStyle := lipgloss.NewStyle().Bold(true).Foreground(tui.ColorPrimary)
 	inactiveStyle := tui.StyleMuted
 
-	label0 := "Overview"
-	label1 := fmt.Sprintf("Sessions (%d)", len(m.sessions))
-
-	var t0, t1 string
-	if m.activeTab == tabOverview {
-		t0 = activeStyle.Render("[ " + label0 + " ]")
-		t1 = inactiveStyle.Render("  " + label1 + "  ")
-	} else {
-		t0 = inactiveStyle.Render("  " + label0 + "  ")
-		t1 = activeStyle.Render("[ " + label1 + " ]")
+	labels := []string{
+		"Overview",
+		fmt.Sprintf("Sessions (%d)", len(m.sessions)),
+		"Stats",
 	}
-	return t0 + t1
+
+	var parts []string
+	for i, label := range labels {
+		if i == m.activeTab {
+			parts = append(parts, activeStyle.Render("[ "+label+" ]"))
+		} else {
+			parts = append(parts, inactiveStyle.Render("  "+label+"  "))
+		}
+	}
+	return strings.Join(parts, "")
 }
 
 // renderOverview renders the existing status/metrics content (unchanged from original).
@@ -475,6 +523,108 @@ func (m model) renderSessions() string {
 		sep,
 		lipgloss.NewStyle().Width(rightWidth).PaddingLeft(1).Render(right.String()),
 	)
+}
+
+// renderStatsTab renders the stats aggregation view with trend, distribution, and coverage.
+func (m model) renderStatsTab() string {
+	var sb strings.Builder
+
+	// ── Trend (7-day block chart) ───────────────────────────────────────
+	sb.WriteString(tui.Separator("Block Trend  (7 days)") + "\n\n")
+
+	if len(m.trend) == 0 {
+		sb.WriteString(tui.StyleMuted.Render("  No data yet.") + "\n")
+	} else {
+		// Find max for scaling the bar chart
+		var maxCalls int64
+		for _, p := range m.trend {
+			if p.TotalCalls > maxCalls {
+				maxCalls = p.TotalCalls
+			}
+		}
+
+		barWidth := max(m.width-40, 20)
+		for _, p := range m.trend {
+			// Date label (MM-DD)
+			date := p.Date
+			if len(date) > 5 {
+				date = date[5:] // strip year prefix
+			}
+
+			// Bar: blocked portion in red, allowed in green
+			var totalBar int
+			if maxCalls > 0 {
+				totalBar = int(p.TotalCalls * int64(barWidth) / maxCalls)
+			}
+			var blockedBar int
+			if p.TotalCalls > 0 {
+				blockedBar = int(p.BlockedCalls * int64(totalBar) / p.TotalCalls)
+			}
+			allowedBar := totalBar - blockedBar
+
+			bar := tui.StyleError.Render(strings.Repeat("█", blockedBar)) +
+				tui.StyleSuccess.Render(strings.Repeat("█", allowedBar))
+
+			counts := fmt.Sprintf(" %d/%d", p.BlockedCalls, p.TotalCalls)
+			fmt.Fprintf(&sb, "  %s %s%s\n", tui.Faint(date), bar, tui.StyleMuted.Render(counts))
+		}
+	}
+
+	// ── Distribution (top blocked rules + tools) ────────────────────────
+	sb.WriteString("\n" + tui.Separator("Block Distribution  (30 days)") + "\n\n")
+
+	if m.dist == nil || (len(m.dist.ByRule) == 0 && len(m.dist.ByTool) == 0) {
+		sb.WriteString(tui.StyleMuted.Render("  No blocks recorded.") + "\n")
+	} else {
+		if len(m.dist.ByRule) > 0 {
+			sb.WriteString(tui.StyleBold.Render("  By Rule") + "\n")
+			limit := min(len(m.dist.ByRule), 5)
+			for _, r := range m.dist.ByRule[:limit] {
+				fmt.Fprintf(&sb, "    %s  %s\n",
+					tui.StyleError.Render(formatCount(r.Count)),
+					r.Rule,
+				)
+			}
+		}
+
+		if len(m.dist.ByTool) > 0 {
+			sb.WriteString(tui.StyleBold.Render("  By Tool") + "\n")
+			limit := min(len(m.dist.ByTool), 5)
+			for _, t := range m.dist.ByTool[:limit] {
+				fmt.Fprintf(&sb, "    %s  %s\n",
+					tui.StyleError.Render(formatCount(t.Count)),
+					t.ToolName,
+				)
+			}
+		}
+	}
+
+	// ── Coverage (detected tools) ───────────────────────────────────────
+	sb.WriteString("\n" + tui.Separator("Tool Coverage  (30 days)") + "\n\n")
+
+	if len(m.coverage) == 0 {
+		sb.WriteString(tui.StyleMuted.Render("  No tools detected yet.") + "\n")
+	} else {
+		limit := min(len(m.coverage), 10)
+		for _, t := range m.coverage[:limit] {
+			status := tui.StyleSuccess.Render(tui.IconCheck)
+			if t.BlockedCalls > 0 {
+				status = tui.StyleError.Render(fmt.Sprintf("%s %d blocked", tui.IconBlock, t.BlockedCalls))
+			}
+			apiLabel := ""
+			if t.APIType != "" {
+				apiLabel = tui.StyleMuted.Render(" (" + t.APIType + ")")
+			}
+			fmt.Fprintf(&sb, "  %s  %-20s%s  %s calls\n",
+				status,
+				truncate(t.ToolName, 20),
+				apiLabel,
+				formatCount(t.TotalCalls),
+			)
+		}
+	}
+
+	return sb.String()
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

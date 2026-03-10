@@ -79,11 +79,15 @@ func (h *APIHandler) HandleSessionEvents(c *gin.Context) {
 // APIHandler handles HTTP API requests for telemetry
 type APIHandler struct {
 	storage *Storage
+	stats   *StatsService
 }
 
 // NewAPIHandler creates a new telemetry API handler
 func NewAPIHandler(storage *Storage) *APIHandler {
-	return &APIHandler{storage: storage}
+	return &APIHandler{
+		storage: storage,
+		stats:   NewStatsService(storage),
+	}
 }
 
 // TracesQuery represents query parameters for traces endpoint
@@ -217,4 +221,58 @@ func (h *APIHandler) HandleStats(c *gin.Context) {
 	}
 
 	api.Success(c, stats)
+}
+
+// =============================================================================
+// Stats Aggregation Handlers (thin HTTP wrappers over StatsService)
+// =============================================================================
+
+// StatsRangeQuery represents query parameters with a range (e.g., "7d", "30d").
+type StatsRangeQuery struct {
+	Range string `form:"range" binding:"omitempty"`
+}
+
+// HandleBlockTrend handles GET /api/telemetry/stats/trend?range=7d
+func (h *APIHandler) HandleBlockTrend(c *gin.Context) {
+	var query StatsRangeQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		api.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	points, err := h.stats.GetBlockTrend(c.Request.Context(), query.Range)
+	if err != nil {
+		api.Error(c, http.StatusInternalServerError, "Failed to get trend data")
+		return
+	}
+	api.Success(c, points)
+}
+
+// HandleDistribution handles GET /api/telemetry/stats/distribution?range=30d
+func (h *APIHandler) HandleDistribution(c *gin.Context) {
+	var query StatsRangeQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		api.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	dist, err := h.stats.GetDistribution(c.Request.Context(), query.Range)
+	if err != nil {
+		api.Error(c, http.StatusInternalServerError, "Failed to get distribution data")
+		return
+	}
+	api.Success(c, dist)
+}
+
+// HandleCoverage handles GET /api/telemetry/stats/coverage?range=30d
+func (h *APIHandler) HandleCoverage(c *gin.Context) {
+	var query StatsRangeQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		api.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	tools, err := h.stats.GetCoverage(c.Request.Context(), query.Range)
+	if err != nil {
+		api.Error(c, http.StatusInternalServerError, "Failed to get coverage data")
+		return
+	}
+	api.Success(c, tools)
 }

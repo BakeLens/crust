@@ -522,6 +522,185 @@ func (s *Storage) GetTraceStats(ctx context.Context) (*TraceStats, error) {
 }
 
 // =============================================================================
+// Stats Aggregation Queries (raw SQL for GUI dashboard)
+// =============================================================================
+
+// TrendPoint holds a single day's block count for the trend endpoint.
+type TrendPoint struct {
+	Date         string `json:"date"`
+	TotalCalls   int64  `json:"total_calls"`
+	BlockedCalls int64  `json:"blocked_calls"`
+}
+
+// GetBlockTrend returns daily block counts for the given number of days.
+func (s *Storage) GetBlockTrend(ctx context.Context, days int) ([]TrendPoint, error) {
+	if days <= 0 {
+		days = 7
+	} else if days > 90 {
+		days = 90
+	}
+
+	rows, err := s.conn.QueryContext(ctx, `
+		SELECT
+			DATE(timestamp) AS day,
+			COUNT(*) AS total_calls,
+			COALESCE(SUM(CASE WHEN was_blocked THEN 1 ELSE 0 END), 0) AS blocked_calls
+		FROM tool_call_logs
+		WHERE timestamp > datetime('now', ?)
+		GROUP BY day
+		ORDER BY day ASC
+	`, fmt.Sprintf("-%d days", days))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query block trend: %w", err)
+	}
+	defer rows.Close()
+
+	var points []TrendPoint
+	for rows.Next() {
+		var p TrendPoint
+		if err := rows.Scan(&p.Date, &p.TotalCalls, &p.BlockedCalls); err != nil {
+			return nil, fmt.Errorf("failed to scan trend row: %w", err)
+		}
+		points = append(points, p)
+	}
+	return points, rows.Err()
+}
+
+// RuleDistribution holds block counts grouped by rule name.
+type RuleDistribution struct {
+	Rule  string `json:"rule"`
+	Count int64  `json:"count"`
+}
+
+// ToolDistribution holds block counts grouped by tool name.
+type ToolDistribution struct {
+	ToolName string `json:"tool_name"`
+	Count    int64  `json:"count"`
+}
+
+// Distribution holds the combined distribution result.
+type Distribution struct {
+	ByRule []RuleDistribution `json:"by_rule"`
+	ByTool []ToolDistribution `json:"by_tool"`
+}
+
+// GetDistribution returns block counts grouped by rule and by tool.
+func (s *Storage) GetDistribution(ctx context.Context, days int) (*Distribution, error) {
+	if days <= 0 {
+		days = 30
+	} else if days > 90 {
+		days = 90
+	}
+	timeOffset := fmt.Sprintf("-%d days", days)
+
+	// By rule
+	ruleRows, err := s.conn.QueryContext(ctx, `
+		SELECT blocked_by_rule, COUNT(*) AS cnt
+		FROM tool_call_logs
+		WHERE was_blocked = 1
+		  AND blocked_by_rule IS NOT NULL AND blocked_by_rule != ''
+		  AND timestamp > datetime('now', ?)
+		GROUP BY blocked_by_rule
+		ORDER BY cnt DESC
+		LIMIT 50
+	`, timeOffset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query rule distribution: %w", err)
+	}
+	defer ruleRows.Close()
+
+	var byRule []RuleDistribution
+	for ruleRows.Next() {
+		var r RuleDistribution
+		if err := ruleRows.Scan(&r.Rule, &r.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan rule row: %w", err)
+		}
+		byRule = append(byRule, r)
+	}
+	if err := ruleRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// By tool
+	toolRows, err := s.conn.QueryContext(ctx, `
+		SELECT tool_name, COUNT(*) AS cnt
+		FROM tool_call_logs
+		WHERE was_blocked = 1
+		  AND timestamp > datetime('now', ?)
+		GROUP BY tool_name
+		ORDER BY cnt DESC
+		LIMIT 50
+	`, timeOffset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tool distribution: %w", err)
+	}
+	defer toolRows.Close()
+
+	var byTool []ToolDistribution
+	for toolRows.Next() {
+		var t ToolDistribution
+		if err := toolRows.Scan(&t.ToolName, &t.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan tool row: %w", err)
+		}
+		byTool = append(byTool, t)
+	}
+	if err := toolRows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &Distribution{
+		ByRule: byRule,
+		ByTool: byTool,
+	}, nil
+}
+
+// CoverageTool holds a detected AI tool with its call and block counts.
+type CoverageTool struct {
+	ToolName     string `json:"tool_name"`
+	APIType      string `json:"api_type"`
+	TotalCalls   int64  `json:"total_calls"`
+	BlockedCalls int64  `json:"blocked_calls"`
+	LastSeen     string `json:"last_seen"`
+}
+
+// GetCoverage returns detected AI tools with protection stats.
+func (s *Storage) GetCoverage(ctx context.Context, days int) ([]CoverageTool, error) {
+	if days <= 0 {
+		days = 30
+	} else if days > 90 {
+		days = 90
+	}
+
+	rows, err := s.conn.QueryContext(ctx, `
+		SELECT
+			tool_name,
+			COALESCE(api_type, '') AS api_type,
+			COUNT(*) AS total_calls,
+			COALESCE(SUM(CASE WHEN was_blocked THEN 1 ELSE 0 END), 0) AS blocked_calls,
+			MAX(timestamp) AS last_seen
+		FROM tool_call_logs
+		WHERE timestamp > datetime('now', ?)
+		GROUP BY tool_name, api_type
+		ORDER BY total_calls DESC
+		LIMIT 100
+	`, fmt.Sprintf("-%d days", days))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query coverage: %w", err)
+	}
+	defer rows.Close()
+
+	var tools []CoverageTool
+	for rows.Next() {
+		var t CoverageTool
+		if err := rows.Scan(&t.ToolName, &t.APIType, &t.TotalCalls, &t.BlockedCalls, &t.LastSeen); err != nil {
+			return nil, fmt.Errorf("failed to scan coverage row: %w", err)
+		}
+		tools = append(tools, t)
+	}
+	return tools, rows.Err()
+}
+
+// =============================================================================
 // Session Queries (raw SQL — aggregations not suited to sqlc)
 // =============================================================================
 

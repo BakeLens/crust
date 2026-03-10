@@ -97,6 +97,85 @@ type SecurityStats struct {
 	AllowedCalls   int64 `json:"allowed_tool_calls"`
 }
 
+// TrendPoint holds a single day's block count for the trend chart.
+type TrendPoint struct {
+	Date         string `json:"date"`
+	TotalCalls   int64  `json:"total_calls"`
+	BlockedCalls int64  `json:"blocked_calls"`
+}
+
+// RuleDistribution holds block counts grouped by rule name.
+type RuleDistribution struct {
+	Rule  string `json:"rule"`
+	Count int64  `json:"count"`
+}
+
+// ToolDistribution holds block counts grouped by tool name.
+type ToolDistribution struct {
+	ToolName string `json:"tool_name"`
+	Count    int64  `json:"count"`
+}
+
+// Distribution holds the combined distribution result.
+type Distribution struct {
+	ByRule []RuleDistribution `json:"by_rule"`
+	ByTool []ToolDistribution `json:"by_tool"`
+}
+
+// CoverageTool holds a detected AI tool with protection stats.
+type CoverageTool struct {
+	ToolName     string `json:"tool_name"`
+	APIType      string `json:"api_type"`
+	TotalCalls   int64  `json:"total_calls"`
+	BlockedCalls int64  `json:"blocked_calls"`
+	LastSeen     string `json:"last_seen"`
+}
+
+// FetchBlockTrend fetches daily block trend from the management API.
+func FetchBlockTrend(mgmtClient *http.Client, apiBase string, rangeStr string) []TrendPoint {
+	resp, err := mgmtClient.Get(apiBase + "/api/telemetry/stats/trend?range=" + rangeStr) //nolint:noctx
+	if err != nil || resp == nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var points []TrendPoint
+	if json.NewDecoder(resp.Body).Decode(&points) != nil {
+		return nil
+	}
+	return points
+}
+
+// FetchDistribution fetches block distribution from the management API.
+func FetchDistribution(mgmtClient *http.Client, apiBase string, rangeStr string) *Distribution {
+	resp, err := mgmtClient.Get(apiBase + "/api/telemetry/stats/distribution?range=" + rangeStr) //nolint:noctx
+	if err != nil || resp == nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var dist Distribution
+	if json.NewDecoder(resp.Body).Decode(&dist) != nil {
+		return nil
+	}
+	return &dist
+}
+
+// FetchCoverage fetches tool coverage from the management API.
+func FetchCoverage(mgmtClient *http.Client, apiBase string, rangeStr string) []CoverageTool {
+	resp, err := mgmtClient.Get(apiBase + "/api/telemetry/stats/coverage?range=" + rangeStr) //nolint:noctx
+	if err != nil || resp == nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var tools []CoverageTool
+	if json.NewDecoder(resp.Body).Decode(&tools) != nil {
+		return nil
+	}
+	return tools
+}
+
 // DefaultAPIBase is the dummy host for socket-based API requests.
 // The actual routing happens via the http.Client transport (Unix socket / named pipe).
 const DefaultAPIBase = "http://crust-api"
