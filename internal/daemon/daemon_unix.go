@@ -9,6 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -87,11 +90,40 @@ func IsRunning() (bool, int) {
 	return true, pid
 }
 
+// isCrustProcess checks whether a PID belongs to a crust binary.
+// On Linux, reads /proc/<pid>/exe; on macOS/FreeBSD, checks the process
+// command name. This prevents sending signals to a recycled PID that
+// now belongs to an unrelated process.
+func isCrustProcess(pid int) bool {
+	if runtime.GOOS == "linux" {
+		exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+		if err != nil {
+			return false
+		}
+		return strings.HasSuffix(filepath.Base(exe), "crust")
+	}
+	// macOS / FreeBSD: use ps to get the command name.
+	pidStr := strconv.Itoa(pid)
+	out, err := exec.CommandContext(context.Background(), "ps", "-p", pidStr, "-o", "comm=").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(strings.TrimSpace(string(out)), "crust")
+}
+
 // Stop stops the running daemon with SIGTERM, falling back to SIGKILL.
 func Stop() error {
 	running, pid := IsRunning()
 	if !running {
 		return errors.New("crust is not running")
+	}
+
+	// SECURITY: Verify the PID still belongs to a crust process before
+	// sending SIGTERM. Between IsRunning() and here, the kernel could
+	// recycle the PID for an unrelated process.
+	if !isCrustProcess(pid) {
+		_ = RemovePID() //nolint:errcheck // cleanup best effort
+		return errors.New("crust is not running (stale PID)")
 	}
 
 	process, err := os.FindProcess(pid)

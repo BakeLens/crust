@@ -234,21 +234,22 @@ func (l *Loader) AddRuleFile(srcPath string) (string, error) {
 		return "", fmt.Errorf("failed to read source file: %w", err)
 	}
 
-	// Destination path
+	// Destination path — use O_EXCL to atomically detect collisions
+	// instead of a Stat+Write TOCTOU race.
 	filename := filepath.Base(srcPath)
 	destPath := filepath.Join(l.userDir, filename)
 
-	// Check for existing file
-	if _, err := os.Stat(destPath); err == nil {
-		// Add timestamp to avoid overwrite
+	written, err := fileutil.WriteFileExclusive(destPath, data)
+	if !written && err == nil {
+		// File already exists — add timestamp suffix and retry.
 		ext := filepath.Ext(filename)
 		name := strings.TrimSuffix(filename, ext)
 		filename = fmt.Sprintf("%s_%d%s", name, time.Now().Unix(), ext)
 		destPath = filepath.Join(l.userDir, filename)
-	}
-
-	// Write to destination with exclusive lock and 0600 permissions.
-	if err := fileutil.WriteFileWithLock(destPath, data); err != nil {
+		if err := fileutil.WriteFileWithLock(destPath, data); err != nil {
+			return "", fmt.Errorf("failed to write rule file: %w", err)
+		}
+	} else if err != nil {
 		return "", fmt.Errorf("failed to write rule file: %w", err)
 	}
 

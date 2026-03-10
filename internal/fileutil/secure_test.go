@@ -179,6 +179,56 @@ func TestInsecureWriteFile_NoACL(t *testing.T) {
 	assertHasInheritedACEs(t, path)
 }
 
+func TestWriteFileExclusive_NewFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "new.txt")
+
+	written, err := WriteFileExclusive(path, []byte("hello"))
+	if err != nil {
+		t.Fatalf("WriteFileExclusive: %v", err)
+	}
+	if !written {
+		t.Fatal("expected written=true for new file")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "hello" {
+		t.Fatalf("got %q, want %q", data, "hello")
+	}
+	assertOwnerOnly(t, path)
+}
+
+func TestWriteFileExclusive_ExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "existing.txt")
+
+	// Create the file first
+	if err := os.WriteFile(path, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Exclusive write should report false without modifying the file.
+	written, err := WriteFileExclusive(path, []byte("overwrite"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if written {
+		t.Fatal("expected written=false for existing file")
+	}
+
+	// Original content must be untouched.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "original" {
+		t.Fatalf("file was modified: got %q", data)
+	}
+}
+
 // assertOwnerOnly checks that the file/dir has proper restricted permissions.
 // On Unix: verifies mode bits exclude group/other access.
 // On Windows: verified by the platform-specific test helper.

@@ -96,6 +96,59 @@ func TestValidatePathInDirectory_TraversalBlocked(t *testing.T) {
 	}
 }
 
+func TestAddRuleFile_NoOverwrite(t *testing.T) {
+	tmpDir := t.TempDir()
+	rulesDir := filepath.Join(tmpDir, "rules.d")
+	if err := os.MkdirAll(rulesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a source rule file
+	srcDir := filepath.Join(tmpDir, "src")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ruleContent := []byte("rules:\n  - block: \"**/secret\"\n")
+	srcPath := filepath.Join(srcDir, "test.yaml")
+	if err := os.WriteFile(srcPath, ruleContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewLoader(rulesDir)
+
+	// First add should use the original filename.
+	dest1, err := loader.AddRuleFile(srcPath)
+	if err != nil {
+		t.Fatalf("first AddRuleFile: %v", err)
+	}
+	if filepath.Base(dest1) != "test.yaml" {
+		t.Fatalf("expected test.yaml, got %s", filepath.Base(dest1))
+	}
+
+	// Second add should get a timestamped name (not overwrite the first).
+	dest2, err := loader.AddRuleFile(srcPath)
+	if err != nil {
+		t.Fatalf("second AddRuleFile: %v", err)
+	}
+	if dest2 == dest1 {
+		t.Fatal("second AddRuleFile should have a different destination")
+	}
+	if !strings.Contains(filepath.Base(dest2), "test_") {
+		t.Fatalf("expected timestamped name, got %s", filepath.Base(dest2))
+	}
+
+	// Both files should exist with correct content.
+	for _, p := range []string{dest1, dest2} {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", p, err)
+		}
+		if string(data) != string(ruleContent) {
+			t.Fatalf("%s: got %q, want %q", p, data, ruleContent)
+		}
+	}
+}
+
 func TestValidatePathInDirectory_SymlinkTraversal(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink test not reliable on Windows CI")

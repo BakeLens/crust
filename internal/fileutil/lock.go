@@ -44,3 +44,24 @@ func WriteFileWithLock(path string, data []byte) error {
 	_, err = f.Write(data)
 	return err
 }
+
+// WriteFileExclusive atomically creates a new file and writes data to it.
+// Returns (true, nil) on success. If the file already exists, returns
+// (false, nil) without modifying anything — the caller can then choose a
+// different name. This eliminates the TOCTOU race of Stat-then-Write.
+func WriteFileExclusive(path string, data []byte) (bool, error) {
+	f, err := SecureOpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+	if err != nil {
+		if os.IsExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	defer f.Close()
+
+	if _, err := f.Write(data); err != nil {
+		os.Remove(path) // clean up partial write
+		return false, err
+	}
+	return true, nil
+}
