@@ -23,6 +23,9 @@ func parseSSEEventData(event []byte) (eventType string, data []byte) {
 
 	if len(dataLines) > 0 {
 		data = bytes.Join(dataLines, []byte("\n"))
+		if data == nil {
+			data = []byte{}
+		}
 	}
 	return eventType, data
 }
