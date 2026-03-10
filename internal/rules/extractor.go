@@ -194,13 +194,6 @@ func fieldStrings(val any) []string {
 	return nil
 }
 
-// FindPwsh returns the path to pwsh.exe or powershell.exe, preferring the
-// newer pwsh (PowerShell 7+) over legacy powershell (Windows PowerShell 5.1).
-// This is a package-level convenience wrapper around pwsh.FindPwsh.
-func FindPwsh() (string, bool) {
-	return pwsh.FindPwsh()
-}
-
 // Extractor extracts paths and operations from tool calls
 type Extractor struct {
 	commandDB  map[string]CommandInfo

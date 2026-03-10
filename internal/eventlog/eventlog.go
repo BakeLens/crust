@@ -1,9 +1,21 @@
 // Package eventlog provides unified security event recording across all
 // crust transport layers (HTTP proxy, JSON-RPC stdio pipes, MCP HTTP gateway).
 //
-// This package is intentionally dependency-light so that transport packages
-// (jsonrpc, mcpgateway, httpproxy) can import it without pulling in the
-// full security package.
+// Architecture:
+//
+//	httpproxy ──┐
+//	jsonrpc  ───┤──▶ eventlog.Record(Event{...})
+//	mcpgateway ─┤        │
+//	security ───┘        ├─▶ in-memory Metrics (atomic counters)
+//	                     └─▶ Sink.LogEvent() → telemetry DB (if registered)
+//
+// The Sink interface breaks the import cycle: transport packages import
+// eventlog (lightweight), while security implements the Sink to persist
+// events to SQLite via the telemetry package. security.Manager calls
+// SetSink() once during startup.
+//
+// To record events from a new call site, call Record() with an Event
+// populated with the appropriate Layer constant and transport metadata.
 package eventlog
 
 import (

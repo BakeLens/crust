@@ -224,12 +224,6 @@ def handle_evaluate(req):
     return None  # allow
 ```
 
-```go
-// Register plugins at startup
-p := plugin.NewProcessPlugin("sandbox", "python3", "sandbox_plugin.py")
-registry.Register(p, json.RawMessage(`{"allowed_dirs":["/home/user/project"]}`))
-```
-
 Key features:
 - **OS-level crash isolation** — plugins run as separate processes; a crash cannot affect the engine
 - **Circuit breaker** — plugins that fail 3 times are auto-disabled with exponential backoff
@@ -277,7 +271,8 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 | [CVE Tracker](docs/cve-tracker.md) | AI agent vulnerability tracker |
 | [Migration](docs/migration.md) | Upgrade guides for breaking changes |
 
-## Build from Source
+<details>
+<summary><strong>Build from Source</strong></summary>
 
 Requires Go 1.26.1+ and a C compiler (CGO is needed for SQLite).
 
@@ -289,6 +284,8 @@ go build .
 ```
 
 Go 1.26 enables the [Green Tea garbage collector](https://go.dev/blog/go1.26) by default, which reduces GC overhead by 10–40% — this meaningfully improves latency for the hot-path proxy pipeline. Run `go fix ./...` before submitting PRs to apply any pending modernizations automatically.
+
+</details>
 
 ## Contributing
 

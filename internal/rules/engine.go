@@ -14,6 +14,7 @@ import (
 
 	"github.com/BakeLens/crust/internal/logger"
 	"github.com/BakeLens/crust/internal/pathutil"
+	"github.com/BakeLens/crust/internal/rules/pwsh"
 )
 
 // expandRuleHomes replaces $HOME in rule path patterns with the actual home
@@ -169,8 +170,8 @@ func NewEngineWithNormalizer(cfg EngineConfig, normalizer *Normalizer) (*Engine,
 
 	if runtime.GOOS == goosWindows {
 		// Windows 10/11 always ships powershell.exe (5.1); pwsh.exe (7+) is
-		// optional. FindPwsh() should always succeed on supported platforms.
-		if pwshPath, ok := FindPwsh(); ok {
+		// optional. pwsh.FindPwsh() should always succeed on supported platforms.
+		if pwshPath, ok := pwsh.FindPwsh(); ok {
 			if err := e.extractor.EnablePSWorker(pwshPath); err != nil {
 				log.Warn("PS worker failed to start (falling back to heuristic PS transform): %v", err)
 			}

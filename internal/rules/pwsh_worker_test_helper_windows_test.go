@@ -37,7 +37,7 @@ var (
 // The worker is created once and reused; callers must NOT call stop().
 func getSharedPwshWorker(t *testing.T) *pwshWorkerTestHelper {
 	t.Helper()
-	pwshPath, ok := FindPwsh()
+	pwshPath, ok := pwsh.FindPwsh()
 	if !ok {
 		t.Skip("pwsh.exe / powershell.exe not found")
 	}
