@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
+	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/message"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
@@ -148,8 +149,8 @@ func (i *Interceptor) evaluateToolCall(
 		ruleName = matchResult.RuleName
 	}
 
-	RecordEvent(Event{
-		Layer:      LayerL1,
+	eventlog.Record(eventlog.Event{
+		Layer:      eventlog.LayerL1,
 		TraceID:    ctx.TraceID,
 		SessionID:  ctx.SessionID,
 		ToolName:   tc.Name,

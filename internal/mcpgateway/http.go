@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/jsonrpc"
 	"github.com/BakeLens/crust/internal/rules"
 )
@@ -100,7 +101,19 @@ func (g *HTTPGateway) handlePost(w http.ResponseWriter, r *http.Request) {
 
 	// Inspect the request
 	result := InspectRequest(g.engine, &msg)
-	if result.Decision == Block {
+	isBlocked := result.Decision == Block
+	if result.ToolName != "" || isBlocked {
+		eventlog.Record(eventlog.Event{
+			Layer:      eventlog.LayerMCPHTTP,
+			ToolName:   result.ToolName,
+			Protocol:   "MCP",
+			Direction:  "inbound",
+			Method:     msg.Method,
+			WasBlocked: isBlocked,
+			RuleName:   result.RuleName,
+		})
+	}
+	if isBlocked {
 		log.Warn("Blocked MCP HTTP %s (tool=%s): %s", msg.Method, result.ToolName, result.RuleName)
 		writeJSONRPCError(w, msg.ID, result.BlockMsg)
 		return
@@ -203,7 +216,19 @@ func (g *HTTPGateway) handleGet(w http.ResponseWriter, r *http.Request) {
 			result = InspectResponse(g.engine, &msg)
 		}
 
-		if result.Decision == Block {
+		isBlocked := result.Decision == Block
+		if result.ToolName != "" || isBlocked {
+			eventlog.Record(eventlog.Event{
+				Layer:      eventlog.LayerMCPHTTP,
+				ToolName:   result.ToolName,
+				Protocol:   "MCP",
+				Direction:  "outbound",
+				Method:     msg.Method,
+				WasBlocked: isBlocked,
+				RuleName:   result.RuleName,
+			})
+		}
+		if isBlocked {
 			log.Warn("Blocked MCP HTTP SSE event (rule=%s)", result.RuleName)
 			return event, false // drop blocked event
 		}
@@ -257,6 +282,14 @@ func (g *HTTPGateway) proxyJSONResponse(w http.ResponseWriter, upResp *http.Resp
 
 	result := InspectResponse(g.engine, &respMsg)
 	if result.Decision == Block {
+		eventlog.Record(eventlog.Event{
+			Layer:      eventlog.LayerMCPHTTP,
+			Protocol:   "MCP",
+			Direction:  "outbound",
+			WasBlocked: true,
+			RuleName:   result.RuleName,
+			BlockType:  eventlog.BlockTypeDLP,
+		})
 		log.Warn("Blocked MCP HTTP response (DLP): rule=%s", result.RuleName)
 		writeJSONRPCError(w, reqMsg.ID, result.BlockMsg)
 		return
@@ -294,6 +327,14 @@ func (g *HTTPGateway) proxySSEResponse(w http.ResponseWriter, r *http.Request, u
 
 		result := InspectResponse(g.engine, &msg)
 		if result.Decision == Block {
+			eventlog.Record(eventlog.Event{
+				Layer:      eventlog.LayerMCPHTTP,
+				Protocol:   "MCP",
+				Direction:  "outbound",
+				WasBlocked: true,
+				RuleName:   result.RuleName,
+				BlockType:  eventlog.BlockTypeDLP,
+			})
 			log.Warn("Blocked MCP HTTP SSE response (DLP): rule=%s", result.RuleName)
 			return event, false
 		}

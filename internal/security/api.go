@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/BakeLens/crust/internal/api"
+	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
 )
@@ -142,7 +143,7 @@ func (s *APIServer) handleLogs(c *gin.Context) {
 // handleStats handles GET /api/security/stats
 // Returns in-memory metrics for the current daemon session (not DB totals).
 func (s *APIServer) handleStats(c *gin.Context) {
-	m := GetMetrics()
+	m := eventlog.GetMetrics()
 	blocked := m.Layer0Blocks.Load() + m.Layer1Blocks.Load()
 
 	api.Success(c, gin.H{

@@ -3,15 +3,17 @@ package security
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/BakeLens/crust/internal/eventlog"
 )
 
 func TestMetricsCountAccuracy(t *testing.T) {
-	globalMetrics.Reset()
+	eventlog.GetMetrics().Reset()
 
 	// 3 Layer 0 blocked events
 	for range 3 {
-		RecordEvent(Event{
-			Layer:      LayerL0,
+		eventlog.Record(eventlog.Event{
+			Layer:      eventlog.LayerL0,
 			ToolName:   "Read",
 			Arguments:  json.RawMessage(`{"path":"/etc/shadow"}`),
 			WasBlocked: true,
@@ -20,15 +22,15 @@ func TestMetricsCountAccuracy(t *testing.T) {
 	}
 
 	// 2 Layer 1 blocked events (one non-streaming, one buffered)
-	RecordEvent(Event{
-		Layer:      LayerL1,
+	eventlog.Record(eventlog.Event{
+		Layer:      eventlog.LayerL1,
 		ToolName:   "Bash",
 		Arguments:  json.RawMessage(`{"command":"rm -rf /"}`),
 		WasBlocked: true,
 		RuleName:   "test-rule",
 	})
-	RecordEvent(Event{
-		Layer:      LayerL1Buffer,
+	eventlog.Record(eventlog.Event{
+		Layer:      eventlog.LayerL1Buffer,
 		ToolName:   "Write",
 		Arguments:  json.RawMessage(`{"path":"/etc/passwd"}`),
 		WasBlocked: true,
@@ -36,14 +38,14 @@ func TestMetricsCountAccuracy(t *testing.T) {
 	})
 
 	// 1 Layer 1 allowed event
-	RecordEvent(Event{
-		Layer:      LayerL1,
+	eventlog.Record(eventlog.Event{
+		Layer:      eventlog.LayerL1,
 		ToolName:   "Read",
 		Arguments:  json.RawMessage(`{"path":"README.md"}`),
 		WasBlocked: false,
 	})
 
-	m := GetMetrics()
+	m := eventlog.GetMetrics()
 
 	if got := m.Layer0Blocks.Load(); got != 3 {
 		t.Errorf("Layer0Blocks = %d, want 3", got)
@@ -60,7 +62,7 @@ func TestMetricsCountAccuracy(t *testing.T) {
 }
 
 func TestMetricsReset(t *testing.T) {
-	m := GetMetrics()
+	m := eventlog.GetMetrics()
 
 	// Populate counters
 	m.Layer0Blocks.Add(5)
@@ -85,16 +87,16 @@ func TestMetricsReset(t *testing.T) {
 }
 
 func TestBlockedTotal(t *testing.T) {
-	globalMetrics.Reset()
+	eventlog.GetMetrics().Reset()
 
 	// Record events at different layers
-	RecordEvent(Event{Layer: LayerL0, ToolName: "Read", WasBlocked: true, RuleName: "r1"})
-	RecordEvent(Event{Layer: LayerL1, ToolName: "Bash", WasBlocked: true, RuleName: "r2"})
-	RecordEvent(Event{Layer: LayerL1Stream, ToolName: "Write", WasBlocked: true, RuleName: "r3"})
-	RecordEvent(Event{Layer: LayerL1Buffer, ToolName: "Edit", WasBlocked: true, RuleName: "r4"})
-	RecordEvent(Event{Layer: LayerL1, ToolName: "Read", WasBlocked: false})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL0, ToolName: "Read", WasBlocked: true, RuleName: "r1"})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL1, ToolName: "Bash", WasBlocked: true, RuleName: "r2"})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL1Stream, ToolName: "Write", WasBlocked: true, RuleName: "r3"})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL1Buffer, ToolName: "Edit", WasBlocked: true, RuleName: "r4"})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL1, ToolName: "Read", WasBlocked: false})
 
-	m := GetMetrics()
+	m := eventlog.GetMetrics()
 	blocked := m.Layer0Blocks.Load() + m.Layer1Blocks.Load()
 
 	if blocked != 4 {
@@ -112,13 +114,13 @@ func TestBlockedTotal(t *testing.T) {
 }
 
 func TestGetStatsMap(t *testing.T) {
-	globalMetrics.Reset()
+	eventlog.GetMetrics().Reset()
 
-	RecordEvent(Event{Layer: LayerL0, ToolName: "Read", WasBlocked: true, RuleName: "r1"})
-	RecordEvent(Event{Layer: LayerL1, ToolName: "Bash", WasBlocked: true, RuleName: "r2"})
-	RecordEvent(Event{Layer: LayerL1, ToolName: "Read", WasBlocked: false})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL0, ToolName: "Read", WasBlocked: true, RuleName: "r1"})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL1, ToolName: "Bash", WasBlocked: true, RuleName: "r2"})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL1, ToolName: "Read", WasBlocked: false})
 
-	stats := GetMetrics().GetStats()
+	stats := eventlog.GetMetrics().GetStats()
 
 	if stats["total_tool_calls"] != 3 {
 		t.Errorf("total_tool_calls = %d, want 3", stats["total_tool_calls"])
@@ -135,14 +137,14 @@ func TestGetStatsMap(t *testing.T) {
 }
 
 func TestLayer0NonBlockedDroppedFromMetrics(t *testing.T) {
-	globalMetrics.Reset()
+	eventlog.GetMetrics().Reset()
 
 	// Non-blocked L0 events shouldn't happen in practice.
 	// They are silently dropped to preserve the invariant:
 	//   TotalToolCalls == Layer0Blocks + Layer1Blocks + Layer1Allowed
-	RecordEvent(Event{Layer: LayerL0, ToolName: "Read", WasBlocked: false})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL0, ToolName: "Read", WasBlocked: false})
 
-	m := GetMetrics()
+	m := eventlog.GetMetrics()
 	if got := m.Layer0Blocks.Load(); got != 0 {
 		t.Errorf("Layer0Blocks = %d, want 0", got)
 	}
@@ -152,20 +154,20 @@ func TestLayer0NonBlockedDroppedFromMetrics(t *testing.T) {
 }
 
 func TestInvariantTotalEqualsSubcounters(t *testing.T) {
-	globalMetrics.Reset()
+	eventlog.GetMetrics().Reset()
 
 	// Mix of all layer types
-	RecordEvent(Event{Layer: LayerL0, ToolName: "Read", WasBlocked: true, RuleName: "r1"})
-	RecordEvent(Event{Layer: LayerL0, ToolName: "Write", WasBlocked: true, RuleName: "r2"})
-	RecordEvent(Event{Layer: LayerL1, ToolName: "Bash", WasBlocked: true, RuleName: "r3"})
-	RecordEvent(Event{Layer: LayerL1, ToolName: "Read", WasBlocked: false})
-	RecordEvent(Event{Layer: LayerL1Stream, ToolName: "Write", WasBlocked: true, RuleName: "r4"})
-	RecordEvent(Event{Layer: LayerL1Stream, ToolName: "Edit", WasBlocked: false})
-	RecordEvent(Event{Layer: LayerL1Buffer, ToolName: "Bash", WasBlocked: true, RuleName: "r5"})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL0, ToolName: "Read", WasBlocked: true, RuleName: "r1"})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL0, ToolName: "Write", WasBlocked: true, RuleName: "r2"})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL1, ToolName: "Bash", WasBlocked: true, RuleName: "r3"})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL1, ToolName: "Read", WasBlocked: false})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL1Stream, ToolName: "Write", WasBlocked: true, RuleName: "r4"})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL1Stream, ToolName: "Edit", WasBlocked: false})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL1Buffer, ToolName: "Bash", WasBlocked: true, RuleName: "r5"})
 	// Non-blocked L0 should be silently dropped:
-	RecordEvent(Event{Layer: LayerL0, ToolName: "Read", WasBlocked: false})
+	eventlog.Record(eventlog.Event{Layer: eventlog.LayerL0, ToolName: "Read", WasBlocked: false})
 
-	m := GetMetrics()
+	m := eventlog.GetMetrics()
 	sum := m.Layer0Blocks.Load() + m.Layer1Blocks.Load() + m.Layer1Allowed.Load()
 
 	if m.TotalToolCalls.Load() != sum {

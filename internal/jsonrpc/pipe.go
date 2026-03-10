@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 
+	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/logger"
 	"github.com/BakeLens/crust/internal/message"
 	"github.com/BakeLens/crust/internal/rules"
@@ -65,6 +66,16 @@ func scanDLP(log *logger.Logger, engine *rules.Engine, data json.RawMessage,
 	}
 	log.Warn("Blocked %s %s (DLP): rule=%s message=%s",
 		protocol, logLabel, dlpResult.RuleName, dlpResult.Message)
+
+	eventlog.Record(eventlog.Event{
+		Layer:      eventlog.LayerPipe,
+		ToolName:   logLabel,
+		Protocol:   protocol,
+		WasBlocked: true,
+		RuleName:   dlpResult.RuleName,
+		BlockType:  eventlog.BlockTypeDLP,
+	})
+
 	if len(id) > 0 {
 		SendBlockError(log, errWriter, id,
 			message.FormatDLPBlock(dlpResult.RuleName, dlpResult.Message))
@@ -112,6 +123,17 @@ func processMessage(log *logger.Logger, engine *rules.Engine, line []byte, msg *
 	}
 	if err != nil {
 		log.Warn("Blocked %s %s: %v", protocol, msg.Method, err)
+
+		eventlog.Record(eventlog.Event{
+			Layer:      eventlog.LayerPipe,
+			ToolName:   msg.Method,
+			Protocol:   protocol,
+			Direction:  label,
+			Method:     msg.Method,
+			WasBlocked: true,
+			BlockType:  eventlog.BlockTypeMalformed,
+		})
+
 		if msg.IsRequest() {
 			SendBlockError(log, errWriter, msg.ID, message.FormatProtocolError("malformed params for "+msg.Method))
 		}
@@ -120,7 +142,20 @@ func processMessage(log *logger.Logger, engine *rules.Engine, line []byte, msg *
 
 	result := engine.Evaluate(*toolCall)
 
-	if result.Matched && result.Action == rules.ActionBlock {
+	isBlocked := result.Matched && result.Action == rules.ActionBlock
+
+	eventlog.Record(eventlog.Event{
+		Layer:      eventlog.LayerPipe,
+		ToolName:   toolCall.Name,
+		Arguments:  toolCall.Arguments,
+		Protocol:   protocol,
+		Direction:  label,
+		Method:     msg.Method,
+		WasBlocked: isBlocked,
+		RuleName:   result.RuleName,
+	})
+
+	if isBlocked {
 		log.Warn("Blocked %s %s (tool=%s): rule=%s message=%s",
 			protocol, msg.Method, toolCall.Name, result.RuleName, result.Message)
 		if msg.IsRequest() {

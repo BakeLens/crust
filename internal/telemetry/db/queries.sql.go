@@ -413,9 +413,10 @@ const logToolCall = `-- name: LogToolCall :exec
 
 INSERT INTO tool_call_logs (
     trace_id, session_id, tool_name, tool_arguments,
-    api_type, was_blocked, blocked_by_rule, model, layer
+    api_type, was_blocked, blocked_by_rule, model, layer,
+    protocol, direction, method, block_type
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type LogToolCallParams struct {
@@ -428,6 +429,10 @@ type LogToolCallParams struct {
 	BlockedByRule *string `json:"blocked_by_rule"`
 	Model         *string `json:"model"`
 	Layer         *string `json:"layer"`
+	Protocol      *string `json:"protocol"`
+	Direction     *string `json:"direction"`
+	Method        *string `json:"method"`
+	BlockType     *string `json:"block_type"`
 }
 
 // =============================================================================
@@ -444,6 +449,10 @@ func (q *Queries) LogToolCall(ctx context.Context, arg LogToolCallParams) error 
 		arg.BlockedByRule,
 		arg.Model,
 		arg.Layer,
+		arg.Protocol,
+		arg.Direction,
+		arg.Method,
+		arg.BlockType,
 	)
 	return err
 }

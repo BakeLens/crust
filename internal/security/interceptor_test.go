@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/message"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
@@ -187,7 +188,7 @@ rules:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset metrics before each test
-			GetMetrics().Reset()
+			eventlog.GetMetrics().Reset()
 
 			interceptor, cleanup := createTestInterceptor(t, tt.rulesYAML)
 			defer cleanup()
@@ -261,7 +262,7 @@ rules:
 // TestInterceptOpenAIResponse_MultipleToolCalls tests handling multiple tool calls
 func TestInterceptOpenAIResponse_MultipleToolCalls(t *testing.T) {
 	// Reset metrics
-	GetMetrics().Reset()
+	eventlog.GetMetrics().Reset()
 
 	rulesYAML := `
 rules:
@@ -538,7 +539,7 @@ rules:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			GetMetrics().Reset()
+			eventlog.GetMetrics().Reset()
 
 			interceptor, cleanup := createTestInterceptor(t, tt.rulesYAML)
 			defer cleanup()
@@ -660,7 +661,7 @@ func TestInterceptAnthropicResponse_TextBlockPassThrough(t *testing.T) {
 
 // TestInterceptAnthropicResponse_MixedContent tests mixed text and tool_use blocks
 func TestInterceptAnthropicResponse_MixedContent(t *testing.T) {
-	GetMetrics().Reset()
+	eventlog.GetMetrics().Reset()
 
 	rulesYAML := `
 rules:
@@ -1022,7 +1023,7 @@ func TestInterceptorGetters(t *testing.T) {
 
 // TestInterceptOpenAIResponse_ExistingContentPreserved tests that existing content is preserved
 func TestInterceptOpenAIResponse_ExistingContentPreserved(t *testing.T) {
-	GetMetrics().Reset()
+	eventlog.GetMetrics().Reset()
 
 	rulesYAML := `
 rules:
@@ -1278,7 +1279,7 @@ func TestInterceptAnthropicResponse_EmptyResponse(t *testing.T) {
 
 // TestInterceptOpenAIResponse_ReplaceModeMessage tests replace mode message formatting
 func TestInterceptOpenAIResponse_ReplaceModeMessage(t *testing.T) {
-	GetMetrics().Reset()
+	eventlog.GetMetrics().Reset()
 
 	rulesYAML := `
 rules:
@@ -1338,7 +1339,7 @@ rules:
 
 // TestInterceptAnthropicResponse_ReplaceModeMessage tests replace mode for Anthropic
 func TestInterceptAnthropicResponse_ReplaceModeMessage(t *testing.T) {
-	GetMetrics().Reset()
+	eventlog.GetMetrics().Reset()
 
 	rulesYAML := `
 rules:
@@ -1406,7 +1407,7 @@ rules:
 
 // TestInterceptionResult_Fields tests InterceptionResult field values
 func TestInterceptionResult_Fields(t *testing.T) {
-	GetMetrics().Reset()
+	eventlog.GetMetrics().Reset()
 
 	rulesYAML := `
 rules:

@@ -21,6 +21,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/BakeLens/crust/internal/config"
+	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/logger"
 	"github.com/BakeLens/crust/internal/message"
 	"github.com/BakeLens/crust/internal/rules"
@@ -218,8 +219,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			result := interceptor.GetEngine().Evaluate(tc)
 			if result.Matched && result.Action == rules.ActionBlock {
 				log.Warn("[Layer0] Request blocked: %s in history (rule: %s)", tc.Name, result.RuleName)
-				security.RecordEvent(security.Event{
-					Layer:      security.LayerL0,
+				eventlog.Record(eventlog.Event{
+					Layer:      eventlog.LayerL0,
 					TraceID:    traceID,
 					SessionID:  sessionID,
 					ToolName:   tc.Name,

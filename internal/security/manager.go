@@ -141,6 +141,10 @@ func Init(cfg Config) (*Manager, error) {
 	globalManagerMu.Lock()
 	globalManager = m
 	globalManagerMu.Unlock()
+
+	// Register storage sink for event recording after global manager is set.
+	initEventSink()
+
 	return m, nil
 }
 

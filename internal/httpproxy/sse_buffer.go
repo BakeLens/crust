@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/message"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/security"
@@ -300,8 +301,8 @@ func (b *BufferedSSEWriter) FlushModified(interceptor *security.Interceptor, blo
 			}
 		}
 
-		security.RecordEvent(security.Event{
-			Layer:      security.LayerL1Buffer,
+		eventlog.Record(eventlog.Event{
+			Layer:      eventlog.LayerL1Buffer,
 			TraceID:    b.traceID,
 			SessionID:  b.sessionID,
 			ToolName:   tc.Name,

@@ -171,6 +171,11 @@ func (s *Storage) runMigrations() {
 	migrations := []string{
 		// v0.x: Add layer column to tool_call_logs for per-layer telemetry tracking
 		`ALTER TABLE tool_call_logs ADD COLUMN layer TEXT DEFAULT 'L1'`,
+		// v0.x: Add transport metadata columns for unified event recording
+		`ALTER TABLE tool_call_logs ADD COLUMN protocol TEXT DEFAULT ''`,
+		`ALTER TABLE tool_call_logs ADD COLUMN direction TEXT DEFAULT ''`,
+		`ALTER TABLE tool_call_logs ADD COLUMN method TEXT DEFAULT ''`,
+		`ALTER TABLE tool_call_logs ADD COLUMN block_type TEXT DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		_, err := s.conn.ExecContext(ctx, m)
@@ -232,7 +237,11 @@ CREATE TABLE IF NOT EXISTS tool_call_logs (
 	was_blocked BOOLEAN DEFAULT FALSE,
 	blocked_by_rule TEXT,
 	model TEXT,
-	layer TEXT DEFAULT 'L1'
+	layer TEXT DEFAULT 'L1',
+	protocol TEXT DEFAULT '',
+	direction TEXT DEFAULT '',
+	method TEXT DEFAULT '',
+	block_type TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tool_call_logs_timestamp ON tool_call_logs(timestamp);
 CREATE INDEX IF NOT EXISTS idx_tool_call_logs_trace_id ON tool_call_logs(trace_id);
@@ -287,6 +296,10 @@ type ToolCallLog struct {
 	BlockedByRule string          `json:"blocked_by_rule,omitempty"`
 	Model         string          `json:"model,omitempty"`
 	Layer         string          `json:"layer,omitempty"`
+	Protocol      string          `json:"protocol,omitempty"`
+	Direction     string          `json:"direction,omitempty"`
+	Method        string          `json:"method,omitempty"`
+	BlockType     string          `json:"block_type,omitempty"`
 }
 
 // =============================================================================
@@ -663,6 +676,10 @@ func (s *Storage) LogToolCall(ctx context.Context, toolLog ToolCallLog) error {
 		BlockedByRule: strPtr(toolLog.BlockedByRule),
 		Model:         strPtr(toolLog.Model),
 		Layer:         &layer,
+		Protocol:      strPtr(toolLog.Protocol),
+		Direction:     strPtr(toolLog.Direction),
+		Method:        strPtr(toolLog.Method),
+		BlockType:     strPtr(toolLog.BlockType),
 	})
 }
 

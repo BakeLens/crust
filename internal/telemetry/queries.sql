@@ -74,9 +74,10 @@ ORDER BY count DESC;
 -- name: LogToolCall :exec
 INSERT INTO tool_call_logs (
     trace_id, session_id, tool_name, tool_arguments,
-    api_type, was_blocked, blocked_by_rule, model, layer
+    api_type, was_blocked, blocked_by_rule, model, layer,
+    protocol, direction, method, block_type
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetRecentToolCallLogs :many
 SELECT id, timestamp, trace_id, session_id, tool_name, tool_arguments,

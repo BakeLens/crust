@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/security"
 	"github.com/BakeLens/crust/internal/telemetry"
@@ -110,8 +111,8 @@ func (r *SSEReader) triggerComplete() {
 					tc.Name, matchResult.RuleName)
 			}
 
-			security.RecordEvent(security.Event{
-				Layer:      security.LayerL1Stream,
+			eventlog.Record(eventlog.Event{
+				Layer:      eventlog.LayerL1Stream,
 				TraceID:    r.traceID,
 				SessionID:  r.sessionID,
 				ToolName:   tc.Name,
