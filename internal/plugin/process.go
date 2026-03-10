@@ -165,7 +165,7 @@ func (p *ProcessPlugin) Close() error {
 }
 
 // startLocked launches the external process. Caller must hold p.mu.
-func (p *ProcessPlugin) startLocked() error {
+func (p *ProcessPlugin) startLocked() (err error) {
 	proc := exec.CommandContext(p.ctx, p.cmdPath, p.args...) //nolint:gosec // plugin cmdPath is user-configured
 	stdin, err := proc.StdinPipe()
 	if err != nil {
@@ -176,10 +176,15 @@ func (p *ProcessPlugin) startLocked() error {
 		stdin.Close()
 		return err
 	}
+	defer func() {
+		if err != nil {
+			stdin.Close()
+			stdout.Close()
+		}
+	}()
 	proc.Stderr = os.Stderr // let plugin write diagnostics to stderr
 
-	if err := proc.Start(); err != nil {
-		stdin.Close()
+	if err = proc.Start(); err != nil {
 		return err
 	}
 

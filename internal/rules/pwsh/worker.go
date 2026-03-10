@@ -153,7 +153,7 @@ func NewWorker(ctx context.Context, pwshPath string) (*Worker, error) {
 	return w, nil
 }
 
-func (w *Worker) start() error {
+func (w *Worker) start() (err error) {
 	proc := exec.CommandContext(w.ctx, w.pwshPath, //nolint:gosec // pwshPath from exec.LookPath
 		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", w.scriptPath)
 	stdin, err := proc.StdinPipe()
@@ -165,10 +165,15 @@ func (w *Worker) start() error {
 		stdin.Close()
 		return err
 	}
+	defer func() {
+		if err != nil {
+			stdin.Close()
+			stdout.Close()
+		}
+	}()
 	proc.Stderr = io.Discard
 
-	if err := proc.Start(); err != nil {
-		stdin.Close()
+	if err = proc.Start(); err != nil {
 		return err
 	}
 

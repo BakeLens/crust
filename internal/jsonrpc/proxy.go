@@ -63,13 +63,20 @@ func RunProxy(engine *rules.Engine, cmd []string, stdin io.ReadCloser, stdout io
 	child.Stdout = stdoutW
 	child.Stderr = os.Stderr
 
+	started := false
+	defer func() {
+		if !started {
+			childStdin.Close()
+			stdoutR.Close()
+			stdoutW.Close()
+		}
+	}()
+
 	if err := child.Start(); err != nil {
-		childStdin.Close()
-		stdoutR.Close()
-		stdoutW.Close()
 		log.Error("Failed to start %s: %v", cfg.ProcessLabel, err)
 		return 1
 	}
+	started = true
 
 	// Close parent's write end — child has its own copy via fork.
 	// When the child exits, the OS closes the child's copy, and

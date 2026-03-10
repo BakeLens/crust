@@ -362,7 +362,7 @@ func readAndDecompressBody(w http.ResponseWriter, r *http.Request) (
 	// Decompress request body for local parsing only (model extraction, security scanning).
 	// The original compressed body is forwarded to upstream untouched for full transparency.
 	parseBytes = bodyBytes
-	if len(bodyBytes) > 4 {
+	if len(bodyBytes) >= 4 {
 		contentEncoding := r.Header.Get("Content-Encoding")
 		if contentEncoding == "" {
 			// Auto-detect by magic bytes

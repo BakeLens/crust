@@ -48,7 +48,7 @@ func newShellWorker(ctx context.Context, exePath string) (*shellWorker, error) {
 	return w, nil
 }
 
-func (w *shellWorker) start() error {
+func (w *shellWorker) start() (err error) {
 	proc := exec.CommandContext(w.ctx, w.exePath) //nolint:gosec // exePath is from os.Executable(), not user input
 	proc.Env = append(os.Environ(), "_CRUST_SHELL_WORKER=1")
 
@@ -61,9 +61,15 @@ func (w *shellWorker) start() error {
 		stdin.Close()
 		return err
 	}
+	defer func() {
+		if err != nil {
+			stdin.Close()
+			stdout.Close()
+		}
+	}()
 	proc.Stderr = io.Discard
 
-	if err := proc.Start(); err != nil {
+	if err = proc.Start(); err != nil {
 		return err
 	}
 
