@@ -268,12 +268,27 @@ func extractHostFromURLField(s string) string {
 	return ""
 }
 
-// rebindingSuffixes lists DNS rebinding services that resolve embedded IPs.
+// RebindingSuffixes lists DNS rebinding services that resolve embedded IPs.
 // e.g., 127.0.0.1.nip.io resolves to 127.0.0.1, A-B-C-D.sslip.io resolves to A.B.C.D.
-var rebindingSuffixes = []string{".nip.io", ".sslip.io", ".xip.io"}
+//
+// This is the single source of truth — selfprotect and mcpgateway build
+// their regex patterns from this list. To add a new rebinding service,
+// update only this slice; all consumers pick it up automatically.
+var RebindingSuffixes = []string{".nip.io", ".sslip.io", ".xip.io"}
 
-// rebindingExact lists domains that always resolve to 127.0.0.1.
-var rebindingExact = map[string]string{
+// RebindingExact lists domains that always resolve to 127.0.0.1.
+//
+// This list is intentionally incomplete — anyone can register a new domain
+// pointing to 127.0.0.1. It covers the most commonly abused rebinding
+// domains as defense-in-depth. The primary defense is that crust's
+// management API listens on a Unix socket (not TCP), making DNS rebinding
+// attacks moot. For additional coverage, users can add host-based blocking
+// rules in their YAML configuration.
+//
+// To extend dynamically in the future: load extra entries from the crust
+// config (e.g., server.extra_rebinding_domains) and append to this map
+// at engine startup, before selfprotect/mcpgateway compile their regexes.
+var RebindingExact = map[string]string{
 	"localtest.me":  "127.0.0.1",
 	"lvh.me":        "127.0.0.1",
 	"vcap.me":       "127.0.0.1",
@@ -288,7 +303,7 @@ func expandRebindingHosts(hosts []string) []string {
 	for _, h := range hosts {
 		expanded = append(expanded, h)
 		// Check exact rebinding domains (and subdomains)
-		for domain, ip := range rebindingExact {
+		for domain, ip := range RebindingExact {
 			if h == domain || strings.HasSuffix(h, "."+domain) {
 				expanded = append(expanded, ip)
 				break
@@ -296,7 +311,7 @@ func expandRebindingHosts(hosts []string) []string {
 		}
 		// Check wildcard DNS rebinding services: extract embedded IP
 		// Formats: A.B.C.D.nip.io or A-B-C-D.sslip.io
-		for _, suffix := range rebindingSuffixes {
+		for _, suffix := range RebindingSuffixes {
 			if !strings.HasSuffix(h, suffix) {
 				continue
 			}

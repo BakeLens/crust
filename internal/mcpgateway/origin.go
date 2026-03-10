@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/BakeLens/crust/internal/rules"
 )
 
 // localhostPattern matches legitimate localhost addresses.
@@ -18,10 +20,27 @@ var localhostPattern = regexp.MustCompile(
 		`0\.0\.0\.0)$`) // all-interfaces
 
 // rebindingPattern matches DNS rebinding domains that resolve to loopback.
-var rebindingPattern = regexp.MustCompile(
-	`(?i)(?:\.(?:nip|sslip|xip)\.io|` +
-		`(?:localtest|lvh|vcap)\.me|` +
-		`lacolhost\.com)$`)
+// Built from rules.RebindingSuffixes and rules.RebindingExact (single source of truth).
+var rebindingPattern = buildRebindingPattern()
+
+func buildRebindingPattern() *regexp.Regexp {
+	// Wildcard DNS suffixes: \.(?:nip|sslip|xip)\.io
+	var suffixCores []string
+	for _, s := range rules.RebindingSuffixes {
+		core := strings.TrimPrefix(s, ".")
+		core = strings.TrimSuffix(core, ".io")
+		suffixCores = append(suffixCores, regexp.QuoteMeta(core))
+	}
+	wildcard := `\.(?:` + strings.Join(suffixCores, "|") + `)\.io`
+
+	// Exact domains: (?:localtest|lvh|vcap)\.me|lacolhost\.com
+	var exactParts []string
+	for domain := range rules.RebindingExact {
+		exactParts = append(exactParts, regexp.QuoteMeta(domain))
+	}
+
+	return regexp.MustCompile(`(?i)(?:` + wildcard + `|` + strings.Join(exactParts, "|") + `)$`)
+}
 
 // checkOrigin rejects cross-origin browser requests (CSRF protection).
 //
