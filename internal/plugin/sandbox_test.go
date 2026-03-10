@@ -334,7 +334,7 @@ func TestAbsolutePatterns_InBuildPolicy(t *testing.T) {
 
 func TestResolveHosts_NameTruncation(t *testing.T) {
 	longHost := strings.Repeat("a", 300)
-	entries := resolveHosts([]string{longHost})
+	entries := resolveHosts(context.Background(), []string{longHost})
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
 	}
@@ -354,7 +354,7 @@ func TestBuildDenyRules_MaxRulesClamped(t *testing.T) {
 			BlockPaths: []string{fmt.Sprintf("/tmp/path%d", i)},
 		}
 	}
-	result := buildDenyRules(snaps)
+	result := buildDenyRules(context.Background(), snaps)
 	if len(result) != maxRules {
 		t.Errorf("expected %d rules (clamped), got %d", maxRules, len(result))
 	}

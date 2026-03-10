@@ -1748,9 +1748,7 @@ func operationPriority(op Operation) int {
 		return 2
 	case OpRead:
 		return 1
-	case OpAll:
-		return 7
-	case OpNone:
+	case OpAll, OpNone:
 		return 0
 	default:
 		return 0

@@ -156,12 +156,12 @@ func (r *ResourcePolicy) validate() error {
 
 // Evaluate builds a sandbox policy from the request.
 // Returns nil (allow) — the policy is available for future exec-time wrapping.
-func (s *SandboxPlugin) Evaluate(_ context.Context, req Request) *Result {
+func (s *SandboxPlugin) Evaluate(ctx context.Context, req Request) *Result {
 	if req.Command == "" {
 		return nil // not an executable tool call
 	}
 
-	policy := s.BuildPolicy(req)
+	policy := s.BuildPolicyCtx(ctx, req)
 
 	// Validate the policy is well-formed JSON.
 	if _, err := json.Marshal(policy); err != nil {
@@ -231,11 +231,18 @@ func (s *SandboxPlugin) Exec(ctx context.Context, policy InputPolicy) (*SandboxE
 }
 
 // BuildPolicy translates a plugin Request into a sandbox InputPolicy.
+// Uses context.Background() for DNS resolution; prefer BuildPolicyCtx.
 func (s *SandboxPlugin) BuildPolicy(req Request) InputPolicy {
+	return s.BuildPolicyCtx(context.Background(), req)
+}
+
+// BuildPolicyCtx translates a plugin Request into a sandbox InputPolicy.
+// The context is used for DNS resolution timeouts in network deny rules.
+func (s *SandboxPlugin) BuildPolicyCtx(ctx context.Context, req Request) InputPolicy {
 	policy := InputPolicy{
 		Version:    1,
 		Command:    splitCommand(req.Command),
-		Rules:      buildDenyRules(req.Rules),
+		Rules:      buildDenyRules(ctx, req.Rules),
 		ExtraPorts: s.config.ExtraPorts,
 		Resources:  s.config.Resources,
 	}
@@ -245,15 +252,14 @@ func (s *SandboxPlugin) BuildPolicy(req Request) InputPolicy {
 // splitCommand splits a shell command string into tokens.
 // This is a simple split on whitespace — proper shlex parsing is a follow-up.
 func splitCommand(cmd string) []string {
-	parts := strings.Fields(cmd)
-	if parts == nil {
+	if cmd == "" {
 		return []string{}
 	}
-	return parts
+	return strings.Fields(cmd)
 }
 
 // buildDenyRules translates RuleSnapshots into sandbox DenyRules.
-func buildDenyRules(snapshots []RuleSnapshot) []DenyRule {
+func buildDenyRules(ctx context.Context, snapshots []RuleSnapshot) []DenyRule {
 	seen := make(map[string]bool)
 	var denyRules []DenyRule
 	for _, snap := range snapshots {
@@ -278,7 +284,7 @@ func buildDenyRules(snapshots []RuleSnapshot) []DenyRule {
 		// Build network deny rule if hosts are present.
 		if len(snap.BlockHosts) > 0 {
 			name := clampName(snap.Name+":network", seen)
-			hosts := resolveHosts(snap.BlockHosts)
+			hosts := resolveHosts(ctx, snap.BlockHosts)
 			if len(hosts) > maxHostsPerRule {
 				hosts = hosts[:maxHostsPerRule]
 			}
@@ -349,9 +355,8 @@ func clampPatterns(patterns []string, maxCount int) []string { //nolint:unparam 
 // If a host is already an IP/CIDR, it's used directly.
 // Otherwise, DNS resolution is attempted; unresolvable hosts are
 // included with the hostname as a placeholder IP (best-effort).
-func resolveHosts(hosts []string) []HostEntry {
+func resolveHosts(ctx context.Context, hosts []string) []HostEntry {
 	var resolver net.Resolver
-	ctx := context.Background()
 	entries := make([]HostEntry, 0, len(hosts))
 	for _, h := range hosts {
 		name := h
