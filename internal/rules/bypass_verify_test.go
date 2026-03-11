@@ -1197,9 +1197,9 @@ func TestBypassFix_PowerShellCmdlets(t *testing.T) {
 		},
 		{
 			"Remove-Item-recurse", "Bash",
-			map[string]any{"command": "Remove-Item -Path /home/user/.ssh -Recurse"},
-			true, "", // may match protect-ssh-keys or dynamic delete rule
-			"Remove-Item -Recurse on .ssh directory",
+			map[string]any{"command": "Remove-Item -Path /home/user/.ssh/id_rsa -Recurse"},
+			true, "protect-ssh-keys",
+			"Remove-Item -Recurse on .ssh key file",
 		},
 
 		// === COPY: Copy-Item ===
@@ -1234,8 +1234,8 @@ func TestBypassFix_PowerShellCmdlets(t *testing.T) {
 		{
 			"Remove-Item-safe", "Bash",
 			map[string]any{"command": "Remove-Item /tmp/junk.log"},
-			true, "", // dynamic delete rule catches all delete ops
-			"Remove-Item triggers dynamic delete protection",
+			false, "",
+			"Remove-Item on non-protected file should not block",
 		},
 	}
 

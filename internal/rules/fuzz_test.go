@@ -2206,7 +2206,7 @@ func FuzzNormalAgentFalsePositive(f *testing.F) {
 	f.Add(`golangci-lint run`)
 
 	normalizer := NewNormalizerWithEnv("/home/user", "/home/user/project", nil)
-	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short()}, normalizer)
+	engine, err := NewEngineWithNormalizer(context.Background(), EngineConfig{DisableDLP: testing.Short(), UserRulesDir: f.TempDir()}, normalizer)
 	if err != nil {
 		f.Fatalf("setup engine: %v", err)
 	}

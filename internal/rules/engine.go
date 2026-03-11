@@ -271,33 +271,37 @@ func NewTestEngineWithNormalizer(rules []Rule, normalizer *Normalizer) (*Engine,
 func generateProtectionRules(cfg EngineConfig) []Rule {
 	rules := []Rule{}
 
-	// Rule 1: Block deletion of Crust rules directory
-	rules = append(rules, Rule{
-		Name:        "block-crust-rules-dir-delete",
-		Description: "Block deletion of Crust rules directory",
-		Locked:      lockedTrue,
-		Block: Block{
-			Paths: []string{cfg.UserRulesDir + "/**"},
-		},
-		Actions:  []Operation{OpDelete},
-		Message:  "Blocked: Crust rules directory is protected from deletion.",
-		Severity: SeverityCritical,
-		Source:   SourceBuiltin,
-	})
+	// Only generate rules-dir protection when UserRulesDir is set,
+	// otherwise the glob becomes "/**" which matches everything.
+	if cfg.UserRulesDir != "" {
+		// Rule 1: Block deletion of Crust rules directory
+		rules = append(rules, Rule{
+			Name:        "block-crust-rules-dir-delete",
+			Description: "Block deletion of Crust rules directory",
+			Locked:      lockedTrue,
+			Block: Block{
+				Paths: []string{cfg.UserRulesDir + "/**"},
+			},
+			Actions:  []Operation{OpDelete},
+			Message:  "Blocked: Crust rules directory is protected from deletion.",
+			Severity: SeverityCritical,
+			Source:   SourceBuiltin,
+		})
 
-	// Rule 2: Block writing to rules directory (except through API)
-	rules = append(rules, Rule{
-		Name:        "block-crust-rule-file-write",
-		Description: "Block direct modification of rule files",
-		Locked:      lockedTrue,
-		Block: Block{
-			Paths: []string{cfg.UserRulesDir + "/*.yaml"},
-		},
-		Actions:  []Operation{OpWrite},
-		Message:  "Blocked: Crust rule files cannot be modified directly. Use the API.",
-		Severity: SeverityCritical,
-		Source:   SourceBuiltin,
-	})
+		// Rule 2: Block writing to rules directory (except through API)
+		rules = append(rules, Rule{
+			Name:        "block-crust-rule-file-write",
+			Description: "Block direct modification of rule files",
+			Locked:      lockedTrue,
+			Block: Block{
+				Paths: []string{cfg.UserRulesDir + "/*.yaml"},
+			},
+			Actions:  []Operation{OpWrite},
+			Message:  "Blocked: Crust rule files cannot be modified directly. Use the API.",
+			Severity: SeverityCritical,
+			Source:   SourceBuiltin,
+		})
+	}
 
 	// Rule 3: Block access to management API socket files
 	rules = append(rules, Rule{
