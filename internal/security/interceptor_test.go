@@ -16,92 +16,114 @@ import (
 	"github.com/BakeLens/crust/internal/types"
 )
 
-// createOpenAIResponse creates a test OpenAI response JSON
+// --- Test helpers ---
+
+// openaiCtx returns an InterceptionContext for OpenAI tests.
+func openaiCtx(mode types.BlockMode) InterceptionContext {
+	return InterceptionContext{
+		TraceID: "trace-1", SessionID: "session-1",
+		Model: "gpt-4", APIType: types.APITypeOpenAICompletion, BlockMode: mode,
+	}
+}
+
+// anthropicCtx returns an InterceptionContext for Anthropic tests.
+func anthropicCtx(mode types.BlockMode) InterceptionContext {
+	return InterceptionContext{
+		TraceID: "trace-1", SessionID: "session-1",
+		Model: "claude-3-opus", APIType: types.APITypeAnthropic, BlockMode: mode,
+	}
+}
+
+// makeOAIToolCall builds an openAIToolCall without the verbose anonymous struct.
+func makeOAIToolCall(id, name, args string) openAIToolCall {
+	return openAIToolCall{
+		ID:   id,
+		Type: "function",
+		Function: struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		}{Name: name, Arguments: args},
+	}
+}
+
+// createOpenAIResponse creates a test OpenAI response JSON.
 func createOpenAIResponse(toolCalls []openAIToolCall, content string) []byte {
 	resp := openAIResponse{
-		ID:      "test-id",
-		Object:  "chat.completion",
-		Created: 1234567890,
-		Model:   "gpt-4",
-		Choices: []openAIChoice{
-			{
-				Index: 0,
-				Message: openAIMessage{
-					Role:      "assistant",
-					Content:   content,
-					ToolCalls: toolCalls,
-				},
-				FinishReason: "tool_calls",
+		ID: "test-id", Object: "chat.completion", Created: 1234567890, Model: "gpt-4",
+		Choices: []openAIChoice{{
+			Index: 0,
+			Message: openAIMessage{
+				Role: "assistant", Content: content, ToolCalls: toolCalls,
 			},
-		},
+			FinishReason: "tool_calls",
+		}},
 	}
 	data, _ := json.Marshal(resp)
 	return data
 }
 
-// createAnthropicResponse creates a test Anthropic response JSON
+// createAnthropicResponse creates a test Anthropic response JSON.
 func createAnthropicResponse(content []anthropicContentBlock) []byte {
 	resp := anthropicResponse{
-		ID:         "test-id",
-		Type:       "message",
-		Role:       "assistant",
-		Content:    content,
-		Model:      "claude-3-opus",
-		StopReason: "tool_use",
+		ID: "test-id", Type: "message", Role: "assistant",
+		Content: content, Model: "claude-3-opus", StopReason: "tool_use",
 	}
 	data, _ := json.Marshal(resp)
 	return data
 }
 
+// createOpenAIResponsesResponse creates a test OpenAI Responses API response JSON.
+func createOpenAIResponsesResponse(output []openAIResponsesOutputItem) []byte {
+	resp := openAIResponsesResponse{
+		ID: "resp-test", Object: "response", Model: "gpt-4.1",
+		Output: output,
+	}
+	data, _ := json.Marshal(resp)
+	return data
+}
+
+// credentialAccessRule is a reusable test rule that blocks reading .env files.
+const credentialAccessRule = `
+rules:
+  - name: block-env-file
+    block: "**/.env"
+    actions: [read]
+    message: "Credential file access blocked"
+    severity: critical
+`
+
 // setupTestRulesDir creates a temporary directory with test rules.
-// Uses a subdirectory of t.TempDir() so that SecureMkdirAll (which applies
-// a protected DACL on Windows) doesn't prevent TempDir cleanup.
 func setupTestRulesDir(t *testing.T, rulesYAML string) string {
 	t.Helper()
 	rulesDir := filepath.Join(t.TempDir(), "rules")
 	if err := os.MkdirAll(rulesDir, 0700); err != nil {
 		t.Fatalf("Failed to create rules dir: %v", err)
 	}
-
 	if rulesYAML != "" {
-		rulePath := filepath.Join(rulesDir, "test-rules.yaml")
-		if err := os.WriteFile(rulePath, []byte(rulesYAML), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(rulesDir, "test-rules.yaml"), []byte(rulesYAML), 0644); err != nil {
 			t.Fatalf("Failed to write test rules: %v", err)
 		}
 	}
-
 	return rulesDir
 }
 
-// createTestInterceptor creates an interceptor with custom rules for testing
-func createTestInterceptor(t *testing.T, rulesYAML string) (*Interceptor, func()) {
+// createTestInterceptor creates an interceptor with custom rules for testing.
+func createTestInterceptor(t *testing.T, rulesYAML string) *Interceptor {
 	t.Helper()
-
 	tempDir := setupTestRulesDir(t, rulesYAML)
-
 	engine, err := rules.NewEngine(context.Background(), rules.EngineConfig{
 		UserRulesDir:   tempDir,
 		DisableBuiltin: true,
 	})
 	if err != nil {
-		os.RemoveAll(tempDir)
 		t.Fatalf("Failed to create engine: %v", err)
 	}
-
 	storage, err := telemetry.NewStorage(":memory:", "")
 	if err != nil {
-		os.RemoveAll(tempDir)
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-
-	interceptor := NewInterceptor(engine, storage)
-
-	cleanup := func() {
-		storage.Close()
-		os.RemoveAll(tempDir)
-	}
-
-	return interceptor, cleanup
+	t.Cleanup(func() { storage.Close() })
+	return NewInterceptor(engine, storage)
 }
 
 // TestInterceptOpenAIResponse_BlockDangerousTool tests blocking dangerous tool calls in OpenAI format
@@ -191,35 +213,11 @@ rules:
 			// Reset metrics before each test
 			eventlog.GetMetrics().Reset()
 
-			interceptor, cleanup := createTestInterceptor(t, tt.rulesYAML)
-			defer cleanup()
+			interceptor := createTestInterceptor(t, tt.rulesYAML)
 
-			// Create OpenAI response with tool call
-			toolCalls := []openAIToolCall{
-				{
-					ID:   "call_123",
-					Type: "function",
-					Function: struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
-					}{
-						Name:      tt.toolName,
-						Arguments: tt.arguments,
-					},
-				},
-			}
-			responseBody := createOpenAIResponse(toolCalls, "")
+			responseBody := createOpenAIResponse([]openAIToolCall{makeOAIToolCall("call_123", tt.toolName, tt.arguments)}, "")
 
-			result, err := interceptor.InterceptOpenAIResponse(
-				responseBody,
-				InterceptionContext{
-					TraceID:   "trace-1",
-					SessionID: "session-1",
-					Model:     "gpt-4",
-					APIType:   types.APITypeOpenAICompletion,
-					BlockMode: tt.blockMode,
-				},
-			)
+			result, err := interceptor.InterceptOpenAIResponse(responseBody, openaiCtx(tt.blockMode))
 
 			if err != nil {
 				t.Fatalf("InterceptOpenAIResponse returned error: %v", err)
@@ -274,57 +272,15 @@ rules:
     severity: critical
 `
 
-	interceptor, cleanup := createTestInterceptor(t, rulesYAML)
-	defer cleanup()
+	interceptor := createTestInterceptor(t, rulesYAML)
 
-	// Create response with multiple tool calls - one dangerous, others safe
 	toolCalls := []openAIToolCall{
-		{
-			ID:   "call_1",
-			Type: "function",
-			Function: struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			}{
-				Name:      "Bash",
-				Arguments: `{"command": "rm -rf /"}`,
-			},
-		},
-		{
-			ID:   "call_2",
-			Type: "function",
-			Function: struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			}{
-				Name:      "Bash",
-				Arguments: `{"command": "ls -la"}`,
-			},
-		},
-		{
-			ID:   "call_3",
-			Type: "function",
-			Function: struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			}{
-				Name:      "Read",
-				Arguments: `{"file_path": "/tmp/test.txt"}`,
-			},
-		},
+		makeOAIToolCall("call_1", "Bash", `{"command": "rm -rf /"}`),
+		makeOAIToolCall("call_2", "Bash", `{"command": "ls -la"}`),
+		makeOAIToolCall("call_3", "Read", `{"file_path": "/tmp/test.txt"}`),
 	}
 	responseBody := createOpenAIResponse(toolCalls, "")
-
-	result, err := interceptor.InterceptOpenAIResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "gpt-4",
-			APIType:   types.APITypeOpenAICompletion,
-			BlockMode: types.BlockModeRemove,
-		},
-	)
+	result, err := interceptor.InterceptOpenAIResponse(responseBody, openaiCtx(types.BlockModeRemove))
 
 	if err != nil {
 		t.Fatalf("InterceptOpenAIResponse returned error: %v", err)
@@ -359,8 +315,7 @@ rules:
 
 // TestInterceptOpenAIResponse_EmptyResponse tests handling empty responses
 func TestInterceptOpenAIResponse_EmptyResponse(t *testing.T) {
-	interceptor, cleanup := createTestInterceptor(t, "")
-	defer cleanup()
+	interceptor := createTestInterceptor(t, "")
 
 	tests := []struct {
 		name         string
@@ -391,16 +346,7 @@ func TestInterceptOpenAIResponse_EmptyResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := interceptor.InterceptOpenAIResponse(
-				tt.responseBody,
-				InterceptionContext{
-					TraceID:   "trace-1",
-					SessionID: "session-1",
-					Model:     "gpt-4",
-					APIType:   types.APITypeOpenAICompletion,
-					BlockMode: types.BlockModeRemove,
-				},
-			)
+			result, err := interceptor.InterceptOpenAIResponse(tt.responseBody, openaiCtx(types.BlockModeRemove))
 
 			if tt.wantError && err == nil {
 				t.Error("Expected error, got nil")
@@ -427,36 +373,12 @@ rules:
     message: "Blocked"
     severity: critical
 `
-	interceptor, cleanup := createTestInterceptor(t, rulesYAML)
-	defer cleanup()
+	interceptor := createTestInterceptor(t, rulesYAML)
 
 	interceptor.SetEnabled(false)
 
-	toolCalls := []openAIToolCall{
-		{
-			ID:   "call_1",
-			Type: "function",
-			Function: struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			}{
-				Name:      "Bash",
-				Arguments: `{"command": "rm -rf /"}`,
-			},
-		},
-	}
-	responseBody := createOpenAIResponse(toolCalls, "")
-
-	result, err := interceptor.InterceptOpenAIResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "gpt-4",
-			APIType:   types.APITypeOpenAICompletion,
-			BlockMode: types.BlockModeRemove,
-		},
-	)
+	responseBody := createOpenAIResponse([]openAIToolCall{makeOAIToolCall("call_1", "Bash", `{"command": "rm -rf /"}`)}, "")
+	result, err := interceptor.InterceptOpenAIResponse(responseBody, openaiCtx(types.BlockModeRemove))
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -542,8 +464,7 @@ rules:
 		t.Run(tt.name, func(t *testing.T) {
 			eventlog.GetMetrics().Reset()
 
-			interceptor, cleanup := createTestInterceptor(t, tt.rulesYAML)
-			defer cleanup()
+			interceptor := createTestInterceptor(t, tt.rulesYAML)
 
 			// Create Anthropic response
 			content := []anthropicContentBlock{
@@ -556,16 +477,7 @@ rules:
 			}
 			responseBody := createAnthropicResponse(content)
 
-			result, err := interceptor.InterceptAnthropicResponse(
-				responseBody,
-				InterceptionContext{
-					TraceID:   "trace-1",
-					SessionID: "session-1",
-					Model:     "claude-3-opus",
-					APIType:   types.APITypeAnthropic,
-					BlockMode: tt.blockMode,
-				},
-			)
+			result, err := interceptor.InterceptAnthropicResponse(responseBody, anthropicCtx(tt.blockMode))
 
 			if err != nil {
 				t.Fatalf("InterceptAnthropicResponse returned error: %v", err)
@@ -608,8 +520,7 @@ rules:
 
 // TestInterceptAnthropicResponse_TextBlockPassThrough tests that text blocks are unchanged
 func TestInterceptAnthropicResponse_TextBlockPassThrough(t *testing.T) {
-	interceptor, cleanup := createTestInterceptor(t, "")
-	defer cleanup()
+	interceptor := createTestInterceptor(t, "")
 
 	// Create response with only text blocks
 	content := []anthropicContentBlock{
@@ -624,16 +535,7 @@ func TestInterceptAnthropicResponse_TextBlockPassThrough(t *testing.T) {
 	}
 	responseBody := createAnthropicResponse(content)
 
-	result, err := interceptor.InterceptAnthropicResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "claude-3-opus",
-			APIType:   types.APITypeAnthropic,
-			BlockMode: types.BlockModeRemove,
-		},
-	)
+	result, err := interceptor.InterceptAnthropicResponse(responseBody, anthropicCtx(types.BlockModeRemove))
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -672,8 +574,7 @@ rules:
     message: "Bash blocked"
     severity: critical
 `
-	interceptor, cleanup := createTestInterceptor(t, rulesYAML)
-	defer cleanup()
+	interceptor := createTestInterceptor(t, rulesYAML)
 
 	content := []anthropicContentBlock{
 		{
@@ -699,16 +600,7 @@ rules:
 	}
 	responseBody := createAnthropicResponse(content)
 
-	result, err := interceptor.InterceptAnthropicResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "claude-3-opus",
-			APIType:   types.APITypeAnthropic,
-			BlockMode: types.BlockModeRemove,
-		},
-	)
+	result, err := interceptor.InterceptAnthropicResponse(responseBody, anthropicCtx(types.BlockModeRemove))
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -769,8 +661,7 @@ func TestInterceptToolCalls_RoutesToCorrectHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			interceptor, cleanup := createTestInterceptor(t, "")
-			defer cleanup()
+			interceptor := createTestInterceptor(t, "")
 
 			var responseBody []byte
 			if tt.apiType == types.APITypeAnthropic {
@@ -781,16 +672,10 @@ func TestInterceptToolCalls_RoutesToCorrectHandler(t *testing.T) {
 				responseBody = createOpenAIResponse(nil, "Hello")
 			}
 
-			result, err := interceptor.InterceptToolCalls(
-				responseBody,
-				InterceptionContext{
-					TraceID:   "trace-1",
-					SessionID: "session-1",
-					Model:     "test-model",
-					APIType:   tt.apiType,
-					BlockMode: types.BlockModeRemove,
-				},
-			)
+			result, err := interceptor.InterceptToolCalls(responseBody, InterceptionContext{
+				TraceID: "trace-1", SessionID: "session-1",
+				Model: "test-model", APIType: tt.apiType, BlockMode: types.BlockModeRemove,
+			})
 
 			if err != nil {
 				t.Errorf("InterceptToolCalls returned error: %v", err)
@@ -812,31 +697,8 @@ func TestInterceptOpenAIResponse_NilEngine(t *testing.T) {
 	}
 	interceptor.enabled.Store(true)
 
-	toolCalls := []openAIToolCall{
-		{
-			ID:   "call_1",
-			Type: "function",
-			Function: struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			}{
-				Name:      "Bash",
-				Arguments: `{"command": "rm -rf /"}`,
-			},
-		},
-	}
-	responseBody := createOpenAIResponse(toolCalls, "")
-
-	result, err := interceptor.InterceptOpenAIResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "gpt-4",
-			APIType:   types.APITypeOpenAICompletion,
-			BlockMode: types.BlockModeRemove,
-		},
-	)
+	responseBody := createOpenAIResponse([]openAIToolCall{makeOAIToolCall("call_1", "Bash", `{"command": "rm -rf /"}`)}, "")
+	result, err := interceptor.InterceptOpenAIResponse(responseBody, openaiCtx(types.BlockModeRemove))
 
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -988,8 +850,7 @@ func TestFormatReplaceWarning(t *testing.T) {
 
 // TestInterceptorEnableDisable tests enable/disable functionality
 func TestInterceptorEnableDisable(t *testing.T) {
-	interceptor, cleanup := createTestInterceptor(t, "")
-	defer cleanup()
+	interceptor := createTestInterceptor(t, "")
 
 	// Should be enabled by default
 	if !interceptor.IsEnabled() {
@@ -1011,8 +872,7 @@ func TestInterceptorEnableDisable(t *testing.T) {
 
 // TestInterceptorGetters tests getter methods
 func TestInterceptorGetters(t *testing.T) {
-	interceptor, cleanup := createTestInterceptor(t, "")
-	defer cleanup()
+	interceptor := createTestInterceptor(t, "")
 
 	if interceptor.GetEngine() == nil {
 		t.Error("GetEngine() should not return nil")
@@ -1035,35 +895,11 @@ rules:
     message: "Blocked"
     severity: critical
 `
-	interceptor, cleanup := createTestInterceptor(t, rulesYAML)
-	defer cleanup()
+	interceptor := createTestInterceptor(t, rulesYAML)
 
 	existingContent := "I will help you with that task."
-	toolCalls := []openAIToolCall{
-		{
-			ID:   "call_1",
-			Type: "function",
-			Function: struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			}{
-				Name:      "Bash",
-				Arguments: `{"command": "rm -rf /"}`,
-			},
-		},
-	}
-	responseBody := createOpenAIResponse(toolCalls, existingContent)
-
-	result, err := interceptor.InterceptOpenAIResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "gpt-4",
-			APIType:   types.APITypeOpenAICompletion,
-			BlockMode: types.BlockModeRemove,
-		},
-	)
+	responseBody := createOpenAIResponse([]openAIToolCall{makeOAIToolCall("call_1", "Bash", `{"command": "rm -rf /"}`)}, existingContent)
+	result, err := interceptor.InterceptOpenAIResponse(responseBody, openaiCtx(types.BlockModeRemove))
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -1094,35 +930,10 @@ rules:
     message: "Blocked"
     severity: critical
 `
-	interceptor, cleanup := createTestInterceptor(t, rulesYAML)
-	defer cleanup()
+	interceptor := createTestInterceptor(t, rulesYAML)
 
-	// Create tool call with malformed arguments (not valid JSON for command extraction)
-	toolCalls := []openAIToolCall{
-		{
-			ID:   "call_1",
-			Type: "function",
-			Function: struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			}{
-				Name:      "Bash",
-				Arguments: `not-valid-json`,
-			},
-		},
-	}
-	responseBody := createOpenAIResponse(toolCalls, "")
-
-	result, err := interceptor.InterceptOpenAIResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "gpt-4",
-			APIType:   types.APITypeOpenAICompletion,
-			BlockMode: types.BlockModeRemove,
-		},
-	)
+	responseBody := createOpenAIResponse([]openAIToolCall{makeOAIToolCall("call_1", "Bash", `not-valid-json`)}, "")
+	result, err := interceptor.InterceptOpenAIResponse(responseBody, openaiCtx(types.BlockModeRemove))
 
 	// Should not error, just treat as non-matching
 	if err != nil {
@@ -1149,8 +960,7 @@ rules:
     message: "Blocked"
     severity: critical
 `
-	interceptor, cleanup := createTestInterceptor(t, rulesYAML)
-	defer cleanup()
+	interceptor := createTestInterceptor(t, rulesYAML)
 
 	interceptor.SetEnabled(false)
 
@@ -1164,16 +974,7 @@ rules:
 	}
 	responseBody := createAnthropicResponse(content)
 
-	result, err := interceptor.InterceptAnthropicResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "claude-3-opus",
-			APIType:   types.APITypeAnthropic,
-			BlockMode: types.BlockModeRemove,
-		},
-	)
+	result, err := interceptor.InterceptAnthropicResponse(responseBody, anthropicCtx(types.BlockModeRemove))
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -1207,16 +1008,7 @@ func TestInterceptAnthropicResponse_NilEngine(t *testing.T) {
 	}
 	responseBody := createAnthropicResponse(content)
 
-	result, err := interceptor.InterceptAnthropicResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "claude-3-opus",
-			APIType:   types.APITypeAnthropic,
-			BlockMode: types.BlockModeRemove,
-		},
-	)
+	result, err := interceptor.InterceptAnthropicResponse(responseBody, anthropicCtx(types.BlockModeRemove))
 
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -1234,8 +1026,7 @@ func TestInterceptAnthropicResponse_NilEngine(t *testing.T) {
 
 // TestInterceptAnthropicResponse_EmptyResponse tests empty responses for Anthropic
 func TestInterceptAnthropicResponse_EmptyResponse(t *testing.T) {
-	interceptor, cleanup := createTestInterceptor(t, "")
-	defer cleanup()
+	interceptor := createTestInterceptor(t, "")
 
 	tests := []struct {
 		name         string
@@ -1257,16 +1048,7 @@ func TestInterceptAnthropicResponse_EmptyResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := interceptor.InterceptAnthropicResponse(
-				tt.responseBody,
-				InterceptionContext{
-					TraceID:   "trace-1",
-					SessionID: "session-1",
-					Model:     "claude-3-opus",
-					APIType:   types.APITypeAnthropic,
-					BlockMode: types.BlockModeRemove,
-				},
-			)
+			result, err := interceptor.InterceptAnthropicResponse(tt.responseBody, anthropicCtx(types.BlockModeRemove))
 
 			// Should not error
 			if err != nil {
@@ -1293,34 +1075,10 @@ rules:
     message: "Security violation detected"
     severity: critical
 `
-	interceptor, cleanup := createTestInterceptor(t, rulesYAML)
-	defer cleanup()
+	interceptor := createTestInterceptor(t, rulesYAML)
 
-	toolCalls := []openAIToolCall{
-		{
-			ID:   "call_1",
-			Type: "function",
-			Function: struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			}{
-				Name:      "Bash",
-				Arguments: `{"command": "rm -rf /"}`,
-			},
-		},
-	}
-	responseBody := createOpenAIResponse(toolCalls, "")
-
-	result, err := interceptor.InterceptOpenAIResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "gpt-4",
-			APIType:   types.APITypeOpenAICompletion,
-			BlockMode: types.BlockModeReplace,
-		},
-	)
+	responseBody := createOpenAIResponse([]openAIToolCall{makeOAIToolCall("call_1", "Bash", `{"command": "rm -rf /"}`)}, "")
+	result, err := interceptor.InterceptOpenAIResponse(responseBody, openaiCtx(types.BlockModeReplace))
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -1353,8 +1111,7 @@ rules:
     message: "Security violation detected"
     severity: critical
 `
-	interceptor, cleanup := createTestInterceptor(t, rulesYAML)
-	defer cleanup()
+	interceptor := createTestInterceptor(t, rulesYAML)
 
 	content := []anthropicContentBlock{
 		{
@@ -1366,16 +1123,7 @@ rules:
 	}
 	responseBody := createAnthropicResponse(content)
 
-	result, err := interceptor.InterceptAnthropicResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "claude-3-opus",
-			APIType:   types.APITypeAnthropic,
-			BlockMode: types.BlockModeReplace,
-		},
-	)
+	result, err := interceptor.InterceptAnthropicResponse(responseBody, anthropicCtx(types.BlockModeReplace))
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -1421,45 +1169,14 @@ rules:
     message: "Blocked rm"
     severity: critical
 `
-	interceptor, cleanup := createTestInterceptor(t, rulesYAML)
-	defer cleanup()
+	interceptor := createTestInterceptor(t, rulesYAML)
 
 	toolCalls := []openAIToolCall{
-		{
-			ID:   "call_1",
-			Type: "function",
-			Function: struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			}{
-				Name:      "Bash",
-				Arguments: `{"command": "rm -rf /important"}`,
-			},
-		},
-		{
-			ID:   "call_2",
-			Type: "function",
-			Function: struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			}{
-				Name:      "Bash",
-				Arguments: `{"command": "echo hello"}`,
-			},
-		},
+		makeOAIToolCall("call_1", "Bash", `{"command": "rm -rf /important"}`),
+		makeOAIToolCall("call_2", "Bash", `{"command": "echo hello"}`),
 	}
 	responseBody := createOpenAIResponse(toolCalls, "")
-
-	result, err := interceptor.InterceptOpenAIResponse(
-		responseBody,
-		InterceptionContext{
-			TraceID:   "trace-1",
-			SessionID: "session-1",
-			Model:     "gpt-4",
-			APIType:   types.APITypeOpenAICompletion,
-			BlockMode: types.BlockModeRemove,
-		},
-	)
+	result, err := interceptor.InterceptOpenAIResponse(responseBody, openaiCtx(types.BlockModeRemove))
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -1578,4 +1295,131 @@ func FuzzInterceptAnthropicResponse(f *testing.F) {
 			}
 		}
 	})
+}
+
+// --- OpenAI Responses API (InterceptOpenAIResponsesResponse) Tests ---
+
+func responsesCtx(mode types.BlockMode) InterceptionContext {
+	return InterceptionContext{
+		TraceID: "trace-1", SessionID: "session-1",
+		Model: "gpt-4.1", APIType: types.APITypeOpenAIResponses, BlockMode: mode,
+	}
+}
+
+func TestInterceptOpenAIResponses_BlocksDangerousToolCall(t *testing.T) {
+	interceptor := createTestInterceptor(t, credentialAccessRule)
+	resp := createOpenAIResponsesResponse([]openAIResponsesOutputItem{
+		{Type: "function_call", ID: "fc_1", CallID: "call_1", Name: "Read", Arguments: `{"file_path":"/app/.env"}`},
+	})
+
+	result, err := interceptor.InterceptOpenAIResponsesResponse(resp, responsesCtx(types.BlockModeRemove))
+	if err != nil {
+		t.Fatalf("InterceptOpenAIResponsesResponse: %v", err)
+	}
+	if len(result.BlockedToolCalls) != 1 {
+		t.Fatalf("expected 1 blocked, got %d", len(result.BlockedToolCalls))
+	}
+	if result.BlockedToolCalls[0].ToolCall.Name != "Read" {
+		t.Errorf("blocked tool name: got %q, want %q", result.BlockedToolCalls[0].ToolCall.Name, "Read")
+	}
+}
+
+func TestInterceptOpenAIResponses_AllowsSafeToolCall(t *testing.T) {
+	interceptor := createTestInterceptor(t, credentialAccessRule)
+	resp := createOpenAIResponsesResponse([]openAIResponsesOutputItem{
+		{Type: "function_call", ID: "fc_1", CallID: "call_1", Name: "Read", Arguments: `{"file_path":"/app/main.go"}`},
+	})
+
+	result, err := interceptor.InterceptOpenAIResponsesResponse(resp, responsesCtx(types.BlockModeRemove))
+	if err != nil {
+		t.Fatalf("InterceptOpenAIResponsesResponse: %v", err)
+	}
+	if len(result.BlockedToolCalls) != 0 {
+		t.Errorf("expected 0 blocked, got %d", len(result.BlockedToolCalls))
+	}
+	if len(result.AllowedToolCalls) != 1 {
+		t.Errorf("expected 1 allowed, got %d", len(result.AllowedToolCalls))
+	}
+}
+
+func TestInterceptOpenAIResponses_MixedBlockAndAllow(t *testing.T) {
+	interceptor := createTestInterceptor(t, credentialAccessRule)
+	resp := createOpenAIResponsesResponse([]openAIResponsesOutputItem{
+		{Type: "function_call", ID: "fc_1", CallID: "call_1", Name: "Read", Arguments: `{"file_path":"/app/.env"}`},
+		{Type: "function_call", ID: "fc_2", CallID: "call_2", Name: "Read", Arguments: `{"file_path":"/app/main.go"}`},
+		{Type: "message", ID: "msg_1", Content: []openAIResponsesContent{{Type: "output_text", Text: "Here is the file."}}},
+	})
+
+	result, err := interceptor.InterceptOpenAIResponsesResponse(resp, responsesCtx(types.BlockModeRemove))
+	if err != nil {
+		t.Fatalf("InterceptOpenAIResponsesResponse: %v", err)
+	}
+	if len(result.BlockedToolCalls) != 1 {
+		t.Errorf("expected 1 blocked, got %d", len(result.BlockedToolCalls))
+	}
+	if len(result.AllowedToolCalls) != 1 {
+		t.Errorf("expected 1 allowed, got %d", len(result.AllowedToolCalls))
+	}
+
+	// Modified response should not contain the blocked function_call
+	var parsed openAIResponsesResponse
+	if err := json.Unmarshal(result.ModifiedResponse, &parsed); err != nil {
+		t.Fatalf("unmarshal modified response: %v", err)
+	}
+	for _, item := range parsed.Output {
+		if item.Type == "function_call" && item.CallID == "call_1" {
+			t.Error("blocked function_call (call_1) should not appear in modified response")
+		}
+	}
+}
+
+func TestInterceptOpenAIResponses_ReplaceMode(t *testing.T) {
+	interceptor := createTestInterceptor(t, credentialAccessRule)
+	resp := createOpenAIResponsesResponse([]openAIResponsesOutputItem{
+		{Type: "function_call", ID: "fc_1", CallID: "call_1", Name: "Read", Arguments: `{"file_path":"/app/.env"}`},
+	})
+
+	result, err := interceptor.InterceptOpenAIResponsesResponse(resp, responsesCtx(types.BlockModeReplace))
+	if err != nil {
+		t.Fatalf("InterceptOpenAIResponsesResponse: %v", err)
+	}
+	if len(result.BlockedToolCalls) != 1 {
+		t.Fatalf("expected 1 blocked, got %d", len(result.BlockedToolCalls))
+	}
+
+	// In replace mode, blocked call should be replaced with a message item
+	var parsed openAIResponsesResponse
+	if err := json.Unmarshal(result.ModifiedResponse, &parsed); err != nil {
+		t.Fatalf("unmarshal modified response: %v", err)
+	}
+	foundReplacement := false
+	for _, item := range parsed.Output {
+		if item.Type == "function_call" {
+			t.Error("blocked function_call should not appear in replace mode")
+		}
+		if item.Type == "message" && len(item.Content) > 0 {
+			foundReplacement = true
+		}
+	}
+	if !foundReplacement {
+		t.Error("replace mode should insert a message item for blocked call")
+	}
+}
+
+func TestInterceptOpenAIResponses_NoToolCalls(t *testing.T) {
+	interceptor := createTestInterceptor(t, credentialAccessRule)
+	resp := createOpenAIResponsesResponse([]openAIResponsesOutputItem{
+		{Type: "message", ID: "msg_1", Content: []openAIResponsesContent{{Type: "output_text", Text: "Hello world"}}},
+	})
+
+	result, err := interceptor.InterceptOpenAIResponsesResponse(resp, responsesCtx(types.BlockModeRemove))
+	if err != nil {
+		t.Fatalf("InterceptOpenAIResponsesResponse: %v", err)
+	}
+	if len(result.BlockedToolCalls) != 0 {
+		t.Errorf("expected 0 blocked, got %d", len(result.BlockedToolCalls))
+	}
+	if !bytes.Equal(result.ModifiedResponse, resp) {
+		t.Error("response with no tool calls should be unchanged")
+	}
 }
