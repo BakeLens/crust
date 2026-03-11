@@ -2026,6 +2026,7 @@ func TestParseShellCommandsExpand(t *testing.T) {
 			}
 			if target == nil {
 				t.Fatalf("command %q not found in %d commands", tt.wantName, len(commands))
+				return
 			}
 			if len(target.Args) != len(tt.wantArgs) {
 				t.Errorf("args = %v, want %v", target.Args, tt.wantArgs)

@@ -151,6 +151,7 @@ func TestCryptoDLPDetection(t *testing.T) {
 			}
 			if result == nil {
 				t.Fatal("scanCrypto() = nil, want match")
+				return
 			}
 			if result.name != tt.wantID {
 				t.Errorf("scanCrypto().name = %q, want %q", result.name, tt.wantID)
