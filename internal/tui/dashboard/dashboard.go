@@ -193,9 +193,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		cmds := []tea.Cmd{m.fetchStats()}
-		if m.activeTab == tabSessions {
+		switch m.activeTab {
+		case tabSessions:
 			cmds = append(cmds, m.fetchSessions())
-		} else if m.activeTab == tabStats {
+		case tabStats:
 			cmds = append(cmds, m.fetchStatsAgg())
 		}
 		return m, tea.Batch(cmds...)
@@ -277,18 +278,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "r":
 			cmds := []tea.Cmd{m.fetchStats()}
-			if m.activeTab == tabSessions {
+			switch m.activeTab {
+			case tabSessions:
 				cmds = append(cmds, m.fetchSessions())
-			} else if m.activeTab == tabStats {
+			case tabStats:
 				cmds = append(cmds, m.fetchStatsAgg())
 			}
 			return m, tea.Batch(cmds...)
 
 		case "tab":
 			m.activeTab = (m.activeTab + 1) % numTabs
-			if m.activeTab == tabSessions {
+			switch m.activeTab {
+			case tabSessions:
 				return m, m.fetchSessions()
-			} else if m.activeTab == tabStats {
+			case tabStats:
 				return m, m.fetchStatsAgg()
 			}
 			return m, nil

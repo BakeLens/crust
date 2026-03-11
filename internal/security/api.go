@@ -143,7 +143,7 @@ func (s *APIServer) handleLogs(c *gin.Context) {
 		logs = []telemetry.ToolCallLog{}
 	}
 
-	api.Success(c, logs)
+	api.Success(c, telemetry.SanitizeToolCallLogs(logs))
 }
 
 // handleStats handles GET /api/security/stats

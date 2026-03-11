@@ -73,7 +73,7 @@ func (h *APIHandler) HandleSessionEvents(c *gin.Context) {
 	if events == nil {
 		events = []ToolCallLog{}
 	}
-	api.Success(c, events)
+	api.Success(c, SanitizeToolCallLogs(events))
 }
 
 // APIHandler handles HTTP API requests for telemetry
@@ -173,18 +173,22 @@ func (h *APIHandler) HandleTrace(c *gin.Context) {
 		return
 	}
 
-	// Calculate totals
+	// Calculate totals from raw spans (token counts are not sensitive).
 	var totalInputTokens, totalOutputTokens int64
 	for _, span := range spans {
 		totalInputTokens += span.InputTokens
 		totalOutputTokens += span.OutputTokens
 	}
 
+	// Sanitize spans to strip sensitive attributes (input/output values,
+	// tool parameters) before returning via the management API.
+	sanitizedSpans := SanitizeSpans(spans)
+
 	// Find root span (no parent)
 	var rootSpan *Span
-	for i := range spans {
-		if spans[i].ParentSpanID.IsEmpty() {
-			rootSpan = &spans[i]
+	for i := range sanitizedSpans {
+		if sanitizedSpans[i].ParentSpanID.IsEmpty() {
+			rootSpan = &sanitizedSpans[i]
 			break
 		}
 	}
@@ -196,7 +200,7 @@ func (h *APIHandler) HandleTrace(c *gin.Context) {
 
 	response := gin.H{
 		"trace_id":            traceID,
-		"spans":               spans,
+		"spans":               sanitizedSpans,
 		"span_count":          len(spans),
 		"total_input_tokens":  totalInputTokens,
 		"total_output_tokens": totalOutputTokens,

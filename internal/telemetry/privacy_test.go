@@ -63,30 +63,25 @@ func TestSpanAttributes_ToolParametersTruncated(t *testing.T) {
 }
 
 // TestSpanAttributes_NoAPIKeyInTargetURL ensures that API keys in
-// upstream target URLs are not stored in span attributes.
-// Target URLs should not contain query-string API keys.
+// upstream target URLs are sanitized before storage.
 func TestSpanAttributes_NoAPIKeyInTargetURL(t *testing.T) {
-	// These are URL patterns that could leak API keys.
-	dangerousURLs := []string{
-		"https://api.openai.com/v1/chat?api_key=sk-real-key",
-		"https://api.example.com/v1?key=secret123&model=gpt-4",
-		"https://api.example.com/v1?token=bearer-token-here",
+	tests := []struct {
+		name string
+		url  string
+		key  string
+	}{
+		{"openai_api_key", "https://api.openai.com/v1/chat?api_key=sk-real-key", "sk-real-key"},
+		{"generic_key_param", "https://api.example.com/v1?key=secret123&model=gpt-4", "secret123"},
+		{"token_param", "https://api.example.com/v1?token=bearer-token-here", "bearer-token-here"},
 	}
 
-	for _, url := range dangerousURLs {
-		attrs := map[string]any{
-			AttrTargetURL: url,
-		}
-		data, err := json.Marshal(attrs)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// This test documents the risk: target URLs with query params
-		// containing API keys will be stored in the telemetry DB.
-		// If this test starts failing, it means we added sanitization.
-		if strings.Contains(string(data), "sk-real-key") {
-			t.Log("WARNING: target_url contains API key - consider sanitizing query params")
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sanitized := SanitizeTargetURL(tt.url)
+			if strings.Contains(sanitized, tt.key) {
+				t.Errorf("SanitizeTargetURL(%q) still contains key %q", tt.url, tt.key)
+			}
+		})
 	}
 }
 

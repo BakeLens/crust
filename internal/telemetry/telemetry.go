@@ -172,7 +172,7 @@ func (p *Provider) EndLLMSpan(spanCtx *SpanContext, data LLMSpanData) {
 	attrs := map[string]any{
 		AttrSpanKind:        data.SpanKind,
 		AttrLLMModel:        data.Model,
-		AttrTargetURL:       data.TargetURL,
+		AttrTargetURL:       SanitizeTargetURL(data.TargetURL),
 		AttrLLMIsStreaming:  data.IsStreaming,
 		AttrLLMTokensInput:  data.InputTokens,
 		AttrLLMTokensOutput: data.OutputTokens,
