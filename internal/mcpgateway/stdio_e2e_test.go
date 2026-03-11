@@ -77,6 +77,7 @@ func TestE2E_Initialize(t *testing.T) {
 	resp := findByID(responses, 1)
 	if resp == nil {
 		t.Fatal("no response for initialize (id=1)")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("initialize returned error: %s", resp.Error.Message)

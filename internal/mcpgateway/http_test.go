@@ -404,6 +404,7 @@ func TestHTTPE2E_Initialize(t *testing.T) {
 
 	if resp == nil {
 		t.Fatal("no response for initialize")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("initialize returned error: %s", resp.Error.Message)
@@ -441,6 +442,7 @@ func TestHTTPE2E_ToolsCallAllowed(t *testing.T) {
 
 	if resp == nil {
 		t.Fatal("no response for echo tool call")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("echo returned error: code=%d msg=%s", resp.Error.Code, resp.Error.Message)
@@ -467,6 +469,7 @@ func TestHTTPE2E_ToolsCallBlocked(t *testing.T) {
 
 	if resp == nil {
 		t.Fatal("no response for blocked .env read")
+		return
 	}
 	if resp.Error == nil {
 		t.Fatalf("expected Crust block error for .env read, got success: %s", string(resp.Result))
@@ -494,6 +497,7 @@ func TestHTTPE2E_ResourceReadBlocked(t *testing.T) {
 
 	if resp == nil {
 		t.Fatal("no response for blocked .env read")
+		return
 	}
 	if resp.Error == nil {
 		t.Fatalf("expected Crust block for .env read, got success: %s", string(resp.Result))
@@ -518,6 +522,7 @@ func TestHTTPE2E_ResponseDLP(t *testing.T) {
 
 	if resp == nil {
 		t.Fatal("no response for echo with AWS key")
+		return
 	}
 	// Response DLP should block: the server's echo response contains an AWS key pattern
 	if resp.Error == nil {
@@ -545,6 +550,7 @@ func TestHTTPE2E_ToolsListPassthrough(t *testing.T) {
 
 	if resp == nil {
 		t.Fatal("no response for tools/list")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("tools/list returned error: %s", resp.Error.Message)
