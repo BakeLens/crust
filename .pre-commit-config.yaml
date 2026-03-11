@@ -26,7 +26,7 @@ repos:
     hooks:
       - id: golangci-lint
         name: golangci-lint
-        entry: bash -c '~/go/bin/golangci-lint run ./...'
+        entry: bash -c '~/go/bin/golangci-lint cache clean && ~/go/bin/golangci-lint run ./...'
         language: system
         files: \.go$
         pass_filenames: false
