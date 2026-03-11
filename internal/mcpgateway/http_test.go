@@ -88,6 +88,181 @@ func TestNewHTTPGateway_InvalidURL(t *testing.T) {
 	}
 }
 
+// --- Unit tests: security interception (no real MCP server needed) ---
+// These test blocked-before-upstream paths using dummy upstreams.
+
+func TestHTTP_BlockedToolCall_NeverReachesUpstream(t *testing.T) {
+	reached := false
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_text_file","arguments":{"path":"/app/.env"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	if reached {
+		t.Error("blocked request should never reach upstream")
+	}
+	var resp testResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if resp.Error == nil || resp.Error.Code != jsonrpc.BlockedError {
+		t.Errorf("expected JSON-RPC error %d, got %+v", jsonrpc.BlockedError, resp.Error)
+	}
+}
+
+func TestHTTP_SelfProtect_BlocksCrustDataAccess(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("selfprotect-blocked request should not reach upstream")
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"bash","arguments":{"command":"sqlite3 ~/.crust/crust.db \"SELECT * FROM spans\""}}}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	var resp testResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected block for .crust/ access")
+	}
+	if !strings.Contains(resp.Error.Message, "[Crust]") {
+		t.Errorf("error message missing [Crust]: %s", resp.Error.Message)
+	}
+}
+
+func TestHTTP_CORSRejection_AtHandlerLevel(t *testing.T) {
+	gw := newGateway(t, "http://127.0.0.1:1")
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://evil.com")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("cross-origin request: status = %d, want 403", w.Code)
+	}
+}
+
+func TestHTTP_InvalidJSON(t *testing.T) {
+	gw := newGateway(t, "http://127.0.0.1:1")
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("{broken json"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("invalid JSON: status = %d, want 400", w.Code)
+	}
+}
+
+func TestHTTP_ResourceReadBlocked_Unit(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("blocked resource read should not reach upstream")
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+
+	tests := []struct {
+		name string
+		uri  string
+	}{
+		{"env file", "file:///app/.env"},
+		{"ssh key", "file:///home/user/.ssh/id_rsa"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"%s"}}`, tt.uri)
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			gw.ServeHTTP(w, req)
+
+			var resp testResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("parse response: %v", err)
+			}
+			if resp.Error == nil || resp.Error.Code != jsonrpc.BlockedError {
+				t.Errorf("expected block for %s, got %+v", tt.uri, resp.Error)
+			}
+		})
+	}
+}
+
+func TestHTTP_ResponseDLP_Unit(t *testing.T) {
+	// Upstream returns a JSON-RPC response containing an AWS key
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE"}]}}`)
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"message":"hello"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	var resp testResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected DLP block for AWS key in response")
+	}
+	if resp.Error.Code != jsonrpc.BlockedError {
+		t.Errorf("error code = %d, want %d", resp.Error.Code, jsonrpc.BlockedError)
+	}
+}
+
+func TestHTTP_AllowedPassthrough(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`)
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("allowed request: status = %d, want 200", w.Code)
+	}
+	var resp testResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if resp.Error != nil {
+		t.Errorf("allowed request should succeed, got error: %s", resp.Error.Message)
+	}
+}
+
 // --- E2E Tests with Real MCP HTTP Server ---
 // These use @modelcontextprotocol/server-everything with streamableHttp transport.
 

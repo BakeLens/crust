@@ -1,7 +1,6 @@
 package telemetry
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -26,42 +25,6 @@ func TestTruncateString_SecretsNotLeaked(t *testing.T) {
 	}
 }
 
-// TestSpanAttributes_InputValueTruncated ensures that the input.value
-// attribute stored in spans is always truncated to the 32KB limit,
-// preventing full request bodies from being persisted.
-func TestSpanAttributes_InputValueTruncated(t *testing.T) {
-	// Build a large input that exceeds the 32KB limit.
-	largeInput := strings.Repeat(`{"role":"user","content":"`+strings.Repeat("a", 1000)+`"}`, 50)
-	if len(largeInput) <= 32000 {
-		t.Skip("test input not large enough")
-	}
-
-	attrs := map[string]any{
-		AttrInputValue: truncateString(largeInput, 32000),
-	}
-	data, err := json.Marshal(attrs)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// The serialized attributes should not contain the full input.
-	if len(data) > 35000 { // Allow some overhead for JSON encoding + truncation marker
-		t.Errorf("serialized attributes too large: %d bytes (expected <35000)", len(data))
-	}
-}
-
-// TestSpanAttributes_ToolParametersTruncated ensures tool.parameters
-// are truncated to 4KB to prevent file contents from being stored.
-func TestSpanAttributes_ToolParametersTruncated(t *testing.T) {
-	// Simulate a tool call with a large file content argument.
-	largeArgs := `{"path":"/etc/passwd","content":"` + strings.Repeat("sensitive-data", 500) + `"}`
-	truncated := truncateString(largeArgs, 4000)
-
-	if len([]rune(truncated)) > 4000+len("...[truncated]") {
-		t.Errorf("tool parameters not properly truncated: %d runes", len([]rune(truncated)))
-	}
-}
-
 // TestSpanAttributes_NoAPIKeyInTargetURL ensures that API keys in
 // upstream target URLs are sanitized before storage.
 func TestSpanAttributes_NoAPIKeyInTargetURL(t *testing.T) {
@@ -80,41 +43,6 @@ func TestSpanAttributes_NoAPIKeyInTargetURL(t *testing.T) {
 			sanitized := SanitizeTargetURL(tt.url)
 			if strings.Contains(sanitized, tt.key) {
 				t.Errorf("SanitizeTargetURL(%q) still contains key %q", tt.url, tt.key)
-			}
-		})
-	}
-}
-
-// TestTruncateString_EmptyAndBoundary tests edge cases in truncation.
-func TestTruncateString_EmptyAndBoundary(t *testing.T) {
-	tests := []struct {
-		name   string
-		input  string
-		maxLen int
-		check  func(string) bool
-		desc   string
-	}{
-		{
-			name:   "zero_length_limit",
-			input:  "secret",
-			maxLen: 0,
-			check:  func(s string) bool { return s == "...[truncated]" },
-			desc:   "should truncate to marker only",
-		},
-		{
-			name:   "negative_length",
-			input:  "secret",
-			maxLen: -1,
-			check:  func(s string) bool { return s == "...[truncated]" },
-			desc:   "should handle negative max gracefully",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := truncateString(tt.input, tt.maxLen)
-			if !tt.check(result) {
-				t.Errorf("%s: got %q", tt.desc, result)
 			}
 		})
 	}

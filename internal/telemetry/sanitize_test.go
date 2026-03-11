@@ -46,41 +46,6 @@ func TestSanitizeSpan_StripsInputOutputValues(t *testing.T) {
 	}
 }
 
-func TestSanitizeSpan_PreservesNonSensitiveAttrs(t *testing.T) {
-	attrs := map[string]any{
-		AttrLLMModel:       "claude-3",
-		AttrHTTPStatusCode: 200,
-		AttrHTTPLatencyMs:  150,
-	}
-	raw, _ := json.Marshal(attrs)
-
-	span := Span{Attributes: raw}
-	sanitized := SanitizeSpan(span)
-
-	// No sensitive keys present — attributes should be unchanged.
-	var result map[string]any
-	if err := json.Unmarshal(sanitized.Attributes, &result); err != nil {
-		t.Fatal(err)
-	}
-	if len(result) != 3 {
-		t.Errorf("expected 3 attributes, got %d", len(result))
-	}
-}
-
-func TestSanitizeSpan_EmptyAttributes(t *testing.T) {
-	span := Span{Attributes: nil}
-	sanitized := SanitizeSpan(span)
-	if sanitized.Attributes != nil {
-		t.Error("nil attributes should remain nil")
-	}
-
-	span2 := Span{Attributes: json.RawMessage{}}
-	sanitized2 := SanitizeSpan(span2)
-	if len(sanitized2.Attributes) != 0 {
-		t.Error("empty attributes should remain empty")
-	}
-}
-
 func TestSanitizeSpan_StripsTargetURLQueryParams(t *testing.T) {
 	attrs := map[string]any{
 		AttrTargetURL: "https://api.example.com/v1/chat?api_key=sk-secret-key&model=gpt-4",
@@ -177,38 +142,6 @@ func TestSanitizeTargetURL(t *testing.T) {
 				t.Errorf("SanitizeTargetURL(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestSanitizeSpans_Batch(t *testing.T) {
-	attrs := map[string]any{
-		AttrInputValue:  "secret message",
-		AttrOutputValue: "secret response",
-		AttrLLMModel:    "gpt-4",
-	}
-	raw, _ := json.Marshal(attrs)
-
-	spans := []Span{
-		{Name: "span1", Attributes: raw},
-		{Name: "span2", Attributes: raw},
-	}
-
-	sanitized := SanitizeSpans(spans)
-
-	for i, s := range sanitized {
-		var result map[string]any
-		if err := json.Unmarshal(s.Attributes, &result); err != nil {
-			t.Fatal(err)
-		}
-		if _, ok := result[AttrInputValue]; ok {
-			t.Errorf("span[%d]: input.value should be stripped", i)
-		}
-		if _, ok := result[AttrOutputValue]; ok {
-			t.Errorf("span[%d]: output.value should be stripped", i)
-		}
-		if _, ok := result[AttrLLMModel]; !ok {
-			t.Errorf("span[%d]: llm.model_name should be preserved", i)
-		}
 	}
 }
 

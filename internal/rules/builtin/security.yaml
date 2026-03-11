@@ -15,8 +15,11 @@ rules:
     block:
       - "$HOME/.ssh/id_*"
       - "$HOME/.ssh/config"
+      - "**/.ssh/id_*"
+      - "**/.ssh/config"
     except:
       - "$HOME/.ssh/id_*.pub"
+      - "**/.ssh/id_*.pub"
     actions: [read, execute, write, delete, copy, move, network]
     message: "Blocked: SSH private keys are authentication credentials."
     severity: critical
@@ -233,6 +236,9 @@ rules:
       - "$HOME/.ssh/authorized_keys"
       - "$HOME/.ssh/authorized_keys2"
       - "$HOME/.ssh/known_hosts"
+      - "**/.ssh/authorized_keys"
+      - "**/.ssh/authorized_keys2"
+      - "**/.ssh/known_hosts"
     actions: [write, delete]
     message: "Blocked: modifying authorized_keys enables unauthorized remote access."
     severity: critical
