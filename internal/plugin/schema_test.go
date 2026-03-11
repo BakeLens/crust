@@ -54,6 +54,7 @@ func TestSchema_ResultFieldsMatch(t *testing.T) {
 	blockSchema := evalResult.FindObjectOneOf()
 	if blockSchema == nil {
 		t.Fatal("schema evaluateResult has no object variant")
+		return
 	}
 
 	goFields := schemacheck.JSONFieldNames(reflect.TypeFor[Result]())

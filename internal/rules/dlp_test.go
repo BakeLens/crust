@@ -533,6 +533,7 @@ func TestScanDLP_CryptoDetection(t *testing.T) {
 	result := engine.ScanDLP(mnemonic)
 	if result == nil {
 		t.Fatal("ScanDLP should block BIP39 mnemonic in server response")
+		return
 	}
 	if result.RuleName != "builtin:dlp-crypto-bip39-mnemonic" {
 		t.Errorf("RuleName = %s, want builtin:dlp-crypto-bip39-mnemonic", result.RuleName)

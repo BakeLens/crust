@@ -43,6 +43,7 @@ func TestStubPlugin_BlockConfigured(t *testing.T) {
 	})
 	if result == nil {
 		t.Fatal("expected block result")
+		return
 	}
 	if result.RuleName != "stub:block-Bash" {
 		t.Errorf("expected rule 'stub:block-Bash', got %q", result.RuleName)
@@ -100,6 +101,7 @@ func TestStubPlugin_RegistryIntegration(t *testing.T) {
 	})
 	if result == nil {
 		t.Fatal("expected block result from registry")
+		return
 	}
 	if result.RuleName != "stub:block-Bash" {
 		t.Errorf("expected rule 'stub:block-Bash', got %q", result.RuleName)

@@ -703,6 +703,7 @@ func TestValidateContent_NullBytesBlocked(t *testing.T) {
 	m := e.validateContent(&info)
 	if m == nil {
 		t.Fatal("expected block for null byte in write content, got nil")
+		return
 	}
 	if m.RuleName != "builtin:block-null-byte-write" {
 		t.Errorf("expected rule builtin:block-null-byte-write, got %s", m.RuleName)
@@ -731,6 +732,7 @@ func TestValidateContent_ObfuscationBlocked(t *testing.T) {
 	m := e.validateContent(&info)
 	if m == nil {
 		t.Fatal("expected block for obfuscation, got nil")
+		return
 	}
 	if m.RuleName != "builtin:block-obfuscation" {
 		t.Errorf("expected rule builtin:block-obfuscation, got %s", m.RuleName)

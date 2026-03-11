@@ -682,6 +682,7 @@ func TestRegistry_EvaluateBlock(t *testing.T) {
 	result := reg.Evaluate(t.Context(), Request{ToolName: "Bash"})
 	if result == nil {
 		t.Fatal("expected block result")
+		return
 	}
 	if result.Plugin != "blocker" {
 		t.Errorf("Plugin = %q, want %q", result.Plugin, "blocker")
@@ -780,6 +781,7 @@ func TestRegistry_RuleAwarePlugin_BlocksWhenRuleMissing(t *testing.T) {
 	result := reg.Evaluate(t.Context(), Request{ToolName: "Read", Rules: nil})
 	if result == nil {
 		t.Fatal("expected block when required rule is missing")
+		return
 	}
 	if result.RuleName != "policy:missing-rule" {
 		t.Errorf("RuleName = %q, want %q", result.RuleName, "policy:missing-rule")
@@ -1036,6 +1038,7 @@ func TestRegistry_NameCachedAtRegistration(t *testing.T) {
 	result := reg.Evaluate(t.Context(), Request{ToolName: "Bash"})
 	if result == nil {
 		t.Fatal("expected block result")
+		return
 	}
 	if result.Plugin != "dynamic-1" {
 		t.Errorf("Plugin = %q, want %q (cached at registration)", result.Plugin, "dynamic-1")
@@ -1088,6 +1091,7 @@ func TestRegistry_InvalidSeverityDefaultsToHigh(t *testing.T) {
 	result := reg.Evaluate(t.Context(), Request{ToolName: "Bash"})
 	if result == nil {
 		t.Fatal("expected block result")
+		return
 	}
 	if result.Severity != rules.SeverityHigh {
 		t.Errorf("Severity = %q, want %q (default for invalid)", result.Severity, rules.SeverityHigh)
