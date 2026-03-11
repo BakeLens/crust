@@ -90,6 +90,16 @@ var selfProtectSocketRegex = regexp.MustCompile(
 		`NamedPipeClientStream` + // .NET named pipe access
 		`)`)
 
+// selfProtectDataRegex blocks agents from directly accessing Crust's data
+// directory (~/.crust/) and database files. This is defense-in-depth on top
+// of the builtin rule "protect-crust" — the regex runs at Step 0 before path
+// extraction, so it catches raw references that the rule engine might miss.
+var selfProtectDataRegex = regexp.MustCompile(
+	`(?i)` +
+		`[/\\]\.crust[/\\]` + // any path containing /.crust/ or \.crust\
+		`|crust[_-]?(?:telemetry|security|api)[^.]*\.db` + // crust database files
+		`|crust\.(?:db|log|pid|port)`) // crust runtime files
+
 // Check tests whether rawJSON targets the Crust management API or socket.
 // Called by entry-point proxies BEFORE the rule engine.
 // Returns a *MatchResult if blocked, nil if clean.
@@ -113,6 +123,11 @@ func Check(rawJSON string) *rules.MatchResult {
 
 	if selfProtectSocketRegex.MatchString(input) {
 		m := rules.NewMatch("builtin:protect-crust-socket", rules.SeverityCritical, rules.ActionBlock, "Cannot access Crust management socket")
+		return &m
+	}
+
+	if selfProtectDataRegex.MatchString(input) {
+		m := rules.NewMatch("builtin:protect-crust-data", rules.SeverityCritical, rules.ActionBlock, "Cannot access Crust data directory")
 		return &m
 	}
 

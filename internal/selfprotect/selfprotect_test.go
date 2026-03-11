@@ -123,6 +123,61 @@ func TestCheck_SocketAllows(t *testing.T) {
 	}
 }
 
+// SECURITY: Check must block direct access to Crust data directory and files.
+func TestCheck_DataBlocks(t *testing.T) {
+	blocked := []struct {
+		name  string
+		input string
+	}{
+		{"read db", `cat ~/.crust/crust.db`},
+		{"sqlite3 db", `sqlite3 ~/.crust/crust.db "SELECT * FROM spans"`},
+		{"read log", `tail -f ~/.crust/crust.log`},
+		{"read pid", `cat ~/.crust/crust.pid`},
+		{"read port", `cat ~/.crust/crust.port`},
+		{"write to crust dir", `echo pwned > /home/user/.crust/evil.sh`},
+		{"copy db", `cp /Users/user/.crust/crust.db /tmp/`},
+		{"telemetry db", `cat crust_telemetry.db`},
+		{"security db", `cat crust-security.db`},
+		{"windows path", `type C:\Users\user\.crust\crust.db`},
+		{"url-encoded", `cat ~/.crust/%63rust.db`},
+	}
+
+	for _, tt := range blocked {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Check(tt.input)
+			if m == nil {
+				t.Errorf("SECURITY: Check must block %q but returned nil", tt.input)
+			} else if m.RuleName != "builtin:protect-crust-data" {
+				// May match socket or API regex first — that's also acceptable
+				if m.RuleName != "builtin:protect-crust-socket" && m.RuleName != "builtin:protect-crust-api" {
+					t.Errorf("expected builtin:protect-crust-data (or socket/api), got %s", m.RuleName)
+				}
+			}
+		})
+	}
+}
+
+func TestCheck_DataAllows(t *testing.T) {
+	allowed := []struct {
+		name  string
+		input string
+	}{
+		{"normal db file", `sqlite3 /tmp/myapp.db`},
+		{"crust word in text", `the crust of the earth`},
+		{"crust in code comment", `// this implements the crust protocol`},
+		{"unrelated .db", `cat application.db`},
+		{"unrelated log", `tail -f server.log`},
+	}
+
+	for _, tt := range allowed {
+		t.Run(tt.name, func(t *testing.T) {
+			if m := Check(tt.input); m != nil {
+				t.Errorf("Check should allow %q but blocked with rule %s", tt.input, m.RuleName)
+			}
+		})
+	}
+}
+
 // FuzzSelfProtectBypass attempts to find inputs that bypass self-protection.
 // Tests API regex, socket regex, and loopback+crust bypass detection.
 func FuzzSelfProtectBypass(f *testing.F) {

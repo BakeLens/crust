@@ -100,6 +100,15 @@ func NewStorage(dbPath string, encryptionKey string) (*Storage, error) {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
+	// SECURITY: Enforce owner-only permissions on database files.
+	// SQLite creates files with umask-dependent permissions; force 0600
+	// so other users on shared systems cannot read telemetry data.
+	if dbPath != ":memory:" {
+		for _, f := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+			_ = os.Chmod(f, 0600) //nolint:errcheck // best effort — file may not exist yet
+		}
+	}
+
 	return s, nil
 }
 

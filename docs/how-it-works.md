@@ -11,6 +11,14 @@ Agent Request ──▶ [Layer 0: History Scan] ──▶ LLM ──▶ [Layer 1
                    (14-30μs)                             (14-30μs)
                "Bad agent detected"                   "Action blocked"
 
+                    MANAGEMENT API
+                         │
+                   SQLite DB ──▶ [Layer 2: Privacy] ──▶ API Response
+                                       │
+                                    ↓ STRIP
+                             Sensitive attributes,
+                             tool arguments, URL params
+
 Rule Evaluation:
   1.  Self-protection pre-checker → blocks management API/socket access
   2.  Sanitize tool name → strip null bytes, control chars
@@ -28,6 +36,8 @@ Rule Evaluation:
 ```
 
 **Layer 0 (Request History):** Scans tool_calls in conversation history. Catches "bad agent" patterns where malicious actions already occurred in past turns.
+
+**Layer 2 (Privacy Sanitization):** All management API responses pass through `telemetry/sanitize.go` before leaving the process. Strips LLM message bodies (`input.value`, `output.value`), tool call arguments (`tool.parameters`), and URL query parameters (which may contain API keys). Raw data remains in the local SQLite database for forensic inspection via `sqlite3`. This layer protects against shoulder-surfing the TUI, API responses accidentally included in bug reports, and local processes scraping the management API.
 
 **Rule Engine:** Evaluates tool calls through the pipeline above. Self-protection (step 1) is injected via dependency injection to avoid circular imports. Hardcoded path guards (step 11) use a registry pattern — add new guards without modifying the pipeline.
 
@@ -106,31 +116,35 @@ Cross-OS app paths can all be listed under `$HOME` — wrong-OS patterns compile
 
 ## When Each Layer Blocks
 
-| Attack | Layer 0 | Layer 1 | MCP Gateway | ACP Mode |
-|--------|---------|---------|-------------|----------|
-| Bad agent with secrets in history | ✅ Blocked | - | - | - |
-| Poisoned conversation replay | ✅ Blocked | - | - | - |
-| LLM generates `cat .env` | - | ✅ Blocked | - | - |
-| LLM generates `rm -rf /etc` | - | ✅ Blocked | - | - |
-| `$(cat .env)` obfuscation | - | ✅ Blocked | - | - |
-| `eval "cat .env"` wrapping | - | ✅ Blocked (recursive parse) | - | - |
-| Fork bomb `f(){ f|f& }; f` | - | ✅ Blocked (AST) | - | - |
-| `echo payload \| base64 -d \| sh` | - | ✅ Blocked (pre-filter) | - | - |
-| Hex-encoded command `$'\x63\x61\x74'` | - | ✅ Blocked (pre-filter) | - | - |
-| Symlink bypass | - | ✅ Blocked (composite) | - | - |
-| Leaking real API keys/tokens | - | ✅ Blocked (DLP) | ✅ Blocked (DLP) | ✅ Blocked (DLP) |
-| MCP client reads `.env` | - | - | ✅ Blocked (inbound) | - |
-| MCP client reads SSH keys | - | - | ✅ Blocked (inbound) | - |
-| MCP `resources/read file:///etc/shadow` | - | - | ✅ Blocked (inbound) | - |
-| MCP server returns API keys in results | - | - | ✅ Blocked (response DLP) | - |
-| MCP server returns tokens in results | - | - | ✅ Blocked (response DLP) | - |
-| ACP agent reads `.env` via IDE | - | - | - | ✅ Blocked |
-| ACP agent reads SSH keys via IDE | - | - | - | ✅ Blocked |
-| ACP agent runs `cat /etc/shadow` | - | - | - | ✅ Blocked |
-| BIP39 mnemonic in content | - | ✅ Blocked (crypto DLP) | ✅ Blocked (DLP) | ✅ Blocked (DLP) |
-| xprv/WIF private key in content | - | ✅ Blocked (crypto DLP) | ✅ Blocked (DLP) | ✅ Blocked (DLP) |
-| Access `~/.bitcoin/wallet.dat` | - | ✅ Blocked (hardcoded) | - | - |
-| Symlink to crypto wallet dir | - | ✅ Blocked (post-symlink) | - | - |
+| Attack | Layer 0 | Layer 1 | Layer 2 | MCP Gateway | ACP Mode |
+|--------|---------|---------|---------|-------------|----------|
+| Bad agent with secrets in history | ✅ Blocked | - | - | - | - |
+| Poisoned conversation replay | ✅ Blocked | - | - | - | - |
+| LLM generates `cat .env` | - | ✅ Blocked | - | - | - |
+| LLM generates `rm -rf /etc` | - | ✅ Blocked | - | - | - |
+| `$(cat .env)` obfuscation | - | ✅ Blocked | - | - | - |
+| `eval "cat .env"` wrapping | - | ✅ Blocked (recursive parse) | - | - | - |
+| Fork bomb `f(){ f|f& }; f` | - | ✅ Blocked (AST) | - | - | - |
+| `echo payload \| base64 -d \| sh` | - | ✅ Blocked (pre-filter) | - | - | - |
+| Hex-encoded command `$'\x63\x61\x74'` | - | ✅ Blocked (pre-filter) | - | - | - |
+| Symlink bypass | - | ✅ Blocked (composite) | - | - | - |
+| Leaking real API keys/tokens | - | ✅ Blocked (DLP) | - | ✅ Blocked (DLP) | ✅ Blocked (DLP) |
+| MCP client reads `.env` | - | - | - | ✅ Blocked (inbound) | - |
+| MCP client reads SSH keys | - | - | - | ✅ Blocked (inbound) | - |
+| MCP `resources/read file:///etc/shadow` | - | - | - | ✅ Blocked (inbound) | - |
+| MCP server returns API keys in results | - | - | - | ✅ Blocked (response DLP) | - |
+| MCP server returns tokens in results | - | - | - | ✅ Blocked (response DLP) | - |
+| ACP agent reads `.env` via IDE | - | - | - | - | ✅ Blocked |
+| ACP agent reads SSH keys via IDE | - | - | - | - | ✅ Blocked |
+| ACP agent runs `cat /etc/shadow` | - | - | - | - | ✅ Blocked |
+| BIP39 mnemonic in content | - | ✅ Blocked (crypto DLP) | - | ✅ Blocked (DLP) | ✅ Blocked (DLP) |
+| xprv/WIF private key in content | - | ✅ Blocked (crypto DLP) | - | ✅ Blocked (DLP) | ✅ Blocked (DLP) |
+| Access `~/.bitcoin/wallet.dat` | - | ✅ Blocked (hardcoded) | - | - | - |
+| Symlink to crypto wallet dir | - | ✅ Blocked (post-symlink) | - | - | - |
+| LLM messages in API response | - | - | ✅ Stripped | - | - |
+| Tool arguments in API response | - | - | ✅ Stripped | - | - |
+| API keys in target URL params | - | - | ✅ Stripped | - | - |
+| Absolute paths in rule metadata | - | - | ✅ Stripped | - | - |
 
 ---
 

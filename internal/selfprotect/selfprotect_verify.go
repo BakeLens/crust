@@ -43,6 +43,12 @@ var selfProtectAPIRegex = regexp.MustCompile(
 		`0\b` +
 		`)`)
 
+var selfProtectDataRegex = regexp.MustCompile(
+	`(?i)` +
+		`[/\\]\.crust[/\\]` +
+		`|crust[_-]?(?:telemetry|security|api)[^.]*\.db` +
+		`|crust\.(?:db|log|pid|port)`)
+
 var selfProtectSocketRegex = regexp.MustCompile(
 	`(?i)(` +
 		`--unix-socket|` +
@@ -202,6 +208,35 @@ var socketMustAllow = []struct {
 	{"empty string", ``},
 }
 
+// dataMustBlock lists inputs that MUST be caught by selfProtectDataRegex.
+var dataMustBlock = []struct {
+	name  string
+	input string
+}{
+	{"crust dir unix", `cat ~/.crust/crust.db`},
+	{"crust dir windows", `type C:\Users\user\.crust\crust.db`},
+	{"crust dir write", `echo pwned > /home/user/.crust/evil.sh`},
+	{"crust.db", `sqlite3 crust.db`},
+	{"crust.log", `tail -f crust.log`},
+	{"crust.pid", `cat crust.pid`},
+	{"crust.port", `cat crust.port`},
+	{"crust_telemetry.db", `cat crust_telemetry.db`},
+	{"crust-security.db", `cat crust-security.db`},
+	{"crustapi.db", `cat crustapi.db`},
+}
+
+// dataMustAllow lists inputs that MUST NOT be caught (false positive check).
+var dataMustAllow = []struct {
+	name  string
+	input string
+}{
+	{"normal db", `sqlite3 /tmp/myapp.db`},
+	{"crust word", `the crust of the earth`},
+	{"crust in code", `// this implements the crust protocol`},
+	{"unrelated db", `cat application.db`},
+	{"unrelated log", `tail -f server.log`},
+}
+
 func main() {
 	failed := 0
 
@@ -245,7 +280,27 @@ func main() {
 	}
 	fmt.Printf("  checked %d must-allow vectors\n", len(socketMustAllow))
 
-	// ── 5. Verify regex count in source file ──
+	// ── 5. Verify data regex: must-block vectors ──
+	fmt.Println("=== Data regex: must-block vectors ===")
+	for _, tt := range dataMustBlock {
+		if !selfProtectDataRegex.MatchString(tt.input) {
+			fmt.Fprintf(os.Stderr, "FAIL [Data must-block]: %s: %q not matched\n", tt.name, tt.input)
+			failed++
+		}
+	}
+	fmt.Printf("  checked %d must-block vectors\n", len(dataMustBlock))
+
+	// ── 6. Verify data regex: must-allow vectors (false positive check) ──
+	fmt.Println("=== Data regex: must-allow vectors ===")
+	for _, tt := range dataMustAllow {
+		if tt.input != "" && selfProtectDataRegex.MatchString(tt.input) {
+			fmt.Fprintf(os.Stderr, "FAIL [Data must-allow]: %s: %q incorrectly matched\n", tt.name, tt.input)
+			failed++
+		}
+	}
+	fmt.Printf("  checked %d must-allow vectors\n", len(dataMustAllow))
+
+	// ── 7. Verify regex count in source file ──
 	fmt.Println("=== Source file integrity ===")
 	src, err := os.ReadFile("selfprotect.go")
 	if err != nil {
@@ -260,8 +315,8 @@ func main() {
 			reCount++
 		}
 	}
-	if reCount != 2 {
-		fmt.Fprintf(os.Stderr, "FAIL: expected 2 regexp.MustCompile calls, found %d\n", reCount)
+	if reCount != 3 {
+		fmt.Fprintf(os.Stderr, "FAIL: expected 3 regexp.MustCompile calls, found %d\n", reCount)
 		failed++
 	} else {
 		fmt.Printf("  regex count: %d (ok)\n", reCount)
@@ -272,10 +327,10 @@ func main() {
 	fmt.Printf("  SHA-512(selfprotect.go): %x\n", hash)
 
 	// ── Summary ──
-	total := len(apiMustBlock) + len(apiMustAllow) + len(socketMustBlock) + len(socketMustAllow)
+	total := len(apiMustBlock) + len(apiMustAllow) + len(socketMustBlock) + len(socketMustAllow) + len(dataMustBlock) + len(dataMustAllow)
 	if failed > 0 {
 		fmt.Fprintf(os.Stderr, "\nFAIL: %d/%d self-protection verification checks failed.\n", failed, total)
 		os.Exit(1)
 	}
-	fmt.Printf("\nok: all %d self-protection bypass vectors verified (2 regexes, SHA-512 recorded)\n", total)
+	fmt.Printf("\nok: all %d self-protection bypass vectors verified (3 regexes, SHA-512 recorded)\n", total)
 }
