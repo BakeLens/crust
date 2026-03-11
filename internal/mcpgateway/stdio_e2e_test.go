@@ -111,6 +111,7 @@ func TestE2E_ToolsList(t *testing.T) {
 	resp := findByID(responses, 2)
 	if resp == nil {
 		t.Fatal("no response for tools/list (id=2)")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("tools/list returned error: %s", resp.Error.Message)
@@ -153,6 +154,7 @@ func TestE2E_ReadAllowed(t *testing.T) {
 	resp := findByID(responses, 3)
 	if resp == nil {
 		t.Fatal("no response for read_text_file safe.txt (id=3)")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("read_text_file returned error: code=%d msg=%s", resp.Error.Code, resp.Error.Message)
@@ -176,6 +178,7 @@ func TestE2E_ReadBlocked_Env(t *testing.T) {
 	resp := findByID(responses, 3)
 	if resp == nil {
 		t.Fatal("no response for blocked .env read (id=3)")
+		return
 	}
 	if resp.Error == nil {
 		t.Fatalf("expected Crust block error for .env read, got success: %s", string(resp.Result))
@@ -200,6 +203,7 @@ func TestE2E_ReadBlocked_SSHKey(t *testing.T) {
 	resp := findByID(responses, 3)
 	if resp == nil {
 		t.Fatal("no response for blocked SSH key read (id=3)")
+		return
 	}
 	if resp.Error == nil {
 		t.Fatalf("expected Crust block error for SSH key read, got success: %s", string(resp.Result))
@@ -222,6 +226,7 @@ func TestE2E_WriteAllowed(t *testing.T) {
 	resp := findByID(responses, 3)
 	if resp == nil {
 		t.Fatal("no response for write_file (id=3)")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("write_file returned error: code=%d msg=%s", resp.Error.Code, resp.Error.Message)
@@ -250,6 +255,7 @@ func TestE2E_WriteBlocked_Env(t *testing.T) {
 	resp := findByID(responses, 3)
 	if resp == nil {
 		t.Fatal("no response for blocked .env write (id=3)")
+		return
 	}
 	if resp.Error == nil {
 		t.Fatalf("expected Crust block error for .env write, got success: %s", string(resp.Result))
@@ -337,6 +343,7 @@ func TestE2E_ResponseDLP_AWSKey(t *testing.T) {
 	resp := findByID(responses, 3)
 	if resp == nil {
 		t.Fatal("no response for config.txt read (id=3)")
+		return
 	}
 	// Response DLP should block: the server returned the file content which contains an AWS key
 	if resp.Error == nil {
@@ -366,6 +373,7 @@ func TestE2E_ResponseDLP_GitHubToken(t *testing.T) {
 	resp := findByID(responses, 3)
 	if resp == nil {
 		t.Fatal("no response for tokens.txt read (id=3)")
+		return
 	}
 	if resp.Error == nil {
 		t.Fatalf("expected DLP block for GitHub token in tokens.txt, got success: %s", string(resp.Result))
@@ -391,6 +399,7 @@ func TestE2E_ResponseDLP_CleanFile(t *testing.T) {
 	resp := findByID(responses, 3)
 	if resp == nil {
 		t.Fatal("no response for notes.txt read (id=3)")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("notes.txt should pass DLP (no secrets), got error: code=%d msg=%s", resp.Error.Code, resp.Error.Message)
