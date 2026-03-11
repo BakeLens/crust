@@ -178,6 +178,151 @@ func TestCheck_DataAllows(t *testing.T) {
 	}
 }
 
+// SECURITY: Check must block agents from modifying crust binaries.
+func TestCheck_BinaryBlocks(t *testing.T) {
+	blocked := []struct {
+		name  string
+		input string
+	}{
+		{"write to /usr/local/bin/crust", `{"file_path":"/usr/local/bin/crust","content":"evil"}`},
+		{"delete crust binary", `rm /usr/local/bin/crust`},
+		{"move crust binary", `mv /usr/local/bin/crust /tmp/crust.bak`},
+		{"overwrite crust", `cp /tmp/evil /usr/local/bin/crust`},
+		{"homebrew crust path", `chmod +x /opt/homebrew/bin/crust`},
+		{"bakelens-sandbox", `{"file_path":"/usr/local/bin/bakelens-sandbox"}`},
+		{"delete bakelens-sandbox", `rm /usr/local/bin/bakelens-sandbox`},
+	}
+
+	for _, tt := range blocked {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Check(tt.input)
+			if m == nil {
+				t.Errorf("SECURITY: Check must block %q but returned nil", tt.input)
+			} else if m.RuleName != "builtin:protect-crust-binary" {
+				t.Errorf("expected rule builtin:protect-crust-binary, got %s", m.RuleName)
+			}
+		})
+	}
+}
+
+func TestCheck_BinaryAllows(t *testing.T) {
+	allowed := []struct {
+		name  string
+		input string
+	}{
+		{"word crust in prose", `the earth's crust is thick`},
+		{"word crust mid-path", `cat /home/user/crust-gui/src/main.rs`},
+		{"word encrust", `cat /usr/local/bin/encrust`},
+		{"unrelated binary", `rm /usr/local/bin/myapp`},
+	}
+
+	for _, tt := range allowed {
+		t.Run(tt.name, func(t *testing.T) {
+			if m := Check(tt.input); m != nil && m.RuleName == "builtin:protect-crust-binary" {
+				t.Errorf("Check should allow %q but blocked with rule %s", tt.input, m.RuleName)
+			}
+		})
+	}
+}
+
+// SECURITY: Check must block agents from killing or stopping the crust daemon.
+func TestCheck_ProcessBlocks(t *testing.T) {
+	blocked := []struct {
+		name  string
+		input string
+	}{
+		{"kill crust", `kill $(pgrep crust)`},
+		{"pkill crust", `pkill crust`},
+		{"killall crust", `killall crust`},
+		{"kill -9 crust", `kill -9 $(pgrep crust)`},
+		{"crust stop", `crust stop`},
+		{"crust shutdown", `crust shutdown`},
+	}
+
+	for _, tt := range blocked {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Check(tt.input)
+			if m == nil {
+				t.Errorf("SECURITY: Check must block %q but returned nil", tt.input)
+			} else if m.RuleName != "builtin:protect-crust-process" {
+				t.Errorf("expected rule builtin:protect-crust-process, got %s", m.RuleName)
+			}
+		})
+	}
+}
+
+func TestCheck_ProcessAllows(t *testing.T) {
+	allowed := []struct {
+		name  string
+		input string
+	}{
+		{"kill other process", `kill $(pgrep nginx)`},
+		{"crust start", `crust start`},
+		{"crust status", `crust status`},
+		{"crust version", `crust version --json`},
+		{"unrelated kill", `kill -9 12345`},
+	}
+
+	for _, tt := range allowed {
+		t.Run(tt.name, func(t *testing.T) {
+			if m := Check(tt.input); m != nil && m.RuleName == "builtin:protect-crust-process" {
+				t.Errorf("Check should allow %q but blocked with rule %s", tt.input, m.RuleName)
+			}
+		})
+	}
+}
+
+// SECURITY: Check must block exfiltration of crust internal source patterns.
+func TestCheck_ExfilBlocks(t *testing.T) {
+	blocked := []struct {
+		name  string
+		input string
+	}{
+		{"RuleEngine", `the RuleEngine evaluates patterns`},
+		{"EvalRequest", `type EvalRequest struct`},
+		{"expandRuleHomes", `func expandRuleHomes(rules`},
+		{"NormalizePath", `NormalizePath handles unicode`},
+		{"selfProtectAPIRegex", `var selfProtectAPIRegex = regexp`},
+		{"selfProtectSocketRegex", `selfProtectSocketRegex blocks agents`},
+		{"selfProtectDataRegex", `selfProtectDataRegex blocks data access`},
+		{"selfProtectBinaryRegex", `selfProtectBinaryRegex matches paths`},
+		{"selfProtectProcessRegex", `selfProtectProcessRegex blocks kill`},
+		{"selfProtectExfilRegex", `selfProtectExfilRegex detects exfil`},
+	}
+
+	for _, tt := range blocked {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Check(tt.input)
+			if m == nil {
+				t.Errorf("SECURITY: Check must block %q but returned nil", tt.input)
+			} else if m.RuleName != "builtin:protect-crust-exfil" {
+				t.Errorf("expected rule builtin:protect-crust-exfil, got %s", m.RuleName)
+			}
+		})
+	}
+}
+
+func TestCheck_ExfilAllows(t *testing.T) {
+	allowed := []struct {
+		name  string
+		input string
+	}{
+		{"normal code", `func main() { fmt.Println("hello") }`},
+		{"rule word", `the rule is simple`},
+		{"engine word", `search engine optimization`},
+		{"eval word", `eval is dangerous in JavaScript`},
+		{"normalize word", `normalize the data first`},
+	}
+
+	for _, tt := range allowed {
+		t.Run(tt.name, func(t *testing.T) {
+			if m := Check(tt.input); m != nil && m.RuleName == "builtin:protect-crust-exfil" {
+				t.Errorf("Check should allow %q but blocked with rule %s", tt.input, m.RuleName)
+			}
+		})
+	}
+}
+
 // FuzzSelfProtectBypass attempts to find inputs that bypass self-protection.
 // Tests API regex, socket regex, and loopback+crust bypass detection.
 func FuzzSelfProtectBypass(f *testing.F) {

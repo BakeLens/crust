@@ -43,12 +43,6 @@ var selfProtectAPIRegex = regexp.MustCompile(
 		`0\b` +
 		`)`)
 
-var selfProtectDataRegex = regexp.MustCompile(
-	`(?i)` +
-		`[/\\]\.crust[/\\]` +
-		`|crust[_-]?(?:telemetry|security|api)[^.]*\.db` +
-		`|crust\.(?:db|log|pid|port)`)
-
 var selfProtectSocketRegex = regexp.MustCompile(
 	`(?i)(` +
 		`--unix-socket|` +
@@ -61,6 +55,41 @@ var selfProtectSocketRegex = regexp.MustCompile(
 		`crust-api[-.]\S*\.sock|` +
 		`\\\\.\\pipe\\crust|` +
 		`NamedPipeClientStream` +
+		`)`)
+
+var selfProtectDataRegex = regexp.MustCompile(
+	`(?i)` +
+		`[/\\]\.crust[/\\]` +
+		`|crust[_-]?(?:telemetry|security|api)[^.]*\.db` +
+		`|crust\.(?:db|log|pid|port)`)
+
+var selfProtectBinaryRegex = regexp.MustCompile(
+	`(?i)(?:` +
+		`/crust(?:["'\s,\]}]|$)|` +
+		`/bakelens-sandbox(?:["'\s,\]}]|$)` +
+		`)`)
+
+var selfProtectProcessRegex = regexp.MustCompile(
+	`(?i)(?:` +
+		`\bkill\b.*\bcrust\b|` +
+		`\bpkill\b.*\bcrust\b|` +
+		`\bkillall\b.*\bcrust\b|` +
+		`\bcrust\s+stop\b|` +
+		`\bcrust\s+shutdown\b` +
+		`)`)
+
+var selfProtectExfilRegex = regexp.MustCompile(
+	`(?:` +
+		`\bRuleEngine\b|` +
+		`\bEvalRequest\b|` +
+		`\bexpandRuleHomes\b|` +
+		`\bNormalizePath\b|` +
+		`\bselfProtectAPIRegex\b|` +
+		`\bselfProtectSocketRegex\b|` +
+		`\bselfProtectDataRegex\b|` +
+		`\bselfProtectBinaryRegex\b|` +
+		`\bselfProtectProcessRegex\b|` +
+		`\bselfProtectExfilRegex\b` +
 		`)`)
 
 // apiMustBlock lists inputs that MUST be caught by selfProtectAPIRegex.
@@ -237,6 +266,93 @@ var dataMustAllow = []struct {
 	{"unrelated log", `tail -f server.log`},
 }
 
+// binaryMustBlock lists inputs that MUST be caught by selfProtectBinaryRegex.
+var binaryMustBlock = []struct {
+	name  string
+	input string
+}{
+	{"JSON write crust", `{"file_path":"/usr/local/bin/crust","content":"evil"}`},
+	{"rm crust", `rm /usr/local/bin/crust`},
+	{"mv crust", `mv /usr/local/bin/crust /tmp/crust.bak`},
+	{"cp over crust", `cp /tmp/evil /usr/local/bin/crust`},
+	{"homebrew crust", `chmod +x /opt/homebrew/bin/crust`},
+	{"JSON bakelens-sandbox", `{"file_path":"/usr/local/bin/bakelens-sandbox"}`},
+	{"rm bakelens-sandbox", `rm /usr/local/bin/bakelens-sandbox`},
+	{"crust with single quote", `echo 'data' > /usr/local/bin/crust'`},
+	{"crust end of line", `/usr/local/bin/crust`},
+	{"crust with space", `cat /usr/local/bin/crust `},
+}
+
+// binaryMustAllow lists inputs that MUST NOT be caught (false positive check).
+var binaryMustAllow = []struct {
+	name  string
+	input string
+}{
+	{"crust in prose", `the earth's crust is thick`},
+	{"crust mid-path", `cat /home/user/crust-gui/src/main.rs`},
+	{"encrust", `cat /usr/local/bin/encrust`},
+	{"unrelated binary", `rm /usr/local/bin/myapp`},
+	{"crust-gui binary", `/usr/local/bin/crust-gui`},
+	{"crusted", `cat /usr/local/bin/crusted`},
+}
+
+// processMustBlock lists inputs that MUST be caught by selfProtectProcessRegex.
+var processMustBlock = []struct {
+	name  string
+	input string
+}{
+	{"kill pgrep crust", `kill $(pgrep crust)`},
+	{"pkill crust", `pkill crust`},
+	{"killall crust", `killall crust`},
+	{"kill -9 pgrep crust", `kill -9 $(pgrep crust)`},
+	{"crust stop", `crust stop`},
+	{"crust shutdown", `crust shutdown`},
+	{"kill HUP crust", `kill -HUP $(pgrep crust)`},
+}
+
+// processMustAllow lists inputs that MUST NOT be caught (false positive check).
+var processMustAllow = []struct {
+	name  string
+	input string
+}{
+	{"kill other", `kill $(pgrep nginx)`},
+	{"crust start", `crust start`},
+	{"crust status", `crust status`},
+	{"crust version", `crust version --json`},
+	{"unrelated kill", `kill -9 12345`},
+	{"crust list-rules", `crust list-rules --json`},
+}
+
+// exfilMustBlock lists inputs that MUST be caught by selfProtectExfilRegex.
+var exfilMustBlock = []struct {
+	name  string
+	input string
+}{
+	{"RuleEngine", `the RuleEngine evaluates patterns`},
+	{"EvalRequest", `type EvalRequest struct`},
+	{"expandRuleHomes", `func expandRuleHomes(rules`},
+	{"NormalizePath", `NormalizePath handles unicode`},
+	{"selfProtectAPIRegex", `var selfProtectAPIRegex = regexp`},
+	{"selfProtectSocketRegex", `selfProtectSocketRegex blocks agents`},
+	{"selfProtectDataRegex", `selfProtectDataRegex blocks data access`},
+	{"selfProtectBinaryRegex", `selfProtectBinaryRegex matches paths`},
+	{"selfProtectProcessRegex", `selfProtectProcessRegex blocks kill`},
+	{"selfProtectExfilRegex", `selfProtectExfilRegex detects exfil`},
+}
+
+// exfilMustAllow lists inputs that MUST NOT be caught (false positive check).
+var exfilMustAllow = []struct {
+	name  string
+	input string
+}{
+	{"normal code", `func main() { fmt.Println("hello") }`},
+	{"rule word", `the rule is simple`},
+	{"engine word", `search engine optimization`},
+	{"eval word", `eval is dangerous in JavaScript`},
+	{"normalize word", `normalize the data first`},
+	{"path word", `the path is /usr/local/bin`},
+}
+
 func main() {
 	failed := 0
 
@@ -300,7 +416,67 @@ func main() {
 	}
 	fmt.Printf("  checked %d must-allow vectors\n", len(dataMustAllow))
 
-	// ── 7. Verify regex count in source file ──
+	// ── 7. Verify binary regex: must-block vectors ──
+	fmt.Println("=== Binary regex: must-block vectors ===")
+	for _, tt := range binaryMustBlock {
+		if !selfProtectBinaryRegex.MatchString(tt.input) {
+			fmt.Fprintf(os.Stderr, "FAIL [Binary must-block]: %s: %q not matched\n", tt.name, tt.input)
+			failed++
+		}
+	}
+	fmt.Printf("  checked %d must-block vectors\n", len(binaryMustBlock))
+
+	// ── 8. Verify binary regex: must-allow vectors (false positive check) ──
+	fmt.Println("=== Binary regex: must-allow vectors ===")
+	for _, tt := range binaryMustAllow {
+		if tt.input != "" && selfProtectBinaryRegex.MatchString(tt.input) {
+			fmt.Fprintf(os.Stderr, "FAIL [Binary must-allow]: %s: %q incorrectly matched\n", tt.name, tt.input)
+			failed++
+		}
+	}
+	fmt.Printf("  checked %d must-allow vectors\n", len(binaryMustAllow))
+
+	// ── 9. Verify process regex: must-block vectors ──
+	fmt.Println("=== Process regex: must-block vectors ===")
+	for _, tt := range processMustBlock {
+		if !selfProtectProcessRegex.MatchString(tt.input) {
+			fmt.Fprintf(os.Stderr, "FAIL [Process must-block]: %s: %q not matched\n", tt.name, tt.input)
+			failed++
+		}
+	}
+	fmt.Printf("  checked %d must-block vectors\n", len(processMustBlock))
+
+	// ── 10. Verify process regex: must-allow vectors (false positive check) ──
+	fmt.Println("=== Process regex: must-allow vectors ===")
+	for _, tt := range processMustAllow {
+		if tt.input != "" && selfProtectProcessRegex.MatchString(tt.input) {
+			fmt.Fprintf(os.Stderr, "FAIL [Process must-allow]: %s: %q incorrectly matched\n", tt.name, tt.input)
+			failed++
+		}
+	}
+	fmt.Printf("  checked %d must-allow vectors\n", len(processMustAllow))
+
+	// ── 11. Verify exfil regex: must-block vectors ──
+	fmt.Println("=== Exfil regex: must-block vectors ===")
+	for _, tt := range exfilMustBlock {
+		if !selfProtectExfilRegex.MatchString(tt.input) {
+			fmt.Fprintf(os.Stderr, "FAIL [Exfil must-block]: %s: %q not matched\n", tt.name, tt.input)
+			failed++
+		}
+	}
+	fmt.Printf("  checked %d must-block vectors\n", len(exfilMustBlock))
+
+	// ── 12. Verify exfil regex: must-allow vectors (false positive check) ──
+	fmt.Println("=== Exfil regex: must-allow vectors ===")
+	for _, tt := range exfilMustAllow {
+		if tt.input != "" && selfProtectExfilRegex.MatchString(tt.input) {
+			fmt.Fprintf(os.Stderr, "FAIL [Exfil must-allow]: %s: %q incorrectly matched\n", tt.name, tt.input)
+			failed++
+		}
+	}
+	fmt.Printf("  checked %d must-allow vectors\n", len(exfilMustAllow))
+
+	// ── 13. Verify regex count in source file ──
 	fmt.Println("=== Source file integrity ===")
 	src, err := os.ReadFile("selfprotect.go")
 	if err != nil {
@@ -315,22 +491,25 @@ func main() {
 			reCount++
 		}
 	}
-	if reCount != 3 {
-		fmt.Fprintf(os.Stderr, "FAIL: expected 3 regexp.MustCompile calls, found %d\n", reCount)
+	if reCount != 6 {
+		fmt.Fprintf(os.Stderr, "FAIL: expected 6 regexp.MustCompile calls, found %d\n", reCount)
 		failed++
 	} else {
 		fmt.Printf("  regex count: %d (ok)\n", reCount)
 	}
 
-	// ── 6. Compute and print SHA-512 of selfprotect.go ──
+	// ── 14. Compute and print SHA-512 of selfprotect.go ──
 	hash := sha512.Sum512(src)
 	fmt.Printf("  SHA-512(selfprotect.go): %x\n", hash)
 
 	// ── Summary ──
-	total := len(apiMustBlock) + len(apiMustAllow) + len(socketMustBlock) + len(socketMustAllow) + len(dataMustBlock) + len(dataMustAllow)
+	total := len(apiMustBlock) + len(apiMustAllow) + len(socketMustBlock) + len(socketMustAllow) +
+		len(dataMustBlock) + len(dataMustAllow) +
+		len(binaryMustBlock) + len(binaryMustAllow) + len(processMustBlock) + len(processMustAllow) +
+		len(exfilMustBlock) + len(exfilMustAllow)
 	if failed > 0 {
 		fmt.Fprintf(os.Stderr, "\nFAIL: %d/%d self-protection verification checks failed.\n", failed, total)
 		os.Exit(1)
 	}
-	fmt.Printf("\nok: all %d self-protection bypass vectors verified (3 regexes, SHA-512 recorded)\n", total)
+	fmt.Printf("\nok: all %d self-protection bypass vectors verified (6 regexes, SHA-512 recorded)\n", total)
 }

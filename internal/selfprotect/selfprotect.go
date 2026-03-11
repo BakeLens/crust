@@ -100,7 +100,46 @@ var selfProtectDataRegex = regexp.MustCompile(
 		`|crust[_-]?(?:telemetry|security|api)[^.]*\.db` + // crust database files
 		`|crust\.(?:db|log|pid|port)`) // crust runtime files
 
-// Check tests whether rawJSON targets the Crust management API or socket.
+// selfProtectBinaryRegex blocks agents from modifying crust binaries.
+// Matches filesystem paths ending in /crust or /bakelens-sandbox.
+// Anchored to path separators and JSON/shell context to reduce false positives.
+var selfProtectBinaryRegex = regexp.MustCompile(
+	`(?i)(?:` +
+		`/crust(?:["'\s,\]}]|$)|` + // path ending in /crust followed by JSON/shell delimiter or EOL
+		`/bakelens-sandbox(?:["'\s,\]}]|$)` + // path ending in /bakelens-sandbox
+		`)`)
+
+// selfProtectProcessRegex blocks agents from killing or stopping the crust daemon.
+// Covers kill signals (kill, pkill, killall) and CLI stop/shutdown commands.
+var selfProtectProcessRegex = regexp.MustCompile(
+	`(?i)(?:` +
+		`\bkill\b.*\bcrust\b|` + // kill <pid/name> ... crust
+		`\bpkill\b.*\bcrust\b|` + // pkill crust
+		`\bkillall\b.*\bcrust\b|` + // killall crust
+		`\bcrust\s+stop\b|` + // crust stop
+		`\bcrust\s+shutdown\b` + // crust shutdown
+		`)`)
+
+// selfProtectExfilRegex blocks exfiltration of crust internal source patterns.
+// These identifiers are unique to crust's Go codebase and should never appear
+// in outbound network requests.
+var selfProtectExfilRegex = regexp.MustCompile(
+	`(?:` +
+		`\bRuleEngine\b|` +
+		`\bEvalRequest\b|` +
+		`\bexpandRuleHomes\b|` +
+		`\bNormalizePath\b|` +
+		`\bselfProtectAPIRegex\b|` +
+		`\bselfProtectSocketRegex\b|` +
+		`\bselfProtectDataRegex\b|` +
+		`\bselfProtectBinaryRegex\b|` +
+		`\bselfProtectProcessRegex\b|` +
+		`\bselfProtectExfilRegex\b` +
+		`)`)
+
+// Check tests whether rawJSON targets the Crust management API, socket,
+// data directory, binaries, daemon process, or contains crust internal
+// source patterns.
 // Called by entry-point proxies BEFORE the rule engine.
 // Returns a *MatchResult if blocked, nil if clean.
 func Check(rawJSON string) *rules.MatchResult {
@@ -128,6 +167,21 @@ func Check(rawJSON string) *rules.MatchResult {
 
 	if selfProtectDataRegex.MatchString(input) {
 		m := rules.NewMatch("builtin:protect-crust-data", rules.SeverityCritical, rules.ActionBlock, "Cannot access Crust data directory")
+		return &m
+	}
+
+	if selfProtectBinaryRegex.MatchString(input) {
+		m := rules.NewMatch("builtin:protect-crust-binary", rules.SeverityCritical, rules.ActionBlock, "Cannot modify crust binaries")
+		return &m
+	}
+
+	if selfProtectProcessRegex.MatchString(input) {
+		m := rules.NewMatch("builtin:protect-crust-process", rules.SeverityCritical, rules.ActionBlock, "Cannot kill or stop the crust daemon")
+		return &m
+	}
+
+	if selfProtectExfilRegex.MatchString(input) {
+		m := rules.NewMatch("builtin:protect-crust-exfil", rules.SeverityCritical, rules.ActionBlock, "Cannot exfiltrate crust internal source patterns")
 		return &m
 	}
 
