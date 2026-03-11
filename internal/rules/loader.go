@@ -431,7 +431,7 @@ func (l *Loader) parseRuleSet(data []byte, path string, source Source) ([]Rule, 
 
 		// Set runtime fields
 		rule.Source = source
-		rule.FilePath = path
+		rule.FilePath = filepath.Base(path)
 
 		// Log rule status
 		status := "enabled"

@@ -144,6 +144,7 @@ func TestE2E_ACP_Initialize(t *testing.T) {
 	resp := findACPByID(responses, 1)
 	if resp == nil {
 		t.Fatal("no response for initialize (id=1)")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("initialize returned error: %s", resp.Error.Message)
@@ -170,6 +171,7 @@ func TestE2E_ACP_SessionCreate_BlocksMaliciousReads(t *testing.T) {
 	resp := findACPByID(responses, 2)
 	if resp == nil {
 		t.Fatal("no response for session/create (id=2)")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("session/create returned error: %s", resp.Error.Message)
@@ -203,6 +205,7 @@ func TestE2E_ACP_Prompt_BlocksAttackSequence(t *testing.T) {
 	resp := findACPByID(responses, 3)
 	if resp == nil {
 		t.Fatal("no response for session/prompt (id=3)")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("session/prompt returned error: %s", resp.Error.Message)
@@ -238,6 +241,7 @@ func TestE2E_ACP_NormalPrompt_Passthrough(t *testing.T) {
 	resp := findACPByID(responses, 3)
 	if resp == nil {
 		t.Fatal("no response for session/prompt (id=3)")
+		return
 	}
 	if resp.Error != nil {
 		t.Fatalf("session/prompt returned error: %s", resp.Error.Message)

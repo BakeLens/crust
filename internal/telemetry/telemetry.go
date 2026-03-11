@@ -255,6 +255,12 @@ func (p *Provider) buildToolSpan(parentSpanID types.SpanID, traceID types.TraceI
 }
 
 func truncateString(s string, maxLen int) string {
+	if maxLen <= 0 {
+		if s == "" {
+			return ""
+		}
+		return "...[truncated]"
+	}
 	if len(s) <= maxLen {
 		return s
 	}

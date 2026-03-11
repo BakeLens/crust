@@ -843,6 +843,7 @@ func TestInterceptOpenAIResponse_NilEngine(t *testing.T) {
 	}
 	if result == nil {
 		t.Fatal("Expected non-nil result")
+		return
 	}
 
 	// Should pass through unchanged when engine is nil
@@ -1129,6 +1130,7 @@ rules:
 	}
 	if result == nil {
 		t.Fatal("Expected non-nil result")
+		return
 	}
 
 	// Should not block because the pattern can't match invalid JSON
@@ -1221,6 +1223,7 @@ func TestInterceptAnthropicResponse_NilEngine(t *testing.T) {
 	}
 	if result == nil {
 		t.Fatal("Expected non-nil result")
+		return
 	}
 
 	// Should pass through unchanged when engine is nil

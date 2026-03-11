@@ -29,6 +29,7 @@ func TestAcpMethodToToolCall(t *testing.T) {
 			}
 			if tc == nil {
 				t.Fatal("expected non-nil ToolCall")
+				return
 			}
 			if tc.Name != tt.wantName {
 				t.Errorf("name = %s, want %s", tc.Name, tt.wantName)

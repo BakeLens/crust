@@ -2,6 +2,7 @@ package rules
 
 import (
 	"net/http"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 
@@ -127,8 +128,7 @@ func (h *APIHandler) HandleListFiles(c *gin.Context) {
 		return
 	}
 	api.Success(c, gin.H{
-		"directory": h.engine.GetLoader().GetUserDir(),
-		"files":     files,
+		"files": files,
 	})
 }
 
@@ -212,8 +212,7 @@ func (h *APIHandler) HandleAddFile(c *gin.Context) {
 
 	api.Success(c, gin.H{
 		"status":     "added",
-		"path":       destPath,
-		"directory":  userDir,
+		"filename":   filepath.Base(destPath),
 		"rule_count": h.engine.RuleCount(),
 	})
 }

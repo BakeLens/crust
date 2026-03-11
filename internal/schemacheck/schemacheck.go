@@ -135,56 +135,70 @@ func CheckFieldsMatchT(t interface{ Errorf(string, ...any) }, goFields map[strin
 }
 
 // parseDir parses Go source files in dir, excluding test and generated files.
-func parseDir(dir string) (map[string]*ast.Package, error) { //nolint:staticcheck // simple AST tool, no need for go/packages
+func parseDir(dir string) ([]*ast.File, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
 	fset := token.NewFileSet()
-	return parser.ParseDir(fset, dir, func(fi os.FileInfo) bool { //nolint:staticcheck // simple AST tool
-		return !strings.HasSuffix(fi.Name(), "_test.go") &&
-			!strings.HasSuffix(fi.Name(), "_generated.go")
-	}, 0)
+	var files []*ast.File
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") {
+			continue
+		}
+		if strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, "_generated.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, dir+"/"+name, nil, 0)
+		if err != nil {
+			return nil, fmt.Errorf("parse %s: %w", name, err)
+		}
+		files = append(files, f)
+	}
+	return files, nil
 }
 
 // StructFields extracts struct tag names from a Go struct in the AST.
 // tagName should be "json" or "yaml".
 func StructFields(dir, structName, tagName string) (map[string]bool, error) {
-	pkgs, err := parseDir(dir)
+	files, err := parseDir(dir)
 	if err != nil {
 		return nil, err
 	}
 
 	prefix := tagName + `:"`
 	fields := make(map[string]bool)
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			for _, decl := range file.Decls {
-				gd, ok := decl.(*ast.GenDecl)
-				if !ok || gd.Tok != token.TYPE {
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok || ts.Name.Name != structName {
 					continue
 				}
-				for _, spec := range gd.Specs {
-					ts, ok := spec.(*ast.TypeSpec)
-					if !ok || ts.Name.Name != structName {
+				st, ok := ts.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				for _, field := range st.Fields.List {
+					if field.Tag == nil {
 						continue
 					}
-					st, ok := ts.Type.(*ast.StructType)
-					if !ok {
+					_, after, ok0 := strings.Cut(field.Tag.Value, prefix)
+					if !ok0 {
 						continue
 					}
-					for _, field := range st.Fields.List {
-						if field.Tag == nil {
-							continue
-						}
-						_, after, ok0 := strings.Cut(field.Tag.Value, prefix)
-						if !ok0 {
-							continue
-						}
-						before, _, ok0 := strings.Cut(after, `"`)
-						if !ok0 {
-							continue
-						}
-						name, _, _ := strings.Cut(before, ",")
-						if name != "" && name != "-" {
-							fields[name] = true
-						}
+					before, _, ok0 := strings.Cut(after, `"`)
+					if !ok0 {
+						continue
+					}
+					name, _, _ := strings.Cut(before, ",")
+					if name != "" && name != "-" {
+						fields[name] = true
 					}
 				}
 			}
@@ -197,31 +211,29 @@ func StructFields(dir, structName, tagName string) (map[string]bool, error) {
 // `var ValidSeverities = map[Severity]bool{...}`.
 // Keys may be string literals or identifiers referencing typed string constants.
 func MapKeys(dir, varName string) ([]string, error) {
-	pkgs, err := parseDir(dir)
+	files, err := parseDir(dir)
 	if err != nil {
 		return nil, err
 	}
 
 	// First pass: collect all string constant values by name.
 	consts := make(map[string]string)
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			for _, decl := range file.Decls {
-				gd, ok := decl.(*ast.GenDecl)
-				if !ok || gd.Tok != token.CONST {
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
 					continue
 				}
-				for _, spec := range gd.Specs {
-					vs, ok := spec.(*ast.ValueSpec)
-					if !ok {
-						continue
-					}
-					for i, name := range vs.Names {
-						if i < len(vs.Values) {
-							bl, ok := vs.Values[i].(*ast.BasicLit)
-							if ok && bl.Kind == token.STRING {
-								consts[name.Name] = strings.Trim(bl.Value, `"`)
-							}
+				for i, name := range vs.Names {
+					if i < len(vs.Values) {
+						bl, ok := vs.Values[i].(*ast.BasicLit)
+						if ok && bl.Kind == token.STRING {
+							consts[name.Name] = strings.Trim(bl.Value, `"`)
 						}
 					}
 				}
@@ -231,39 +243,37 @@ func MapKeys(dir, varName string) ([]string, error) {
 
 	// Second pass: find the map literal and resolve keys.
 	var keys []string
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			for _, decl := range file.Decls {
-				gd, ok := decl.(*ast.GenDecl)
-				if !ok || gd.Tok != token.VAR {
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok || len(vs.Names) == 0 || vs.Names[0].Name != varName {
 					continue
 				}
-				for _, spec := range gd.Specs {
-					vs, ok := spec.(*ast.ValueSpec)
-					if !ok || len(vs.Names) == 0 || vs.Names[0].Name != varName {
-						continue
-					}
-					if len(vs.Values) == 0 {
-						continue
-					}
-					cl, ok := vs.Values[0].(*ast.CompositeLit)
+				if len(vs.Values) == 0 {
+					continue
+				}
+				cl, ok := vs.Values[0].(*ast.CompositeLit)
+				if !ok {
+					continue
+				}
+				for _, elt := range cl.Elts {
+					kv, ok := elt.(*ast.KeyValueExpr)
 					if !ok {
 						continue
 					}
-					for _, elt := range cl.Elts {
-						kv, ok := elt.(*ast.KeyValueExpr)
-						if !ok {
-							continue
+					switch k := kv.Key.(type) {
+					case *ast.BasicLit:
+						if k.Kind == token.STRING {
+							keys = append(keys, strings.Trim(k.Value, `"`))
 						}
-						switch k := kv.Key.(type) {
-						case *ast.BasicLit:
-							if k.Kind == token.STRING {
-								keys = append(keys, strings.Trim(k.Value, `"`))
-							}
-						case *ast.Ident:
-							if v, ok := consts[k.Name]; ok {
-								keys = append(keys, v)
-							}
+					case *ast.Ident:
+						if v, ok := consts[k.Name]; ok {
+							keys = append(keys, v)
 						}
 					}
 				}
@@ -275,7 +285,7 @@ func MapKeys(dir, varName string) ([]string, error) {
 
 // ConstValues extracts string constant values from Go source by name.
 func ConstValues(dir string, names []string) ([]string, error) {
-	pkgs, err := parseDir(dir)
+	files, err := parseDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -286,27 +296,25 @@ func ConstValues(dir string, names []string) ([]string, error) {
 	}
 
 	var values []string
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			for _, decl := range file.Decls {
-				gd, ok := decl.(*ast.GenDecl)
-				if !ok || gd.Tok != token.CONST {
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
 					continue
 				}
-				for _, spec := range gd.Specs {
-					vs, ok := spec.(*ast.ValueSpec)
-					if !ok {
+				for _, name := range vs.Names {
+					if !nameSet[name.Name] {
 						continue
 					}
-					for _, name := range vs.Names {
-						if !nameSet[name.Name] {
-							continue
-						}
-						if len(vs.Values) > 0 {
-							bl, ok := vs.Values[0].(*ast.BasicLit)
-							if ok && bl.Kind == token.STRING {
-								values = append(values, strings.Trim(bl.Value, `"`))
-							}
+					if len(vs.Values) > 0 {
+						bl, ok := vs.Values[0].(*ast.BasicLit)
+						if ok && bl.Kind == token.STRING {
+							values = append(values, strings.Trim(bl.Value, `"`))
 						}
 					}
 				}
