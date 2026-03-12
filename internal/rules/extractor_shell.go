@@ -73,7 +73,7 @@ func (e *Extractor) extractBashCommand(info *ExtractedInfo) {
 		// bash parser doesn't treat \ as an escape character.
 		// Applied universally: C:\path→C:/path and %VAR%\path→%VAR%/path.
 		cmd = normalizeWinPaths(cmd)
-		file, err := parser.Parse(strings.NewReader(cmd), "")
+		file, err := safeShellParse(parser, cmd)
 		if err != nil {
 			// Bash parse failed. On Windows, try the pwsh worker as the authoritative
 			// PS parser — the command may be valid PowerShell even if bash rejects it.
@@ -1554,6 +1554,19 @@ func nodeHasUnsafe(root syntax.Node) bool {
 	return found
 }
 
+// safeShellParse wraps syntax.Parser.Parse with a recover guard.
+// The upstream parser (mvdan.cc/sh/v3) can panic on edge-case inputs
+// (e.g., "export A0=$0(" triggers slice bounds panic in declClause).
+func safeShellParse(parser *syntax.Parser, cmd string) (file *syntax.File, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			file = nil
+			err = fmt.Errorf("parser panic: %v", r)
+		}
+	}()
+	return parser.Parse(strings.NewReader(cmd), "")
+}
+
 // astForkBomb detects fork bomb patterns in a parsed shell AST.
 // Returns a user-friendly reason string if a fork bomb is found, "" otherwise.
 //
@@ -1609,7 +1622,7 @@ func (e *Extractor) parseShellCommandsExpand(cmd string, parentSymtab map[string
 	}
 
 	parser := syntax.NewParser(syntax.KeepComments(false), syntax.Variant(syntax.LangBash))
-	file, err := parser.Parse(strings.NewReader(cmd), "")
+	file, err := safeShellParse(parser, cmd)
 	if err != nil {
 		return nil, maps.Clone(parentSymtab)
 	}

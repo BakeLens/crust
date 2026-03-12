@@ -8,7 +8,6 @@ import (
 	"maps"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -174,7 +173,7 @@ func evalShellCommand(req shellWorkerRequest) (resp shellWorkerResponse) {
 	}()
 
 	parser := syntax.NewParser(syntax.KeepComments(false), syntax.Variant(syntax.LangBash))
-	file, err := parser.Parse(strings.NewReader(req.Cmd), "")
+	file, err := safeShellParse(parser, req.Cmd)
 	if err != nil {
 		return shellWorkerResponse{Symtab: maps.Clone(req.ParentSymtab)}
 	}

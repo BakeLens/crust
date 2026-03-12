@@ -673,9 +673,9 @@ func FuzzForkBombDetection(f *testing.F) {
 		// AST structure (e.g., control characters get normalized away,
 		// changing pipeline/call structure).
 		parser := syntax.NewParser(syntax.KeepComments(false), syntax.Variant(syntax.LangBash))
-		file, err := parser.Parse(strings.NewReader(cmd), "")
+		file, err := safeShellParse(parser, cmd)
 		if err != nil {
-			return // unparseable — skip
+			return // unparseable or parser panic — skip
 		}
 		syntax.Simplify(file)
 
