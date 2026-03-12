@@ -114,18 +114,20 @@ jobs:
           /tmp/rules.fuzz -test.fuzz=FuzzMCPToolBypass -test.fuzztime=30s -test.short -test.fuzzcachedir=/tmp/fuzz-cache
           /tmp/rules.fuzz -test.fuzz=FuzzConfusableBypass -test.fuzztime=30s -test.short -test.fuzzcachedir=/tmp/fuzz-cache
 
-      - name: Fuzz tests (full suite, 10s each — parallelized)
+      - name: Fuzz tests (full suite, 12s each — parallelized)
         run: |
           # Run full suite in parallel batches (2 at a time) to cut wall time
           # while keeping enough CPU per fuzzer for meaningful coverage.
           # Each fuzz target gets its own process so failures are isolated.
+          # 12s (not 10s) to avoid spurious "context deadline exceeded" from
+          # the Go fuzz framework when CPU-contended shutdown races the timer.
           parallel_fuzz() {
             local bin="$1"; shift
             local pids=()
             local targets=()
             local failed=0
             for target in "$@"; do
-              "$bin" -test.fuzz="$target" -test.fuzztime=10s -test.short -test.fuzzcachedir=/tmp/fuzz-cache &
+              "$bin" -test.fuzz="$target" -test.fuzztime=12s -test.short -test.fuzzcachedir=/tmp/fuzz-cache &
               pids+=($!)
               targets+=("$target")
               # Cap concurrency at 2 for better per-target CPU utilization.
@@ -158,7 +160,7 @@ jobs:
             FuzzShapeDetectionBypass FuzzWebSearchURLBypass FuzzNormalAgentFalsePositive \
             || rc=1
           # FuzzPipeBypass needs constrained memory and single worker to avoid OOM.
-          GOMEMLIMIT=2GiB /tmp/rules.fuzz -test.fuzz=FuzzPipeBypass -test.fuzztime=10s -test.short -test.fuzzcachedir=/tmp/fuzz-cache -test.parallel=1 || rc=1
+          GOMEMLIMIT=2GiB /tmp/rules.fuzz -test.fuzz=FuzzPipeBypass -test.fuzztime=12s -test.short -test.fuzzcachedir=/tmp/fuzz-cache -test.parallel=1 || rc=1
           parallel_fuzz /tmp/httpproxy.fuzz \
             FuzzParseSSEEventData FuzzCopyHeaders FuzzStripHopByHopHeaders \
             FuzzParseEvent FuzzApplyResultToToolCalls \
