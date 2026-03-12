@@ -6,8 +6,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Level represents log level
@@ -52,15 +50,6 @@ func AddErrorHook(fn func(msg string)) func() {
 		errorHooksMu.Unlock()
 	}
 }
-
-var (
-	styleTrace = lipgloss.NewStyle().Foreground(lipgloss.Color("#E8C872")) // warm gold
-	styleDebug = lipgloss.NewStyle().Foreground(lipgloss.Color("#F0C674")) // gold
-	styleInfo  = lipgloss.NewStyle().Foreground(lipgloss.Color("#A8B545")) // warm sage
-	styleWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD93D")) // bright gold
-	styleError = lipgloss.NewStyle().Foreground(lipgloss.Color("#E05A3A")) // warm terracotta
-	styleFaint = lipgloss.NewStyle().Faint(true)
-)
 
 // Logger provides leveled logging
 type Logger struct {
@@ -110,7 +99,7 @@ func SetColored(colored bool) {
 	globalColored = colored
 }
 
-func (l *Logger) log(level Level, levelStr string, style lipgloss.Style, format string, args ...any) {
+func (l *Logger) log(level Level, levelStr string, format string, args ...any) {
 	globalMu.RLock()
 	if level < globalLevel {
 		globalMu.RUnlock()
@@ -123,9 +112,7 @@ func (l *Logger) log(level Level, levelStr string, style lipgloss.Style, format 
 	msg := fmt.Sprintf(format, args...)
 
 	if colored {
-		label := style.Render("[" + levelStr + "]")
-		fmt.Fprintf(os.Stderr, "%s %s %s %s\n",
-			styleFaint.Render(timestamp), label, styleFaint.Render("["+l.prefix+"]"), msg)
+		renderColored(os.Stderr, timestamp, levelStr, l.prefix, msg)
 	} else {
 		fmt.Fprintf(os.Stderr, "%s [%s] [%s] %s\n",
 			timestamp, levelStr, l.prefix, msg)
@@ -134,27 +121,27 @@ func (l *Logger) log(level Level, levelStr string, style lipgloss.Style, format 
 
 // Trace logs a trace message (most verbose)
 func (l *Logger) Trace(format string, args ...any) {
-	l.log(LevelTrace, "TRACE", styleTrace, format, args...)
+	l.log(LevelTrace, "TRACE", format, args...)
 }
 
 // Debug logs a debug message
 func (l *Logger) Debug(format string, args ...any) {
-	l.log(LevelDebug, "DEBUG", styleDebug, format, args...)
+	l.log(LevelDebug, "DEBUG", format, args...)
 }
 
 // Info logs an info message
 func (l *Logger) Info(format string, args ...any) {
-	l.log(LevelInfo, "INFO", styleInfo, format, args...)
+	l.log(LevelInfo, "INFO", format, args...)
 }
 
 // Warn logs a warning message
 func (l *Logger) Warn(format string, args ...any) {
-	l.log(LevelWarn, "WARN", styleWarn, format, args...)
+	l.log(LevelWarn, "WARN", format, args...)
 }
 
 // Error logs an error message and fires all registered error hooks.
 func (l *Logger) Error(format string, args ...any) {
-	l.log(LevelError, "ERROR", styleError, format, args...)
+	l.log(LevelError, "ERROR", format, args...)
 	errorHooksMu.RLock()
 	hooks := make([]func(string), 0, len(errorHooks))
 	for _, fn := range errorHooks {
