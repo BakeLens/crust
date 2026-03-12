@@ -1773,7 +1773,13 @@ func (e *Extractor) runShellFileInterp(file *syntax.File, parentSymtab map[strin
 			// the runner and causes commands after "source" to be silently
 			// dropped from analysis (e.g., "source /tmp/a; cat ~/.ssh/id_rsa"
 			// would only return /tmp/a as a path, missing the id_rsa access).
-			if cmdNorm == "." || cmdNorm == "source" {
+			// Replace builtins that can panic in the interpreter with "true":
+			// - source/dot: os.Stat blocks on UNC paths (see above)
+			// - printf: panics on malformed format strings (mvdan.cc/sh/v3
+			//   expand.formatInto index-out-of-range, e.g. printf '%\')
+			// These builtins' output is not useful for path extraction.
+			switch cmdNorm {
+			case ".", "source", "printf":
 				return []string{"true"}, nil
 			}
 			return args, nil

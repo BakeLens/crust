@@ -1,0 +1,2 @@
+go test fuzz v1
+string("printf 'ns%\\' /home/user/.env | xargs cat")
