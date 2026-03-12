@@ -1209,8 +1209,9 @@ func defuseStmt(stmt *syntax.Stmt) *syntax.Stmt {
 		switch r.Op {
 		case syntax.RdrOut, syntax.AppOut, syntax.RdrIn, syntax.WordHdoc:
 			safeRedirs = append(safeRedirs, r)
-		case syntax.RdrInOut, syntax.DplIn, syntax.DplOut, syntax.ClbOut,
-			syntax.Hdoc, syntax.DashHdoc, syntax.RdrAll, syntax.AppAll:
+		case syntax.RdrInOut, syntax.DplIn, syntax.DplOut, syntax.RdrClob,
+			syntax.Hdoc, syntax.DashHdoc, syntax.RdrAll, syntax.AppAll,
+			syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob:
 			// RdrAll/AppAll (&>, &>>) are path-bearing but unsupported by the interpreter;
 			// their paths are captured by extractFromAST on the AST fallback path.
 			// The rest (DplIn/DplOut dup FDs, Hdoc/DashHdoc use goroutines) are also
@@ -1268,8 +1269,9 @@ func extractFromAST(file *syntax.File, skipInner bool) []parsedCommand {
 				redirOut = append(redirOut, p)
 			case syntax.RdrIn, syntax.WordHdoc:
 				redirIn = append(redirIn, p)
-			case syntax.RdrInOut, syntax.DplIn, syntax.DplOut, syntax.ClbOut,
-				syntax.Hdoc, syntax.DashHdoc:
+			case syntax.RdrInOut, syntax.DplIn, syntax.DplOut, syntax.RdrClob,
+				syntax.Hdoc, syntax.DashHdoc,
+				syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob:
 				// not path-bearing; ignore
 			}
 		}
@@ -1536,7 +1538,8 @@ func nodeHasUnsafe(root syntax.Node) bool {
 				// context doesn't support them. Skip interpreter for safety.
 				found = true
 				return false
-			case syntax.RdrInOut, syntax.ClbOut, syntax.RdrAll, syntax.AppAll:
+			case syntax.RdrInOut, syntax.RdrClob, syntax.RdrAll, syntax.AppAll,
+				syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob:
 				// Not supported by the interpreter — mark as unsafe.
 				found = true
 				return false
@@ -1773,13 +1776,7 @@ func (e *Extractor) runShellFileInterp(file *syntax.File, parentSymtab map[strin
 			// the runner and causes commands after "source" to be silently
 			// dropped from analysis (e.g., "source /tmp/a; cat ~/.ssh/id_rsa"
 			// would only return /tmp/a as a path, missing the id_rsa access).
-			// Replace builtins that can panic in the interpreter with "true":
-			// - source/dot: os.Stat blocks on UNC paths (see above)
-			// - printf: panics on malformed format strings (mvdan.cc/sh/v3
-			//   expand.formatInto index-out-of-range, e.g. printf '%\')
-			// These builtins' output is not useful for path extraction.
-			switch cmdNorm {
-			case ".", "source", "printf":
+			if cmdNorm == "." || cmdNorm == "source" {
 				return []string{"true"}, nil
 			}
 			return args, nil
