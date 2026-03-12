@@ -67,7 +67,7 @@ var selfProtectAPIRegex = regexp.MustCompile(
 	`(?i)(` +
 		loopbackHosts + `|` +
 		rebindingRegex() +
-		`)[:/.].*crust` + // [:/.]  also catches dot-suffix hostnames (e.g. 127.0.0.1.evil → DNS rebinding)
+		`)[:/.\w~].*crust` + // [:/.\w~]  also catches dot-suffix hostnames (e.g. 127.0.0.1.evil → DNS rebinding) and tilde paths
 		`|://0[:/.].*crust` + // bare 0 as URL host (= 0.0.0.0)
 		`|crust\w*://(?:` + // reverse: "crust*" as URL scheme, loopback as host
 		loopbackHosts + `|` +

@@ -217,6 +217,9 @@ func (b *BufferedSSEWriter) GetToolCalls() []telemetry.ToolCall {
 
 	var toolCalls []telemetry.ToolCall
 	for _, tc := range b.toolCalls {
+		if tc.Name == "" {
+			continue // skip incomplete/malformed tool calls
+		}
 		toolCalls = append(toolCalls, telemetry.ToolCall{
 			ID:        tc.ID,
 			Name:      tc.Name,
