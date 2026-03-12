@@ -233,6 +233,23 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
+  libcrust:
+    name: libcrust (CGO_ENABLED=0)
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build (pure Go, no CGO)
+        run: CGO_ENABLED=0 go build -tags libcrust ./internal/... ./pkg/...
+
+      - name: Test
+        run: CGO_ENABLED=0 go test -tags libcrust ./pkg/libcrust/...
+
   # Platform-specific tests run only on main to reduce CI costs.
   # macOS runners are 10x billing; MSYS2 adds a second windows-latest runner.
   # Jobs always complete (SUCCESS) so they can be listed as required status checks;
