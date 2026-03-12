@@ -1441,12 +1441,30 @@ func unescapeDollarSglQuoted(s string) string {
 func wordHasExpansion(w *syntax.Word) bool {
 	for _, part := range w.Parts {
 		switch p := part.(type) {
-		case *syntax.CmdSubst, *syntax.ProcSubst, *syntax.ParamExp, *syntax.ArithmExp:
+		case *syntax.CmdSubst:
+			// Empty command substitution ($() or ``) can't hide targets.
+			if len(p.Stmts) > 0 {
+				return true
+			}
+		case *syntax.ProcSubst:
+			// Empty process substitution (<() or >()) can't hide targets.
+			if len(p.Stmts) > 0 {
+				return true
+			}
+		case *syntax.ParamExp, *syntax.ArithmExp:
 			return true
 		case *syntax.DblQuoted:
 			for _, inner := range p.Parts {
-				switch inner.(type) {
-				case *syntax.CmdSubst, *syntax.ProcSubst, *syntax.ParamExp, *syntax.ArithmExp:
+				switch ip := inner.(type) {
+				case *syntax.CmdSubst:
+					if len(ip.Stmts) > 0 {
+						return true
+					}
+				case *syntax.ProcSubst:
+					if len(ip.Stmts) > 0 {
+						return true
+					}
+				case *syntax.ParamExp, *syntax.ArithmExp:
 					return true
 				}
 			}
