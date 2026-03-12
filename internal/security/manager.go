@@ -16,7 +16,7 @@ import (
 
 // Manager manages the security and telemetry module components
 type Manager struct {
-	storage       *telemetry.Storage
+	storage       telemetry.Recorder
 	interceptor   *Interceptor
 	registry      *plugin.Registry
 	apiServer     *APIServer
@@ -229,8 +229,8 @@ func (m *Manager) GetRegistry() *plugin.Registry {
 	return m.registry
 }
 
-// GetStorage returns the storage
-func (m *Manager) GetStorage() *telemetry.Storage {
+// GetStorage returns the storage recorder
+func (m *Manager) GetStorage() telemetry.Recorder {
 	if m == nil {
 		return nil
 	}

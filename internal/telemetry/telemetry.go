@@ -82,7 +82,7 @@ type Provider struct {
 
 var (
 	globalProvider *Provider
-	globalStorage  *Storage
+	globalStorage  Recorder
 	globalMu       sync.RWMutex
 )
 
@@ -122,15 +122,16 @@ func GetGlobalProvider() *Provider {
 	return globalProvider
 }
 
-// SetGlobalStorage sets the global storage for telemetry
-func SetGlobalStorage(s *Storage) {
+// SetGlobalStorage sets the global storage for telemetry.
+// Accepts any Recorder implementation (*Storage, NopRecorder, etc.).
+func SetGlobalStorage(s Recorder) {
 	globalMu.Lock()
 	defer globalMu.Unlock()
 	globalStorage = s
 }
 
-// GetGlobalStorage returns the global storage
-func GetGlobalStorage() *Storage {
+// GetGlobalStorage returns the global storage as a Recorder.
+func GetGlobalStorage() Recorder {
 	globalMu.RLock()
 	defer globalMu.RUnlock()
 	return globalStorage

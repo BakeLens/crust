@@ -22,12 +22,12 @@ const (
 // Interceptor handles tool call interception and response modification
 type Interceptor struct {
 	engine  *rules.Engine
-	storage *telemetry.Storage
+	storage telemetry.Recorder
 	enabled atomic.Bool
 }
 
 // NewInterceptor creates a new interceptor
-func NewInterceptor(engine *rules.Engine, storage *telemetry.Storage) *Interceptor {
+func NewInterceptor(engine *rules.Engine, storage telemetry.Recorder) *Interceptor {
 	i := &Interceptor{
 		engine:  engine,
 		storage: storage,
@@ -51,8 +51,8 @@ func (i *Interceptor) GetEngine() *rules.Engine {
 	return i.engine
 }
 
-// GetStorage returns the storage
-func (i *Interceptor) GetStorage() *telemetry.Storage {
+// GetStorage returns the storage recorder
+func (i *Interceptor) GetStorage() telemetry.Recorder {
 	return i.storage
 }
 
