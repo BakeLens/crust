@@ -37,16 +37,40 @@ func stripControlChars(s string) string {
 	}, s)
 }
 
-// NormalizeUnicode applies NFKC normalization and cross-script confusable stripping.
+// NormalizeUnicode applies NFKC normalization, diacritical mark stripping,
+// and cross-script confusable stripping.
 // NFKC handles fullwidth→ASCII, compatibility decomposition, etc.
+// stripDiacritics decomposes to NFD, strips combining marks, then recomposes
+// to NFC — prevents accented characters from bypassing regex character
+// classes (e.g., E+\u0301 → É which doesn't match [er]).
 // stripConfusables handles Cyrillic/Greek homoglyphs (а→a, е→e, etc.).
 func NormalizeUnicode(s string) string {
 	s = strings.ToValidUTF8(s, "\uFFFD")
 	s = norm.NFKC.String(s)
+	s = stripDiacritics(s)
 	s = stripConfusables(s)
 	s = stripInvisible(s)
 	s = norm.NFKC.String(s)
 	return s
+}
+
+// stripDiacritics removes diacritical marks (combining marks, Unicode category Mn)
+// from a string. It decomposes to NFD first so precomposed characters like É
+// (U+00C9) are split into base + combining mark, then strips the marks, and
+// recomposes via NFC. Shell commands and file paths never use diacritics
+// legitimately, and they can bypass regex character classes.
+func stripDiacritics(s string) string {
+	// Decompose: É (U+00C9) → E (U+0045) + ◌́ (U+0301)
+	decomposed := norm.NFD.String(s)
+	// Strip combining marks (Mn = Mark, Nonspacing)
+	stripped := strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Mn, r) {
+			return -1
+		}
+		return r
+	}, decomposed)
+	// Recompose remaining characters
+	return norm.NFC.String(stripped)
 }
 
 // IsSuspiciousInput checks for common evasion patterns.
