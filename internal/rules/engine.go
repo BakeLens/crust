@@ -352,6 +352,26 @@ func (e *Engine) ReloadUserRules() error {
 	return nil
 }
 
+// AddRulesFromYAML parses YAML content and appends the resulting rules
+// to the user rule set. Useful for programmatic rule injection (e.g. libcrust).
+func (e *Engine) AddRulesFromYAML(data []byte) error {
+	parsed, err := e.loader.parseRuleSet(data, "inline", SourceCLI)
+	if err != nil {
+		return err
+	}
+	parsed = expandRuleHomes(parsed, e.normalizer.GetHomeDir())
+	compiled, err := e.compileRules(parsed, false)
+	if err != nil {
+		return err
+	}
+
+	e.mu.Lock()
+	e.user = append(e.user, compiled...)
+	e.rebuildMergedLocked()
+	e.mu.Unlock()
+	return nil
+}
+
 // AddRulesFromFile adds rules from a file and reloads
 func (e *Engine) AddRulesFromFile(path string) (string, error) {
 	destPath, err := e.loader.AddRuleFile(path)
