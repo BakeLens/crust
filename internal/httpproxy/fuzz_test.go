@@ -56,7 +56,9 @@ func FuzzForceNonStreaming(f *testing.F) {
 				t.Errorf("stream field not set to false: got %s", outObj["stream"])
 			}
 
-			// INVARIANT 4: All non-stream fields from input must be preserved unchanged.
+			// INVARIANT 4: All non-stream fields from input must be semantically preserved.
+			// Note: json.Encoder compacts whitespace in RawMessage values (e.g. "{ }" → "{}"),
+			// so we compare with json.Compact rather than byte-equality.
 			for k, v := range inObj {
 				if k == "stream" {
 					continue
@@ -64,8 +66,13 @@ func FuzzForceNonStreaming(f *testing.F) {
 				outVal, exists := outObj[k]
 				if !exists {
 					t.Errorf("field %q lost in output", k)
-				} else if !bytes.Equal(v, outVal) {
-					t.Errorf("field %q changed: input=%s output=%s", k, v, outVal)
+				} else {
+					var inCompact, outCompact bytes.Buffer
+					if json.Compact(&inCompact, v) == nil && json.Compact(&outCompact, outVal) == nil {
+						if !bytes.Equal(inCompact.Bytes(), outCompact.Bytes()) {
+							t.Errorf("field %q changed: input=%s output=%s", k, v, outVal)
+						}
+					}
 				}
 			}
 		} else if !bytes.Equal(out, input) {
