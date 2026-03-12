@@ -32,7 +32,7 @@
 <p align="center">
   <a href="https://github.com/BakeLens/crust/blob/main/SECURITY.md"><img src="https://img.shields.io/badge/Security%20Policy-Responsible%20Disclosure-green" alt="Security Policy" /></a>
   <img src="https://img.shields.io/badge/SAST-gosec%20%7C%20semgrep-blueviolet" alt="SAST" />
-  <img src="https://img.shields.io/badge/Fuzz%20Tested-43%20targets-orange" alt="Fuzz Tested" />
+  <img src="https://img.shields.io/badge/Fuzz%20Tested-44%20targets-orange" alt="Fuzz Tested" />
   <img src="https://img.shields.io/badge/Secrets-govulncheck%20%7C%20gitleaks-critical" alt="Secret Scanning" />
 </p>
 

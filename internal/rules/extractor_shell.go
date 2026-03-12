@@ -1313,11 +1313,15 @@ func wordToLiteral(w *syntax.Word) string {
 		case *syntax.Lit:
 			buf.WriteString(unescapeShellLit(p.Value))
 		case *syntax.SglQuoted:
-			buf.WriteString(p.Value) // no escapes inside single quotes
+			if p.Dollar {
+				buf.WriteString(unescapeDollarSglQuoted(p.Value))
+			} else {
+				buf.WriteString(p.Value) // no escapes inside single quotes
+			}
 		case *syntax.DblQuoted:
 			for _, inner := range p.Parts {
 				if lit, ok := inner.(*syntax.Lit); ok {
-					buf.WriteString(unescapeShellLit(lit.Value))
+					buf.WriteString(unescapeDblQuotedLit(lit.Value))
 				}
 			}
 		}
@@ -1343,6 +1347,87 @@ func unescapeShellLit(s string) string {
 			}
 			// trailing backslash: line continuation, drop it
 		} else {
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
+}
+
+// unescapeDblQuotedLit processes backslash escapes inside double-quoted strings.
+// In bash double quotes, only \$, \`, \", \\, and \newline are escape sequences.
+// All other \X sequences keep both the backslash and X (e.g., \0 stays as \0).
+func unescapeDblQuotedLit(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			next := s[i+1]
+			switch next {
+			case '$', '`', '"', '\\', '\n':
+				i++
+				if next != '\n' { // \newline is line continuation (dropped)
+					b.WriteByte(next)
+				}
+			default:
+				b.WriteByte('\\')
+			}
+		} else {
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
+}
+
+// unescapeDollarSglQuoted processes escape sequences inside $'...' strings.
+// Bash $'...' supports C-style escapes: \a \b \e \f \n \r \t \v \\ \' \" \?
+// plus \nnn (octal), \xHH (hex), \uHHHH and \UHHHHHHHH (Unicode).
+// For path extraction we only need to handle the common escapes correctly;
+// hex/octal/unicode produce arbitrary bytes that rarely appear in paths.
+func unescapeDollarSglQuoted(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i+1 >= len(s) {
+			b.WriteByte(s[i])
+			continue
+		}
+		i++
+		switch s[i] {
+		case 'a':
+			b.WriteByte('\a')
+		case 'b':
+			b.WriteByte('\b')
+		case 'e', 'E':
+			b.WriteByte(0x1b) // ESC
+		case 'f':
+			b.WriteByte('\f')
+		case 'n':
+			b.WriteByte('\n')
+		case 'r':
+			b.WriteByte('\r')
+		case 't':
+			b.WriteByte('\t')
+		case 'v':
+			b.WriteByte('\v')
+		case '\\':
+			b.WriteByte('\\')
+		case '\'':
+			b.WriteByte('\'')
+		case '"':
+			b.WriteByte('"')
+		case '?':
+			b.WriteByte('?')
+		default:
+			// For \0nnn, \xHH, \uHHHH, \UHHHHHHHH — write the raw escape
+			// since we can't fully resolve these without more complex parsing,
+			// and they rarely appear in security-relevant paths.
+			b.WriteByte('\\')
 			b.WriteByte(s[i])
 		}
 	}
