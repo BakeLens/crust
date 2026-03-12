@@ -1,3 +1,5 @@
+//go:build !libcrust
+
 package telemetry
 
 import (
