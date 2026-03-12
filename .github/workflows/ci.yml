@@ -177,6 +177,7 @@ jobs:
         with:
           name: fuzz-failing-seeds
           path: |
+            testdata/fuzz/
             internal/rules/testdata/fuzz/
             internal/httpproxy/testdata/fuzz/
             internal/config/testdata/fuzz/
