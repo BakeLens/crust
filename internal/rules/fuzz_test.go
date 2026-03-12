@@ -683,7 +683,7 @@ func FuzzForkBombDetection(f *testing.F) {
 		hasSelfRecursive := false
 		for _, stmt := range file.Stmts {
 			fd, ok := stmt.Cmd.(*syntax.FuncDecl)
-			if !ok {
+			if !ok || fd.Name == nil {
 				continue
 			}
 			funcName := fd.Name.Value

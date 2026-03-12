@@ -1562,7 +1562,7 @@ func nodeHasUnsafe(root syntax.Node) bool {
 func astForkBomb(file *syntax.File) string {
 	for _, stmt := range file.Stmts {
 		fd, ok := stmt.Cmd.(*syntax.FuncDecl)
-		if !ok {
+		if !ok || fd.Name == nil {
 			continue
 		}
 		funcName := fd.Name.Value
