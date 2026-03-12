@@ -1311,18 +1311,42 @@ func wordToLiteral(w *syntax.Word) string {
 	for _, part := range w.Parts {
 		switch p := part.(type) {
 		case *syntax.Lit:
-			buf.WriteString(p.Value)
+			buf.WriteString(unescapeShellLit(p.Value))
 		case *syntax.SglQuoted:
-			buf.WriteString(p.Value)
+			buf.WriteString(p.Value) // no escapes inside single quotes
 		case *syntax.DblQuoted:
 			for _, inner := range p.Parts {
 				if lit, ok := inner.(*syntax.Lit); ok {
-					buf.WriteString(lit.Value)
+					buf.WriteString(unescapeShellLit(lit.Value))
 				}
 			}
 		}
 	}
 	return buf.String()
+}
+
+// unescapeShellLit processes backslash escapes in shell literal values.
+// In bash, \X produces X (the backslash is consumed as an escape character).
+// A trailing backslash with nothing after it is a line continuation and is dropped.
+// This matches what the shell interpreter does when expanding unquoted/double-quoted words.
+func unescapeShellLit(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s // fast path: no escapes
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' {
+			if i+1 < len(s) {
+				i++
+				b.WriteByte(s[i])
+			}
+			// trailing backslash: line continuation, drop it
+		} else {
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
 }
 
 // wordHasExpansion returns true if a Word contains any substitution or expansion
