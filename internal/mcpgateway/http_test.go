@@ -236,6 +236,286 @@ func TestHTTP_ResponseDLP_Unit(t *testing.T) {
 	}
 }
 
+// --- Unit tests: handleGet, handleDelete, proxySSEResponse, copyMCPHeaders, proxyJSONResponse ---
+
+func TestHTTP_HandleGet_SSEStream(t *testing.T) {
+	// Upstream sends SSE events: one safe notification and one containing secrets
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "expected GET", http.StatusMethodNotAllowed)
+			return
+		}
+		// Verify MCP headers were forwarded
+		if sid := r.Header.Get(sessionHeader); sid != "test-session-123" {
+			t.Errorf("upstream didn't receive session header, got %q", sid)
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set(sessionHeader, "test-session-123")
+		w.WriteHeader(http.StatusOK)
+		f := w.(http.Flusher)
+
+		// Safe notification (pass through)
+		fmt.Fprint(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{\"token\":\"t1\",\"progress\":50}}\n\n")
+		f.Flush()
+
+		// Response with AWS key (should be blocked by DLP)
+		fmt.Fprint(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":\"AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\"}}\n\n")
+		f.Flush()
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set(sessionHeader, "test-session-123")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	body := w.Body.String()
+
+	// SSE headers should be set
+	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("Content-Type = %q, want text/event-stream", ct)
+	}
+
+	// Safe notification should pass through
+	if !strings.Contains(body, "notifications/progress") {
+		t.Error("safe notification should pass through")
+	}
+
+	// DLP-blocked response should be dropped
+	if strings.Contains(body, "AKIAIOSFODNN7EXAMPLE") {
+		t.Error("AWS key should be blocked by DLP in SSE response")
+	}
+
+	// Session should be tracked
+	if !gw.sessions.Exists("test-session-123") {
+		t.Error("session should be tracked from GET response")
+	}
+}
+
+func TestHTTP_HandleGet_UpstreamError(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", w.Code)
+	}
+}
+
+func TestHTTP_HandleDelete_SessionRemoval(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			http.Error(w, "expected DELETE", http.StatusMethodNotAllowed)
+			return
+		}
+		// Verify MCP headers were forwarded
+		if sid := r.Header.Get(sessionHeader); sid != "sess-to-delete" {
+			t.Errorf("upstream didn't receive session header, got %q", sid)
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "deleted")
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+
+	// Pre-track a session
+	gw.sessions.Track("sess-to-delete")
+	if !gw.sessions.Exists("sess-to-delete") {
+		t.Fatal("session should exist before DELETE")
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/", nil)
+	req.Header.Set(sessionHeader, "sess-to-delete")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+	if gw.sessions.Exists("sess-to-delete") {
+		t.Error("session should be removed after DELETE")
+	}
+	if !strings.Contains(w.Body.String(), "deleted") {
+		t.Error("upstream response body should be forwarded")
+	}
+}
+
+func TestHTTP_HandleDelete_UpstreamError(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gone", http.StatusGone)
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+	gw.sessions.Track("sess-gone")
+
+	req := httptest.NewRequest(http.MethodDelete, "/", nil)
+	req.Header.Set(sessionHeader, "sess-gone")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	// Session should still be cleaned up even if upstream returns error
+	if gw.sessions.Exists("sess-gone") {
+		t.Error("session should be removed regardless of upstream response")
+	}
+}
+
+func TestHTTP_CopyMCPHeaders(t *testing.T) {
+	gw := newGateway(t, "http://127.0.0.1:1")
+
+	tests := []struct {
+		name       string
+		headers    map[string]string
+		wantSID    string
+		wantLastID string
+	}{
+		{
+			name:       "both headers present",
+			headers:    map[string]string{sessionHeader: "sess-1", "Last-Event-ID": "evt-5"},
+			wantSID:    "sess-1",
+			wantLastID: "evt-5",
+		},
+		{
+			name:       "only session header",
+			headers:    map[string]string{sessionHeader: "sess-2"},
+			wantSID:    "sess-2",
+			wantLastID: "",
+		},
+		{
+			name:       "no headers",
+			headers:    map[string]string{},
+			wantSID:    "",
+			wantLastID: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			from := httptest.NewRequest(http.MethodGet, "/", nil)
+			for k, v := range tt.headers {
+				from.Header.Set(k, v)
+			}
+			to := httptest.NewRequest(http.MethodGet, "/", nil)
+			gw.copyMCPHeaders(from, to)
+
+			if got := to.Header.Get(sessionHeader); got != tt.wantSID {
+				t.Errorf("session = %q, want %q", got, tt.wantSID)
+			}
+			if got := to.Header.Get("Last-Event-ID"); got != tt.wantLastID {
+				t.Errorf("Last-Event-ID = %q, want %q", got, tt.wantLastID)
+			}
+		})
+	}
+}
+
+func TestHTTP_ProxyJSONResponse_DLPBlock(t *testing.T) {
+	// Upstream returns a JSON-RPC response containing a GitHub token
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"content":"ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm"}}`)
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"message":"hello"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	var resp testResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected DLP block for GitHub token in response")
+	}
+	if resp.Error.Code != jsonrpc.BlockedError {
+		t.Errorf("error code = %d, want %d", resp.Error.Code, jsonrpc.BlockedError)
+	}
+}
+
+func TestHTTP_ProxyJSONResponse_InvalidJSON_Passthrough(t *testing.T) {
+	// Upstream returns non-JSON-RPC body
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Custom", "preserved")
+		fmt.Fprint(w, `not valid json`)
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	// Non-JSON-RPC response should be forwarded as-is
+	if !strings.Contains(w.Body.String(), "not valid json") {
+		t.Error("non-JSON-RPC body should be forwarded as-is")
+	}
+}
+
+func TestHTTP_ProxySSEResponse_DLPBlock(t *testing.T) {
+	// Upstream returns SSE stream with DLP-triggering content
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set(sessionHeader, "sse-sess")
+		w.WriteHeader(http.StatusOK)
+		f := w.(http.Flusher)
+
+		// Safe event
+		fmt.Fprint(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":\"safe data\"}}\n\n")
+		f.Flush()
+
+		// DLP event (AWS key)
+		fmt.Fprint(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"content\":\"AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\"}}\n\n")
+		f.Flush()
+	}))
+	defer upstream.Close()
+
+	gw := newGateway(t, upstream.URL)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"message":"hello"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	gw.ServeHTTP(w, req)
+
+	respBody := w.Body.String()
+
+	// Safe response should pass through
+	if !strings.Contains(respBody, "safe data") {
+		t.Error("safe SSE event should pass through")
+	}
+
+	// DLP-blocked response should be dropped
+	if strings.Contains(respBody, "AKIAIOSFODNN7EXAMPLE") {
+		t.Error("AWS key should be blocked by DLP in SSE response")
+	}
+
+	// Session header should be forwarded
+	if sid := w.Header().Get(sessionHeader); sid != "sse-sess" {
+		t.Errorf("session header = %q, want %q", sid, "sse-sess")
+	}
+}
+
 func TestHTTP_AllowedPassthrough(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
