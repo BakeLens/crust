@@ -58,7 +58,7 @@ jobs:
           /tmp/crust-lint lint-rules
 
       - name: Cache Go tools (govulncheck, nilaway)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/go/bin
           key: go-tools-${{ runner.os }}-govulncheck-nilaway-v1
@@ -84,7 +84,7 @@ jobs:
           fetch-depth: 0
 
       - name: Cache pip (semgrep)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: pip-semgrep-${{ runner.os }}-v1
@@ -118,7 +118,7 @@ jobs:
           mkdir -p /tmp/fuzz-cache
 
       - name: Restore fuzz corpus cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/fuzz-cache
           key: fuzz-corpus-${{ runner.os }}-${{ github.sha }}
@@ -199,7 +199,7 @@ jobs:
 
       - name: Upload failing fuzz corpus
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-failing-seeds
           path: |
@@ -252,7 +252,7 @@ jobs:
 
       - name: Upload failing fuzz corpus (Windows)
         if: failure() && matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-failing-seeds-windows
           path: internal/rules/testdata/fuzz/
@@ -339,7 +339,7 @@ jobs:
             -resultBundlePath TestResults.xcresult
 
       - name: Upload xcframework
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Libcrust.xcframework
           path: build/ios/Libcrust.xcframework
