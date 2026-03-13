@@ -268,10 +268,11 @@ The rule engine can protect against various attack vectors:
 | Credentials | .env, SSH keys, cloud creds, tokens, DLP secret detection |
 | System | `/etc/passwd`, `/etc/shadow`, binaries, kernel modules, boot |
 | Crypto Wallets | BIP39 mnemonics, xprv/WIF keys, wallet.dat, keystore (16 chains) |
-| Persistence | Shell RC, cron, systemd, git hooks |
+| Persistence | Shell RC, cron, systemd, git hooks, mobile background tasks |
 | Privilege Escalation | Sudoers, PAM, LD_PRELOAD |
 | Container Escape | Docker/containerd sockets |
 | Network | Internal networks, cloud metadata |
+| Mobile | PII (contacts, photos, calendar, location, health), keychain, clipboard, URL schemes |
 
 See `internal/rules/builtin/security.yaml` for path rules, `internal/rules/dlp.go` for token patterns, and `internal/rules/dlp_crypto.go` for crypto key detection.
 

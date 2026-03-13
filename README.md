@@ -26,7 +26,7 @@
   <a href="https://github.com/BakeLens/crust/releases"><img src="https://img.shields.io/github/v/release/BakeLens/crust" alt="Release" /></a>
   <img src="https://img.shields.io/github/go-mod/go-version/BakeLens/crust" alt="Go Version" />
   <img src="https://img.shields.io/badge/License-Elastic%202.0-blue.svg" alt="License" />
-  <img src="https://img.shields.io/badge/Platform-macOS%2012%2B%20%7C%20Linux%20%7C%20Windows%2010%2B%20%7C%20FreeBSD%2014%2B-lightgrey" alt="Platform" />
+  <img src="https://img.shields.io/badge/Platform-macOS%2012%2B%20%7C%20Linux%20%7C%20Windows%2010%2B%20%7C%20FreeBSD%2014%2B%20%7C%20iOS%2015%2B-lightgrey" alt="Platform" />
 </p>
 
 <p align="center">
@@ -155,6 +155,39 @@ crust acp-wrap -- goose acp
 ```
 
 Supports JetBrains IDEs and other ACP-compatible editors. See the [ACP setup guide](docs/acp.md) for step-by-step instructions.
+
+### iOS / Mobile
+
+Crust ships as a native iOS library (`CrustKit`) for embedding in mobile apps. The same rule engine that protects desktop agents also protects mobile AI agents — blocking PII access, keychain theft, clipboard exfiltration, and sensitive URL scheme invocations.
+
+```swift
+import CrustKit
+
+let engine = CrustEngine()
+try engine.initialize()
+
+// Blocked: protect-mobile-pii
+let result = engine.evaluate(toolName: "read_contacts", arguments: [:])
+print(result.matched)  // true
+
+// Blocked: protect-os-keychains (unified desktop + mobile rule)
+let keychain = engine.evaluate(toolName: "keychain_get", arguments: ["key": "api_token"])
+print(keychain.matched)  // true
+
+// Allowed: safe URL scheme
+let https = engine.evaluate(toolName: "open_url", arguments: ["url": "https://example.com"])
+print(https.matched)  // false
+```
+
+**Build the xcframework:**
+
+```bash
+./scripts/build-ios.sh    # produces Libcrust.xcframework (~78MB, device + simulator)
+```
+
+Add `ios/CrustKit/` as a local Swift Package in Xcode. The package depends on the xcframework and provides a type-safe Swift API with Codable result types.
+
+Mobile and desktop rules are unified using virtual paths (`mobile://`) — the same YAML file protects both platforms. See [`internal/rules/builtin/security.yaml`](internal/rules/builtin/security.yaml) for all rules.
 
 ## Protection
 

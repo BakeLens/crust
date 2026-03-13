@@ -13,8 +13,8 @@ import (
 
 const (
 	file          = "builtin/security.yaml"
-	expectedHash  = "8acc4e6b7827a8938c5eaf1851df1c39619085a44cf43e6d4012e6992cf2f6491a7106244a6f83387794ed4a72e421ef7d7da83196b591b2cd924839c9568511"
-	expectedCount = 24
+	expectedHash  = "70e03593aac5dd5f22a1a3358a99bb88834a93c91381eec7876be40efc7211231a85db90e11250802689caf2a18f955820f9aba71f2de5279a20f44f569516bd"
+	expectedCount = 27
 )
 
 // Critical rules that must be present — removal would silently disable
@@ -44,6 +44,9 @@ var criticalRules = []string{
 	"protect-agent-config",
 	"protect-vscode-settings",
 	"protect-git-hooks",
+	"protect-mobile-pii",
+	"protect-mobile-clipboard",
+	"protect-mobile-url-schemes",
 }
 
 func main() {
