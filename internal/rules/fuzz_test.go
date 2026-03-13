@@ -1084,7 +1084,8 @@ func FuzzEvasionDetectionBypass(f *testing.F) {
 			// Commands with $() or backtick substitution are legitimately flagged
 			// evasive when the runner cannot statically resolve the substitution
 			// (e.g., the subcommand contains null bytes or otherwise fails to expand).
-			hasSubst := strings.Contains(jsonCmd, "$(") || strings.Contains(jsonCmd, "`")
+			hasSubst := strings.Contains(jsonCmd, "$(") || strings.Contains(jsonCmd, "`") ||
+				strings.Contains(jsonCmd, ">(") || strings.Contains(jsonCmd, "<(")
 			// hasGlobCmd covers top-level command names with glob chars, but eval/exec
 			// cause inner arguments to become command names at runtime — check the
 			// evasive reason directly for the wildcard case.
