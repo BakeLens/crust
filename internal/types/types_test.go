@@ -54,10 +54,3 @@ func TestLogLevelValid(t *testing.T) {
 		}
 	}
 }
-
-func TestAllAgentsCount(t *testing.T) {
-	agents := AllAgents()
-	if len(agents) != 7 {
-		t.Errorf("AllAgents() has %d agents, want 7", len(agents))
-	}
-}

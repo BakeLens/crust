@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/BakeLens/crust/internal/eventlog"
@@ -326,5 +327,198 @@ func TestE2E_FullPipeline_EvasionDetection(t *testing.T) {
 				t.Errorf("evasion attempt %s should be blocked", tt.name)
 			}
 		})
+	}
+}
+
+// TestE2E_HotReloadRules verifies that adding rules to a live engine
+// takes effect immediately for subsequent evaluations.
+func TestE2E_HotReloadRules(t *testing.T) {
+	eventlog.GetMetrics().Reset()
+	interceptor := newE2EInterceptor(t)
+
+	// This tool call should be allowed by default (no rule blocks /tmp/secret)
+	response := createAnthropicResponse([]anthropicContentBlock{
+		{Type: "tool_use", ID: "t1", Name: "Read", Input: json.RawMessage(`{"file_path":"/tmp/secret/data.txt"}`)},
+	})
+
+	result, err := interceptor.InterceptToolCalls(response, e2eCtx("reload-before"))
+	if err != nil {
+		t.Fatalf("InterceptToolCalls (before reload): %v", err)
+	}
+	if len(result.BlockedToolCalls) != 0 {
+		t.Fatalf("expected 0 blocked before reload, got %d", len(result.BlockedToolCalls))
+	}
+
+	// Hot-reload: add a rule that blocks /tmp/secret/**
+	err = interceptor.GetEngine().AddRulesFromYAML([]byte(`
+rules:
+  - name: block-tmp-secret
+    message: Secret access blocked
+    actions: [read, write]
+    block: "/tmp/secret/**"
+`))
+	if err != nil {
+		t.Fatalf("AddRulesFromYAML: %v", err)
+	}
+
+	// Same tool call should now be blocked
+	result, err = interceptor.InterceptToolCalls(response, e2eCtx("reload-after"))
+	if err != nil {
+		t.Fatalf("InterceptToolCalls (after reload): %v", err)
+	}
+	if len(result.BlockedToolCalls) != 1 {
+		t.Fatalf("expected 1 blocked after reload, got %d", len(result.BlockedToolCalls))
+	}
+	if result.BlockedToolCalls[0].MatchResult.RuleName != "block-tmp-secret" {
+		t.Errorf("expected rule block-tmp-secret, got %q", result.BlockedToolCalls[0].MatchResult.RuleName)
+	}
+}
+
+// TestE2E_CrossAPITypeConversion verifies that the same dangerous tool call
+// is blocked regardless of API format (Anthropic, OpenAI, OpenAI Responses).
+func TestE2E_CrossAPITypeConversion(t *testing.T) {
+	interceptor := newE2EInterceptor(t)
+
+	// Anthropic format
+	t.Run("anthropic", func(t *testing.T) {
+		eventlog.GetMetrics().Reset()
+		resp := createAnthropicResponse([]anthropicContentBlock{
+			{Type: "tool_use", ID: "t1", Name: "Read", Input: json.RawMessage(`{"file_path":"/app/.env"}`)},
+		})
+		result, err := interceptor.InterceptToolCalls(resp, InterceptionContext{
+			TraceID: "trace-cross-1", SessionID: "sess-1",
+			Model: "claude-3-opus", APIType: types.APITypeAnthropic, BlockMode: types.BlockModeRemove,
+		})
+		if err != nil {
+			t.Fatalf("InterceptToolCalls: %v", err)
+		}
+		if len(result.BlockedToolCalls) != 1 {
+			t.Errorf("Anthropic: expected 1 blocked, got %d", len(result.BlockedToolCalls))
+		}
+	})
+
+	// OpenAI Completion format
+	t.Run("openai", func(t *testing.T) {
+		eventlog.GetMetrics().Reset()
+		resp := createOpenAIResponse([]openAIToolCall{
+			makeOAIToolCall("call_1", "Read", `{"file_path":"/app/.env"}`),
+		}, "")
+		result, err := interceptor.InterceptToolCalls(resp, InterceptionContext{
+			TraceID: "trace-cross-2", SessionID: "sess-1",
+			Model: "gpt-4", APIType: types.APITypeOpenAICompletion, BlockMode: types.BlockModeRemove,
+		})
+		if err != nil {
+			t.Fatalf("InterceptToolCalls: %v", err)
+		}
+		if len(result.BlockedToolCalls) != 1 {
+			t.Errorf("OpenAI: expected 1 blocked, got %d", len(result.BlockedToolCalls))
+		}
+	})
+
+	// OpenAI Responses format
+	t.Run("openai_responses", func(t *testing.T) {
+		eventlog.GetMetrics().Reset()
+		resp := createOpenAIResponsesResponse([]openAIResponsesOutputItem{
+			{Type: "function_call", ID: "fc_1", CallID: "call_1", Name: "Read", Arguments: `{"file_path":"/app/.env"}`},
+		})
+		result, err := interceptor.InterceptToolCalls(resp, InterceptionContext{
+			TraceID: "trace-cross-3", SessionID: "sess-1",
+			Model: "gpt-4.1", APIType: types.APITypeOpenAIResponses, BlockMode: types.BlockModeRemove,
+		})
+		if err != nil {
+			t.Fatalf("InterceptToolCalls: %v", err)
+		}
+		if len(result.BlockedToolCalls) != 1 {
+			t.Errorf("OpenAI Responses: expected 1 blocked, got %d", len(result.BlockedToolCalls))
+		}
+	})
+}
+
+// TestE2E_ConcurrentEvaluationConsistency verifies that concurrent tool call
+// evaluations produce consistent results under load.
+func TestE2E_ConcurrentEvaluationConsistency(t *testing.T) {
+	interceptor := newE2EInterceptor(t)
+	eventlog.GetMetrics().Reset()
+
+	dangerousResp := createAnthropicResponse([]anthropicContentBlock{
+		{Type: "tool_use", ID: "t1", Name: "Read", Input: json.RawMessage(`{"file_path":"/app/.env"}`)},
+	})
+	safeResp := createAnthropicResponse([]anthropicContentBlock{
+		{Type: "tool_use", ID: "t1", Name: "Read", Input: json.RawMessage(`{"file_path":"/tmp/safe.txt"}`)},
+	})
+
+	var wg sync.WaitGroup
+	var blockedCount, allowedCount int64
+	var mu sync.Mutex
+
+	for i := range 20 {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			resp := safeResp
+			if idx%2 == 0 {
+				resp = dangerousResp
+			}
+			result, err := interceptor.InterceptToolCalls(resp, e2eCtx("concurrent"))
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			blockedCount += int64(len(result.BlockedToolCalls))
+			allowedCount += int64(len(result.AllowedToolCalls))
+			mu.Unlock()
+		}(i)
+	}
+	wg.Wait()
+
+	// 10 dangerous (even indices) should be blocked, 10 safe should be allowed
+	if blockedCount != 10 {
+		t.Errorf("expected 10 blocked, got %d", blockedCount)
+	}
+	if allowedCount != 10 {
+		t.Errorf("expected 10 allowed, got %d", allowedCount)
+	}
+}
+
+// TestE2E_MetricsReconcileAfterMixedTraffic verifies that metrics
+// maintain the invariant: total = blocked + allowed after mixed traffic.
+func TestE2E_MetricsReconcileAfterMixedTraffic(t *testing.T) {
+	eventlog.GetMetrics().Reset()
+	interceptor := newE2EInterceptor(t)
+
+	// Send a mix of blocked and allowed tool calls
+	responses := []struct {
+		resp []byte
+		ctx  InterceptionContext
+	}{
+		{createAnthropicResponse([]anthropicContentBlock{
+			{Type: "tool_use", ID: "t1", Name: "Read", Input: json.RawMessage(`{"file_path":"/app/.env"}`)},
+			{Type: "tool_use", ID: "t2", Name: "Read", Input: json.RawMessage(`{"file_path":"/tmp/ok.txt"}`)},
+		}), e2eCtx("metrics-1")},
+		{createOpenAIResponse([]openAIToolCall{
+			makeOAIToolCall("c1", "Bash", `{"command":"cat /etc/shadow"}`),
+			makeOAIToolCall("c2", "Bash", `{"command":"ls /tmp"}`),
+		}, ""), InterceptionContext{
+			TraceID: "trace-metrics-2", SessionID: "sess-1",
+			Model: "gpt-4", APIType: types.APITypeOpenAICompletion, BlockMode: types.BlockModeRemove,
+		}},
+	}
+
+	for _, r := range responses {
+		if _, err := interceptor.InterceptToolCalls(r.resp, r.ctx); err != nil {
+			t.Fatalf("InterceptToolCalls: %v", err)
+		}
+	}
+
+	m := eventlog.GetMetrics()
+	total := m.TotalToolCalls.Load()
+	blocked := m.ProxyRequestBlocks.Load() + m.ProxyResponseBlocks.Load()
+	allowed := m.ProxyResponseAllowed.Load()
+
+	if total != blocked+allowed {
+		t.Errorf("invariant broken: total(%d) != blocked(%d) + allowed(%d)", total, blocked, allowed)
+	}
+	if total == 0 {
+		t.Error("expected non-zero total tool calls")
 	}
 }

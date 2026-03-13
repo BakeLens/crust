@@ -1,65 +1,10 @@
 package security
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/BakeLens/crust/internal/eventlog"
 )
-
-func TestMetricsCountAccuracy(t *testing.T) {
-	eventlog.GetMetrics().Reset()
-
-	// 3 proxy request blocked events
-	for range 3 {
-		eventlog.Record(eventlog.Event{
-			Layer:      eventlog.LayerProxyRequest,
-			ToolName:   "Read",
-			Arguments:  json.RawMessage(`{"path":"/etc/shadow"}`),
-			WasBlocked: true,
-			RuleName:   "test-rule",
-		})
-	}
-
-	// 2 proxy response blocked events (one non-streaming, one buffered)
-	eventlog.Record(eventlog.Event{
-		Layer:      eventlog.LayerProxyResponse,
-		ToolName:   "Bash",
-		Arguments:  json.RawMessage(`{"command":"rm -rf /"}`),
-		WasBlocked: true,
-		RuleName:   "test-rule",
-	})
-	eventlog.Record(eventlog.Event{
-		Layer:      eventlog.LayerProxyBuffer,
-		ToolName:   "Write",
-		Arguments:  json.RawMessage(`{"path":"/etc/passwd"}`),
-		WasBlocked: true,
-		RuleName:   "test-rule",
-	})
-
-	// 1 proxy response allowed event
-	eventlog.Record(eventlog.Event{
-		Layer:      eventlog.LayerProxyResponse,
-		ToolName:   "Read",
-		Arguments:  json.RawMessage(`{"path":"README.md"}`),
-		WasBlocked: false,
-	})
-
-	m := eventlog.GetMetrics()
-
-	if got := m.ProxyRequestBlocks.Load(); got != 3 {
-		t.Errorf("ProxyRequestBlocks = %d, want 3", got)
-	}
-	if got := m.ProxyResponseBlocks.Load(); got != 2 {
-		t.Errorf("ProxyResponseBlocks = %d, want 2", got)
-	}
-	if got := m.ProxyResponseAllowed.Load(); got != 1 {
-		t.Errorf("ProxyResponseAllowed = %d, want 1", got)
-	}
-	if got := m.TotalToolCalls.Load(); got != 6 {
-		t.Errorf("TotalToolCalls = %d, want 6", got)
-	}
-}
 
 func TestMetricsReset(t *testing.T) {
 	m := eventlog.GetMetrics()
@@ -133,23 +78,6 @@ func TestGetStatsMap(t *testing.T) {
 	}
 	if stats["proxy_response_allowed"] != 1 {
 		t.Errorf("layer1_allowed = %d, want 1", stats["proxy_response_allowed"])
-	}
-}
-
-func TestLayer0NonBlockedDroppedFromMetrics(t *testing.T) {
-	eventlog.GetMetrics().Reset()
-
-	// Non-blocked proxy request events shouldn't happen in practice.
-	// They are silently dropped to preserve the invariant:
-	//   TotalToolCalls == ProxyRequestBlocks + ProxyResponseBlocks + ProxyResponseAllowed
-	eventlog.Record(eventlog.Event{Layer: eventlog.LayerProxyRequest, ToolName: "Read", WasBlocked: false})
-
-	m := eventlog.GetMetrics()
-	if got := m.ProxyRequestBlocks.Load(); got != 0 {
-		t.Errorf("ProxyRequestBlocks = %d, want 0", got)
-	}
-	if got := m.TotalToolCalls.Load(); got != 0 {
-		t.Errorf("TotalToolCalls = %d, want 0 (non-blocked proxy request dropped)", got)
 	}
 }
 

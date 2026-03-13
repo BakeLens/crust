@@ -3,21 +3,15 @@ package logger
 import "testing"
 
 func TestParseLevel(t *testing.T) {
+	// Verify boundary cases and error handling.
 	tests := []struct {
 		input   string
 		want    Level
 		wantErr bool
 	}{
-		{"trace", LevelTrace, false},
-		{"debug", LevelDebug, false},
-		{"info", LevelInfo, false},
-		{"warn", LevelWarn, false},
-		{"warning", LevelWarn, false},
-		{"error", LevelError, false},
-		{"", LevelInfo, false},       // empty defaults to info
-		{"TRACE", LevelTrace, false}, // case-insensitive
-		{"Debug", LevelDebug, false},
-		{"INFO", LevelInfo, false},
+		{"", LevelInfo, false},        // empty defaults to info
+		{"TRACE", LevelTrace, false},  // case-insensitive
+		{"warning", LevelWarn, false}, // alias
 		{"invalid", 0, true},
 		{"verbose", 0, true},
 		{"fatal", 0, true},

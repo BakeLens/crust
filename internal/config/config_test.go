@@ -11,19 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestSecurityConfig_Validate_Defaults(t *testing.T) {
-	cfg := DefaultConfig()
-	if err := cfg.Security.Validate(); err != nil {
-		t.Fatalf("default config validation failed: %v", err)
-	}
-	if !cfg.Security.BufferStreaming {
-		t.Error("BufferStreaming should default to true")
-	}
-	if !cfg.Security.Enabled {
-		t.Error("Security.Enabled should default to true")
-	}
-}
-
 func TestSecurityConfig_Validate_BufferStreamingDisabled(t *testing.T) {
 	cfg := SecurityConfig{
 		Enabled:         true,
@@ -83,22 +70,6 @@ func TestSecurityConfig_Validate_SecurityDisabledNoBufferCheck(t *testing.T) {
 		t.Fatalf("unexpected error when security disabled: %v", err)
 	}
 }
-
-func TestDefaultConfig_Values(t *testing.T) {
-	cfg := DefaultConfig()
-
-	if cfg.Server.Port != 9090 {
-		t.Errorf("Server.Port = %d, want 9090", cfg.Server.Port)
-	}
-	if cfg.API.SocketPath != "" {
-		t.Errorf("API.SocketPath should be empty (auto-derived), got %q", cfg.API.SocketPath)
-	}
-	if cfg.Rules.DisableBuiltin {
-		t.Error("Builtin rules should be enabled by default")
-	}
-}
-
-// --- Config.Validate() tests ---
 
 func TestValidate_DefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()

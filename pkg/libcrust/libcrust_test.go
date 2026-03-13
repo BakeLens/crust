@@ -205,3 +205,73 @@ func TestShutdownIsIdempotent(t *testing.T) {
 	Shutdown() // second call should not panic
 	Shutdown() // third call should not panic
 }
+
+func TestFullLifecycleUnderLoad(t *testing.T) {
+	// Phase 1: Init with builtin rules
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	builtinCount := RuleCount()
+	if builtinCount == 0 {
+		t.Fatal("expected builtin rules")
+	}
+
+	// Phase 2: Concurrent evaluations while adding rules
+	var wg sync.WaitGroup
+	for range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 50 {
+				Evaluate("read_file", `{"path":"/tmp/test.txt"}`)
+			}
+		}()
+	}
+
+	// Phase 3: Add custom rules mid-flight
+	yaml := `
+rules:
+  - name: lifecycle-test-rule
+    message: Lifecycle test
+    actions: [write]
+    block: "/tmp/lifecycle-blocked/**"
+`
+	if err := AddRulesYAML(yaml); err != nil {
+		t.Fatalf("AddRulesYAML failed: %v", err)
+	}
+
+	wg.Wait()
+
+	// Phase 4: Verify new rule is active
+	if RuleCount() <= builtinCount {
+		t.Errorf("expected more rules after AddRulesYAML: %d <= %d", RuleCount(), builtinCount)
+	}
+	result := Evaluate("write_file", `{"file_path":"/tmp/lifecycle-blocked/data.txt","content":"test"}`)
+	if !strings.Contains(result, `"matched":true`) {
+		t.Errorf("expected blocked, got: %s", result)
+	}
+
+	// Phase 5: Intercept a response
+	body := `{"content":[{"type":"tool_use","id":"t1","name":"write_file","input":{"file_path":"/tmp/lifecycle-blocked/x","content":"y"}}]}`
+	intercepted := InterceptResponse(body, "anthropic", "remove")
+	if !strings.Contains(intercepted, "blocked") {
+		t.Errorf("expected blocked in interception, got: %s", intercepted)
+	}
+
+	// Phase 6: Shutdown and reinit
+	Shutdown()
+	if RuleCount() != 0 {
+		t.Error("expected 0 rules after shutdown")
+	}
+
+	if err := Init(""); err != nil {
+		t.Fatalf("Re-init failed: %v", err)
+	}
+	defer Shutdown()
+
+	// Custom rule should be gone after reinit
+	result = Evaluate("write_file", `{"file_path":"/tmp/lifecycle-blocked/data.txt","content":"test"}`)
+	if strings.Contains(result, `"matched":true`) {
+		t.Error("custom rule should not persist after shutdown+reinit")
+	}
+}
