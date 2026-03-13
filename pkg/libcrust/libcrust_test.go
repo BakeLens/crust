@@ -5,6 +5,7 @@ package libcrust
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -118,4 +119,89 @@ func TestGetVersion(t *testing.T) {
 	if v == "" {
 		t.Error("expected non-empty version")
 	}
+}
+
+func TestDoubleInitClosesOldEngine(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("first Init failed: %v", err)
+	}
+	n1 := RuleCount()
+
+	// Second init should succeed without leaking.
+	if err := Init(""); err != nil {
+		t.Fatalf("second Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	if n := RuleCount(); n != n1 {
+		t.Errorf("rule count changed after re-init: %d vs %d", n, n1)
+	}
+}
+
+func TestEvaluateMalformedJSON(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	// Should not panic on invalid JSON.
+	result := Evaluate("read_file", "not{json")
+	if result == "" {
+		t.Error("expected non-empty result for malformed JSON")
+	}
+}
+
+func TestRuleCountBeforeInit(t *testing.T) {
+	Shutdown()
+	if n := RuleCount(); n != 0 {
+		t.Errorf("expected 0 rules before init, got %d", n)
+	}
+}
+
+func TestValidateYAMLBeforeInit(t *testing.T) {
+	Shutdown()
+	msg := ValidateYAML("rules: []")
+	if !strings.Contains(msg, "not initialized") {
+		t.Errorf("expected not-initialized error, got: %s", msg)
+	}
+}
+
+func TestInterceptResponseBeforeInit(t *testing.T) {
+	Shutdown()
+	body := `{"content":[]}`
+	result := InterceptResponse(body, "anthropic", "remove")
+	// Should return original body when not initialized.
+	if result != body {
+		t.Errorf("expected passthrough, got: %s", result)
+	}
+}
+
+func TestConcurrentEvaluateAndShutdown(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	// Spawn concurrent evaluators.
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 100 {
+				Evaluate("read_file", `{"path":"/tmp/test.txt"}`)
+			}
+		}()
+	}
+	// Shutdown while evaluators are running.
+	Shutdown()
+	wg.Wait()
+}
+
+func TestShutdownIsIdempotent(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	Shutdown()
+	Shutdown() // second call should not panic
+	Shutdown() // third call should not panic
 }

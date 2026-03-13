@@ -35,9 +35,17 @@ var (
 
 // Init initializes the rule engine with builtin rules.
 // Call this once at app startup. Optional userRulesDir can be empty.
+// Safe to call multiple times — the previous engine is closed first.
 func Init(userRulesDir string) error {
 	mu.Lock()
 	defer mu.Unlock()
+
+	// Close previous engine to avoid resource leaks.
+	if engine != nil {
+		engine.Close()
+		engine = nil
+		interceptor = nil
+	}
 
 	cfg := rules.EngineConfig{
 		UserRulesDir: userRulesDir,
@@ -129,6 +137,15 @@ func InterceptResponse(responseBody string, apiType string, blockMode string) st
 
 	result, err := i.InterceptToolCalls([]byte(responseBody), ctx)
 	if err != nil {
+		errOut := interceptResult{
+			ModifiedResponse: responseBody,
+			Error:            err.Error(),
+			Blocked:          []blockedCall{},
+			Allowed:          []allowedCall{},
+		}
+		if j, e := json.Marshal(errOut); e == nil {
+			return string(j)
+		}
 		return responseBody
 	}
 
@@ -193,6 +210,9 @@ func GetVersion() string {
 func Shutdown() {
 	mu.Lock()
 	defer mu.Unlock()
+	if engine != nil {
+		engine.Close()
+	}
 	engine = nil
 	interceptor = nil
 }
@@ -201,6 +221,7 @@ func Shutdown() {
 
 type interceptResult struct {
 	ModifiedResponse string        `json:"modified_response"`
+	Error            string        `json:"error,omitempty"`
 	Blocked          []blockedCall `json:"blocked"`
 	Allowed          []allowedCall `json:"allowed"`
 }

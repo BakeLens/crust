@@ -154,13 +154,15 @@ jobs:
           parallel_fuzz /tmp/rules.fuzz \
             FuzzNormalizerBypass FuzzParseShellCommands FuzzMatcherConsistency \
             FuzzExtractBashCommand FuzzIsSuspiciousInput FuzzContainsObfuscation \
-            FuzzForkBombDetection FuzzCommandRegexBypass FuzzHostRegexBypass \
+            FuzzCommandRegexBypass FuzzHostRegexBypass \
             FuzzJSONUnicodeEscapeBypass FuzzEvasionDetectionBypass FuzzGlobCommandBypass \
             FuzzPipelineExtraction FuzzContentConfusableBypass FuzzVariableExpansionEvasion \
             FuzzShapeDetectionBypass FuzzWebSearchURLBypass FuzzNormalAgentFalsePositive \
             || rc=1
-          # FuzzPipeBypass needs constrained memory and single worker to avoid OOM.
+          # FuzzPipeBypass and FuzzForkBombDetection need constrained memory and
+          # single worker to avoid OOM when running alongside other fuzz targets.
           GOMEMLIMIT=2GiB /tmp/rules.fuzz -test.fuzz=FuzzPipeBypass -test.fuzztime=12s -test.short -test.fuzzcachedir=/tmp/fuzz-cache -test.parallel=1 || rc=1
+          GOMEMLIMIT=2GiB /tmp/rules.fuzz -test.fuzz=FuzzForkBombDetection -test.fuzztime=12s -test.short -test.fuzzcachedir=/tmp/fuzz-cache -test.parallel=1 || rc=1
           parallel_fuzz /tmp/httpproxy.fuzz \
             FuzzParseSSEEventData FuzzCopyHeaders FuzzStripHopByHopHeaders \
             FuzzParseEvent FuzzApplyResultToToolCalls \
@@ -287,6 +289,32 @@ jobs:
         run: |
           test -d build/ios/Libcrust.xcframework
           ls -la build/ios/Libcrust.xcframework/
+
+      - name: Resolve Swift package
+        working-directory: ios/CrustKit
+        run: xcodebuild -resolvePackageDependencies -scheme CrustKit
+
+      - name: Test CrustKit (iOS Simulator)
+        working-directory: ios/CrustKit
+        run: |
+          # Pick first available iPhone simulator
+          DEST=$(xcrun simctl list devices available -j \
+            | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          for rt,devs in d.items():
+            if 'iOS' in rt:
+              for dev in devs:
+                if 'iPhone' in dev['name']:
+                  print(dev['name']); sys.exit(0)
+          print('iPhone 16')
+          ")
+          echo "Using simulator: $DEST"
+          xcodebuild test \
+            -scheme CrustKit \
+            -destination "platform=iOS Simulator,name=$DEST,OS=latest" \
+            -skipPackagePluginValidation \
+            -resultBundlePath TestResults.xcresult
 
       - name: Upload xcframework
         uses: actions/upload-artifact@v4

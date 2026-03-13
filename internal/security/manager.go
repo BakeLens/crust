@@ -38,10 +38,7 @@ type Manager struct {
 	wg            sync.WaitGroup
 }
 
-var (
-	globalManager   *Manager
-	globalManagerMu sync.RWMutex
-)
+// globalManager and globalManagerMu are in manager_common.go
 
 // Config holds manager configuration
 type Config struct {
@@ -246,13 +243,6 @@ func GetGlobalManager() *Manager {
 	return globalManager
 }
 
-// SetGlobalManager sets the global manager (for testing)
-func SetGlobalManager(m *Manager) {
-	globalManagerMu.Lock()
-	globalManager = m
-	globalManagerMu.Unlock()
-}
-
 // NewManagerForTest creates a lightweight manager with an interceptor only.
 // No API server, no cleanup goroutines. Intended for unit tests.
 func NewManagerForTest(interceptor *Interceptor) *Manager {
@@ -263,28 +253,7 @@ func NewManagerForTest(interceptor *Interceptor) *Manager {
 	}
 }
 
-// GetGlobalInterceptor returns the global interceptor (convenience function)
-func GetGlobalInterceptor() *Interceptor {
-	globalManagerMu.RLock()
-	m := globalManager
-	globalManagerMu.RUnlock()
-	if m == nil {
-		return nil
-	}
-	return m.interceptor
-}
-
-// InterceptionConfig holds configuration for security interception
-// Used for both non-streaming and buffered streaming responses
-type InterceptionConfig struct {
-	// BufferStreaming enables buffered streaming mode for SSE responses
-	BufferStreaming bool
-	MaxBufferEvents int
-	BufferTimeout   int             // seconds
-	BlockMode       types.BlockMode // types.BlockModeRemove or types.BlockModeReplace
-}
-
-// GetInterceptionConfig returns the security interception configuration
+// GetInterceptionConfig returns the security interception configuration.
 func GetInterceptionConfig() InterceptionConfig {
 	globalManagerMu.RLock()
 	m := globalManager

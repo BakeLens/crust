@@ -1,7 +1,4 @@
 // swift-tools-version: 5.9
-// This Package.swift is for reference only — CrustKit is designed to be
-// added to an Xcode project alongside the Libcrust.xcframework produced
-// by scripts/build-ios.sh.
 
 import PackageDescription
 
@@ -28,6 +25,11 @@ let package = Package(
             name: "CrustKit",
             dependencies: ["Libcrust"],
             path: "Sources"
+        ),
+        .testTarget(
+            name: "CrustKitTests",
+            dependencies: ["CrustKit"],
+            path: "Tests"
         ),
     ]
 )
