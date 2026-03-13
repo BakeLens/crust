@@ -409,11 +409,16 @@ func mobileSharePath(args map[string]any) string {
 
 // extractURLScheme returns the scheme portion of a URL string.
 // e.g., "tel:+1234567890" → "tel", "https://example.com" → "https"
+// Per RFC 3986, schemes must start with a letter.
 func extractURLScheme(rawURL string) string {
 	if i := strings.Index(rawURL, ":"); i > 0 && i < 32 {
 		scheme := strings.ToLower(rawURL[:i])
-		// Validate: schemes are alpha + digit + "+", "-", "."
-		for _, c := range scheme {
+		// RFC 3986: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+		// First character must be a letter.
+		if scheme[0] < 'a' || scheme[0] > 'z' {
+			return ""
+		}
+		for _, c := range scheme[1:] {
 			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '+' && c != '-' && c != '.' {
 				return ""
 			}
@@ -429,7 +434,7 @@ func sanitizeVirtualPathSegment(s string) string {
 	s = strings.ReplaceAll(s, "/", "_")
 	s = strings.ReplaceAll(s, "\\", "_")
 	s = strings.ReplaceAll(s, "..", "_")
-	if s == "" {
+	if s == "" || s == "_" {
 		return "_unknown"
 	}
 	return s

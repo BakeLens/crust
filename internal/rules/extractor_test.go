@@ -4956,6 +4956,9 @@ func TestExtractURLScheme(t *testing.T) {
 		{"", ""},
 		{"no-scheme", ""},
 		{"://missing-scheme", ""},
+		{"9abc://invalid-start-digit", ""},
+		{"+abc://invalid-start-plus", ""},
+		{"-abc://invalid-start-dash", ""},
 	}
 	for _, tt := range tests {
 		got := extractURLScheme(tt.input)
@@ -4974,6 +4977,7 @@ func TestSanitizeVirtualPathSegment(t *testing.T) {
 		{"../../etc/passwd", "____etc_passwd"},
 		{"path/to/file", "path_to_file"},
 		{"back\\slash", "back_slash"},
+		{"..", "_unknown"},
 		{"", "_unknown"},
 	}
 	for _, tt := range tests {
