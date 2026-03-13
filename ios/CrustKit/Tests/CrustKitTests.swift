@@ -156,4 +156,89 @@ final class CrustKitTests: XCTestCase {
         engine.shutdown()
         engine.shutdown()  // should not crash
     }
+
+    // MARK: - Mobile Virtual Path Rules
+
+    func testMobilePIIBlocked() throws {
+        try engine.initialize()
+
+        let tools: [(String, [String: String])] = [
+            ("read_contacts", [:]),
+            ("access_photos", [:]),
+            ("read_calendar", [:]),
+            ("get_location", [:]),
+            ("read_health_data", [:]),
+        ]
+
+        for (tool, args) in tools {
+            let result = engine.evaluate(toolName: tool, arguments: args)
+            XCTAssertTrue(result.matched, "\(tool) should be blocked by protect-mobile-pii")
+        }
+    }
+
+    func testMobileKeychainBlocked() throws {
+        try engine.initialize()
+
+        let result = engine.evaluate(
+            toolName: "keychain_get",
+            arguments: ["key": "api_token"]
+        )
+        XCTAssertTrue(result.matched, "keychain_get should be blocked by protect-os-keychains")
+    }
+
+    func testMobileClipboardReadBlocked() throws {
+        try engine.initialize()
+
+        let readResult = engine.evaluate(toolName: "read_clipboard", arguments: [:])
+        XCTAssertTrue(readResult.matched, "read_clipboard should be blocked")
+
+        let writeResult = engine.evaluate(toolName: "write_clipboard", arguments: [:])
+        XCTAssertFalse(writeResult.matched, "write_clipboard should be allowed")
+    }
+
+    func testMobileURLSchemeBlocked() throws {
+        try engine.initialize()
+
+        // tel: should be blocked
+        let telResult = engine.evaluate(
+            toolName: "open_url",
+            arguments: ["url": "tel:+1234567890"]
+        )
+        XCTAssertTrue(telResult.matched, "tel: URL should be blocked")
+
+        // sms: should be blocked
+        let smsResult = engine.evaluate(
+            toolName: "open_url",
+            arguments: ["url": "sms:+1234567890"]
+        )
+        XCTAssertTrue(smsResult.matched, "sms: URL should be blocked")
+
+        // https: should be allowed
+        let httpsResult = engine.evaluate(
+            toolName: "open_url",
+            arguments: ["url": "https://example.com"]
+        )
+        XCTAssertFalse(httpsResult.matched, "https: URL should be allowed")
+    }
+
+    func testMobilePersistenceBlocked() throws {
+        try engine.initialize()
+
+        let result = engine.evaluate(
+            toolName: "schedule_task",
+            arguments: ["task_id": "sync_data"]
+        )
+        XCTAssertTrue(result.matched, "schedule_task should be blocked by protect-persistence")
+    }
+
+    func testMobileInterceptResponseBlocked() throws {
+        try engine.initialize()
+
+        let body = """
+        {"content":[{"type":"tool_use","id":"m1","name":"read_contacts","input":{}}]}
+        """
+        let result = engine.interceptResponse(body: body)
+        XCTAssertNotNil(result)
+        XCTAssertFalse(result!.blocked.isEmpty, "read_contacts should be blocked in interception")
+    }
 }
