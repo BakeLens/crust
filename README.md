@@ -160,7 +160,7 @@ Supports JetBrains IDEs and other ACP-compatible editors. See the [ACP setup gui
 
 ### Built-in Rules
 
-Crust ships with **27 security rules** (24 locked, 3 user-disablable) and **42 DLP token-detection patterns** out of the box:
+Crust ships with **30 security rules** (27 locked, 3 user-disablable) and **42 DLP token-detection patterns** out of the box:
 
 | Category | What's Protected |
 |----------|-----------------|
@@ -170,7 +170,8 @@ Crust ships with **27 security rules** (24 locked, 3 user-disablable) and **42 D
 | **Browser Data** | Chrome, Firefox, Safari passwords, cookies, local storage |
 | **Package Tokens** | npm, pip, Cargo, Composer, NuGet, Gem auth tokens |
 | **Git Credentials** | `.git-credentials`, `.config/git/credentials` |
-| **Persistence** | Shell RC files, `authorized_keys`, cron/systemd/launchd, git hooks |
+| **Persistence** | Shell RC files, `authorized_keys`, cron/systemd/launchd, git hooks, mobile background tasks |
+| **Mobile** | PII (contacts, photos, calendar, location, health), keychain, clipboard, sensitive URL schemes (`tel:`, `sms:`, `itms-services:`) |
 | **Agent Config** | `.claude/settings.json`, `.cursor/mcp.json`, `.mcp.json` — prevents privilege escalation |
 | **DLP Token Detection** | Content-based scanning for real API keys and tokens (AWS, GitHub, Stripe, OpenAI, Anthropic, and [31 more](docs/how-it-works.md#dlp-secret-detection)) |
 | **Key Exfiltration** | Content-based PEM private key detection |

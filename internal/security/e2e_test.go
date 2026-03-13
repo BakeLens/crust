@@ -522,3 +522,130 @@ func TestE2E_MetricsReconcileAfterMixedTraffic(t *testing.T) {
 		t.Error("expected non-zero total tool calls")
 	}
 }
+
+// ── Mobile virtual path E2E tests ───────────────────────────────────────────
+
+// TestE2E_MobilePIIBlocked verifies that mobile PII access (contacts, photos, etc.)
+// is blocked by the protect-mobile-pii builtin rule via virtual paths.
+func TestE2E_MobilePIIBlocked(t *testing.T) {
+	tools := []struct {
+		name string
+		args string
+	}{
+		{"read_contacts", `{}`},
+		{"access_photos", `{}`},
+		{"read_calendar", `{}`},
+		{"get_location", `{}`},
+		{"read_health_data", `{}`},
+	}
+
+	for _, tt := range tools {
+		t.Run(tt.name, func(t *testing.T) {
+			response := createAnthropicResponse([]anthropicContentBlock{
+				{Type: "tool_use", ID: "m1", Name: tt.name, Input: json.RawMessage(tt.args)},
+			})
+			result := e2eIntercept(t, response, e2eCtx("mobile-pii"))
+			if len(result.BlockedToolCalls) != 1 {
+				t.Fatalf("expected %s to be blocked, got %d blocked", tt.name, len(result.BlockedToolCalls))
+			}
+			if !strings.Contains(result.BlockedToolCalls[0].MatchResult.Message, "privacy") {
+				t.Errorf("expected privacy-related message, got: %s", result.BlockedToolCalls[0].MatchResult.Message)
+			}
+		})
+	}
+}
+
+// TestE2E_MobileKeychainBlocked verifies that keychain access is blocked by
+// the unified protect-os-keychains rule (which now includes mobile://keychain/**).
+func TestE2E_MobileKeychainBlocked(t *testing.T) {
+	response := createAnthropicResponse([]anthropicContentBlock{
+		{Type: "tool_use", ID: "k1", Name: "keychain_get", Input: json.RawMessage(`{"key":"api_token"}`)},
+	})
+	result := e2eIntercept(t, response, e2eCtx("mobile-keychain"))
+	if len(result.BlockedToolCalls) != 1 {
+		t.Fatalf("expected keychain_get to be blocked, got %d blocked", len(result.BlockedToolCalls))
+	}
+	if !strings.Contains(result.BlockedToolCalls[0].MatchResult.Message, "keychain") {
+		t.Errorf("expected keychain-related message, got: %s", result.BlockedToolCalls[0].MatchResult.Message)
+	}
+}
+
+// TestE2E_MobileURLSchemeBlocked verifies that sensitive URL schemes (tel:, sms:)
+// are blocked while safe ones (https:) are allowed.
+func TestE2E_MobileURLSchemeBlocked(t *testing.T) {
+	// tel: should be blocked
+	response := createAnthropicResponse([]anthropicContentBlock{
+		{Type: "tool_use", ID: "u1", Name: "open_url", Input: json.RawMessage(`{"url":"tel:+1234567890"}`)},
+	})
+	result := e2eIntercept(t, response, e2eCtx("mobile-url-blocked"))
+	if len(result.BlockedToolCalls) != 1 {
+		t.Fatalf("expected tel: URL to be blocked, got %d blocked", len(result.BlockedToolCalls))
+	}
+
+	// https: should be allowed
+	response = createAnthropicResponse([]anthropicContentBlock{
+		{Type: "tool_use", ID: "u2", Name: "open_url", Input: json.RawMessage(`{"url":"https://example.com"}`)},
+	})
+	result = e2eIntercept(t, response, e2eCtx("mobile-url-allowed"))
+	if len(result.BlockedToolCalls) != 0 {
+		t.Fatalf("expected https: URL to be allowed, got %d blocked", len(result.BlockedToolCalls))
+	}
+}
+
+// TestE2E_MobileClipboardReadBlocked verifies that clipboard reads are blocked
+// while clipboard writes are allowed.
+func TestE2E_MobileClipboardReadBlocked(t *testing.T) {
+	// read_clipboard should be blocked
+	response := createAnthropicResponse([]anthropicContentBlock{
+		{Type: "tool_use", ID: "c1", Name: "read_clipboard", Input: json.RawMessage(`{}`)},
+	})
+	result := e2eIntercept(t, response, e2eCtx("mobile-clipboard-read"))
+	if len(result.BlockedToolCalls) != 1 {
+		t.Fatalf("expected read_clipboard to be blocked, got %d blocked", len(result.BlockedToolCalls))
+	}
+
+	// write_clipboard should be allowed (rule only blocks reads)
+	response = createAnthropicResponse([]anthropicContentBlock{
+		{Type: "tool_use", ID: "c2", Name: "write_clipboard", Input: json.RawMessage(`{}`)},
+	})
+	result = e2eIntercept(t, response, e2eCtx("mobile-clipboard-write"))
+	if len(result.BlockedToolCalls) != 0 {
+		t.Fatalf("expected write_clipboard to be allowed, got %d blocked", len(result.BlockedToolCalls))
+	}
+}
+
+// TestE2E_MobilePersistenceBlocked verifies that mobile background task registration
+// is blocked by the unified protect-persistence rule.
+func TestE2E_MobilePersistenceBlocked(t *testing.T) {
+	response := createAnthropicResponse([]anthropicContentBlock{
+		{Type: "tool_use", ID: "p1", Name: "schedule_task", Input: json.RawMessage(`{"task_id":"sync_data"}`)},
+	})
+	result := e2eIntercept(t, response, e2eCtx("mobile-persistence"))
+	if len(result.BlockedToolCalls) != 1 {
+		t.Fatalf("expected schedule_task to be blocked, got %d blocked", len(result.BlockedToolCalls))
+	}
+	if !strings.Contains(result.BlockedToolCalls[0].MatchResult.Message, "persistence") {
+		t.Errorf("expected persistence-related message, got: %s", result.BlockedToolCalls[0].MatchResult.Message)
+	}
+}
+
+// TestE2E_DesktopRulesStillWork verifies mobile changes don't break desktop rules.
+func TestE2E_DesktopRulesStillWork(t *testing.T) {
+	// Desktop .env read should still be blocked
+	response := createAnthropicResponse([]anthropicContentBlock{
+		{Type: "tool_use", ID: "d1", Name: "Read", Input: json.RawMessage(`{"file_path":"/app/.env"}`)},
+	})
+	result := e2eIntercept(t, response, e2eCtx("desktop-regression"))
+	if len(result.BlockedToolCalls) != 1 {
+		t.Fatalf("expected desktop .env read to still be blocked, got %d blocked", len(result.BlockedToolCalls))
+	}
+
+	// Desktop /etc/crontab write should still be blocked
+	response = createAnthropicResponse([]anthropicContentBlock{
+		{Type: "tool_use", ID: "d2", Name: "Write", Input: json.RawMessage(`{"file_path":"/etc/crontab","content":"* * * * * evil"}`)},
+	})
+	result = e2eIntercept(t, response, e2eCtx("desktop-persistence"))
+	if len(result.BlockedToolCalls) != 1 {
+		t.Fatalf("expected desktop crontab write to still be blocked, got %d blocked", len(result.BlockedToolCalls))
+	}
+}

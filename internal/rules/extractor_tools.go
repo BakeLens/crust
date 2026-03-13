@@ -246,3 +246,196 @@ func (e *Extractor) extractContentField(info *ExtractedInfo) {
 		}
 	}
 }
+
+// ── Mobile tool extraction ──────────────────────────────────────────────────
+//
+// Mobile AI agents call tools that map to virtual paths under "mobile://".
+// This lets the existing rule engine (path-based glob matching) protect mobile
+// resources without schema changes. Desktop rules and mobile rules coexist in
+// the same YAML file.
+
+// MobileVirtualPathPrefix is the scheme prefix for all mobile virtual paths.
+const MobileVirtualPathPrefix = "mobile://"
+
+// extractMobileTool handles Layer 1 extraction for known mobile tool names.
+// It maps each tool to an operation + virtual path(s) derived from the tool's
+// JSON arguments. Unknown mobile tools fall through to extractUnknownTool.
+func (e *Extractor) extractMobileTool(info *ExtractedInfo, toolLower string) bool {
+	switch toolLower {
+	// ── PII access ──
+	case "read_contacts", "get_contacts", "access_contacts":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, "mobile://pii/contacts")
+	case "read_photos", "get_photos", "access_photos", "access_photo_library":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, "mobile://pii/photos")
+	case "read_calendar", "get_calendar", "access_calendar", "get_events":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, "mobile://pii/calendar")
+	case "read_location", "get_location", "access_location", "get_gps":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, "mobile://pii/location")
+	case "read_health_data", "get_health_data", "access_health":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, "mobile://pii/health")
+
+	// ── Keychain ──
+	case "keychain_get", "keychain_read", "get_keychain_item", "read_keychain":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, mobileKeychainPath(info.RawArgs))
+	case "keychain_set", "keychain_write", "set_keychain_item", "write_keychain",
+		"keychain_add", "add_keychain_item":
+		info.addOperation(OpWrite)
+		info.Paths = append(info.Paths, mobileKeychainPath(info.RawArgs))
+	case "keychain_delete", "delete_keychain_item", "remove_keychain_item":
+		info.addOperation(OpDelete)
+		info.Paths = append(info.Paths, mobileKeychainPath(info.RawArgs))
+
+	// ── Clipboard ──
+	case "read_clipboard", "get_clipboard", "get_pasteboard":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, "mobile://clipboard")
+	case "write_clipboard", "set_clipboard", "set_pasteboard", "copy_to_clipboard":
+		info.addOperation(OpWrite)
+		info.Paths = append(info.Paths, "mobile://clipboard")
+
+	// ── URL schemes ──
+	case "open_url", "open_deep_link", "open_link", "open_universal_link":
+		info.addOperation(OpExecute)
+		info.Paths = append(info.Paths, mobileURLSchemePath(info.RawArgs))
+		// Also extract host for network rules
+		e.extractURLFields(info)
+
+	// ── Background tasks / persistence ──
+	case "schedule_task", "schedule_background_task", "register_background_task",
+		"register_background", "schedule_job":
+		info.addOperation(OpWrite)
+		info.Paths = append(info.Paths, mobileAutostartPath(info.RawArgs))
+	case "cancel_task", "cancel_background_task", "unregister_background_task":
+		info.addOperation(OpDelete)
+		info.Paths = append(info.Paths, mobileAutostartPath(info.RawArgs))
+
+	// ── Notifications ──
+	case "send_notification", "push_notification", "schedule_notification",
+		"show_notification":
+		info.addOperation(OpWrite)
+		info.Paths = append(info.Paths, "mobile://notification")
+
+	// ── Permissions ──
+	case "request_permission", "request_authorization":
+		info.addOperation(OpExecute)
+		info.Paths = append(info.Paths, mobilePermissionPath(info.RawArgs))
+
+	// ── Data sharing / exfiltration vector ──
+	case "share_data", "share_file", "share_content", "airdrop":
+		info.addOperation(OpNetwork)
+		info.Paths = append(info.Paths, mobileSharePath(info.RawArgs))
+
+	default:
+		return false // not a known mobile tool
+	}
+
+	// Extract content for content-matching rules
+	e.extractContentField(info)
+	return true
+}
+
+// mobileKeychainPath builds a virtual keychain path from args.
+// e.g., {"key": "api_token"} → "mobile://keychain/api_token"
+func mobileKeychainPath(args map[string]any) string {
+	for _, field := range []string{"key", "account", "service", "item", "name", "identifier"} {
+		if val, ok := args[field]; ok {
+			if strs := fieldStrings(val); len(strs) > 0 {
+				return MobileVirtualPathPrefix + "keychain/" + sanitizeVirtualPathSegment(strs[0])
+			}
+		}
+	}
+	return MobileVirtualPathPrefix + "keychain/_unknown"
+}
+
+// mobileURLSchemePath builds a virtual URL scheme path from args.
+// e.g., {"url": "tel:+1234567890"} → "mobile://url-scheme/tel"
+func mobileURLSchemePath(args map[string]any) string {
+	for _, field := range []string{"url", "uri", "link", "deeplink"} {
+		if val, ok := args[field]; ok {
+			if strs := fieldStrings(val); len(strs) > 0 {
+				if scheme := extractURLScheme(strs[0]); scheme != "" {
+					return MobileVirtualPathPrefix + "url-scheme/" + scheme
+				}
+			}
+		}
+	}
+	return MobileVirtualPathPrefix + "url-scheme/_unknown"
+}
+
+// mobileAutostartPath builds a virtual autostart path from args.
+// e.g., {"task_id": "sync_data"} → "mobile://autostart/sync_data"
+func mobileAutostartPath(args map[string]any) string {
+	for _, field := range []string{"taskid", "task", "jobid", "job", "name", "identifier"} {
+		if val, ok := args[field]; ok {
+			if strs := fieldStrings(val); len(strs) > 0 {
+				return MobileVirtualPathPrefix + "autostart/" + sanitizeVirtualPathSegment(strs[0])
+			}
+		}
+	}
+	return MobileVirtualPathPrefix + "autostart/_unknown"
+}
+
+// mobilePermissionPath builds a virtual permission path from args.
+// e.g., {"permission": "camera"} → "mobile://permission/camera"
+func mobilePermissionPath(args map[string]any) string {
+	for _, field := range []string{"permission", "authorization", "capability", "entitlement", "name"} {
+		if val, ok := args[field]; ok {
+			if strs := fieldStrings(val); len(strs) > 0 {
+				return MobileVirtualPathPrefix + "permission/" + sanitizeVirtualPathSegment(strs[0])
+			}
+		}
+	}
+	return MobileVirtualPathPrefix + "permission/_unknown"
+}
+
+// mobileSharePath builds a virtual share path from args.
+// e.g., {"target": "email"} → "mobile://share/email"
+func mobileSharePath(args map[string]any) string {
+	for _, field := range []string{"target", "destination", "method", "via"} {
+		if val, ok := args[field]; ok {
+			if strs := fieldStrings(val); len(strs) > 0 {
+				return MobileVirtualPathPrefix + "share/" + sanitizeVirtualPathSegment(strs[0])
+			}
+		}
+	}
+	return MobileVirtualPathPrefix + "share/_unknown"
+}
+
+// extractURLScheme returns the scheme portion of a URL string.
+// e.g., "tel:+1234567890" → "tel", "https://example.com" → "https"
+func extractURLScheme(rawURL string) string {
+	if i := strings.Index(rawURL, ":"); i > 0 && i < 32 {
+		scheme := strings.ToLower(rawURL[:i])
+		// Validate: schemes are alpha + digit + "+", "-", "."
+		for _, c := range scheme {
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '+' && c != '-' && c != '.' {
+				return ""
+			}
+		}
+		return scheme
+	}
+	return ""
+}
+
+// sanitizeVirtualPathSegment cleans a user-provided string for use in a virtual path.
+// Strips slashes and path traversal to prevent injection like "../../etc/passwd".
+func sanitizeVirtualPathSegment(s string) string {
+	s = strings.ReplaceAll(s, "/", "_")
+	s = strings.ReplaceAll(s, "\\", "_")
+	s = strings.ReplaceAll(s, "..", "_")
+	if s == "" {
+		return "_unknown"
+	}
+	return s
+}
+
+// IsMobileVirtualPath returns true if the path uses the mobile:// virtual path scheme.
+func IsMobileVirtualPath(p string) bool {
+	return strings.HasPrefix(p, MobileVirtualPathPrefix)
+}

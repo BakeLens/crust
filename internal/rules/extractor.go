@@ -383,9 +383,12 @@ func (e *Extractor) Extract(toolName string, args json.RawMessage) ExtractedInfo
 		"browser_action":                  // Cline
 		e.extractWebFetchTool(&info)
 	default:
-		// Unknown tool — try shell AST parsing on any command-like field first,
-		// then fall back to shape-based detection for paths/urls/content.
-		e.extractUnknownTool(&info)
+		// Try mobile tool extraction first (virtual path mapping).
+		if !e.extractMobileTool(&info, toolLower) {
+			// Unknown tool — try shell AST parsing on any command-like field first,
+			// then fall back to shape-based detection for paths/urls/content.
+			e.extractUnknownTool(&info)
+		}
 	}
 
 	// Layer 2: shape-based augmentation (always runs, never downgrades)

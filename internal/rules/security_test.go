@@ -116,6 +116,9 @@ func TestLockedRulesSurviveDisableBuiltin(t *testing.T) {
 		"protect-package-tokens",
 		"protect-shell-rc",
 		"protect-github-cli",
+		"protect-mobile-pii",
+		"protect-mobile-clipboard",
+		"protect-mobile-url-schemes",
 	}
 	unlockedNames := []string{
 		"detect-private-key-write",

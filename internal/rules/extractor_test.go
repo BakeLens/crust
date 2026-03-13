@@ -4758,3 +4758,240 @@ func TestExpandPercentVars(t *testing.T) {
 		})
 	}
 }
+
+// ── Mobile tool extraction tests ────────────────────────────────────────────
+
+func TestExtract_MobileTools(t *testing.T) {
+	extractor := NewExtractor()
+
+	tests := []struct {
+		name      string
+		toolName  string
+		args      map[string]any
+		wantOp    Operation
+		wantPaths []string
+	}{
+		// PII access
+		{
+			name:      "read_contacts maps to mobile://pii/contacts",
+			toolName:  "read_contacts",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://pii/contacts"},
+		},
+		{
+			name:      "access_photos maps to mobile://pii/photos",
+			toolName:  "access_photos",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://pii/photos"},
+		},
+		{
+			name:      "read_calendar maps to mobile://pii/calendar",
+			toolName:  "read_calendar",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://pii/calendar"},
+		},
+		{
+			name:      "get_location maps to mobile://pii/location",
+			toolName:  "get_location",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://pii/location"},
+		},
+		{
+			name:      "read_health_data maps to mobile://pii/health",
+			toolName:  "read_health_data",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://pii/health"},
+		},
+		// Keychain
+		{
+			name:      "keychain_get with key",
+			toolName:  "keychain_get",
+			args:      map[string]any{"key": "api_token"},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://keychain/api_token"},
+		},
+		{
+			name:      "keychain_set with account",
+			toolName:  "keychain_set",
+			args:      map[string]any{"account": "user@example.com"},
+			wantOp:    OpWrite,
+			wantPaths: []string{"mobile://keychain/user@example.com"},
+		},
+		{
+			name:      "keychain_delete without key falls back to _unknown",
+			toolName:  "keychain_delete",
+			args:      map[string]any{},
+			wantOp:    OpDelete,
+			wantPaths: []string{"mobile://keychain/_unknown"},
+		},
+		// Clipboard
+		{
+			name:      "read_clipboard",
+			toolName:  "read_clipboard",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://clipboard"},
+		},
+		{
+			name:      "write_clipboard",
+			toolName:  "write_clipboard",
+			args:      map[string]any{},
+			wantOp:    OpWrite,
+			wantPaths: []string{"mobile://clipboard"},
+		},
+		// URL schemes
+		{
+			name:      "open_url with tel scheme",
+			toolName:  "open_url",
+			args:      map[string]any{"url": "tel:+1234567890"},
+			wantOp:    OpExecute,
+			wantPaths: []string{"mobile://url-scheme/tel"},
+		},
+		{
+			name:      "open_url with https scheme",
+			toolName:  "open_url",
+			args:      map[string]any{"url": "https://example.com/page"},
+			wantOp:    OpExecute,
+			wantPaths: []string{"mobile://url-scheme/https"},
+		},
+		{
+			name:      "open_deep_link with custom scheme",
+			toolName:  "open_deep_link",
+			args:      map[string]any{"url": "myapp://settings/account"},
+			wantOp:    OpExecute,
+			wantPaths: []string{"mobile://url-scheme/myapp"},
+		},
+		// Background tasks
+		{
+			name:      "schedule_task with task_id",
+			toolName:  "schedule_task",
+			args:      map[string]any{"task_id": "sync_data"},
+			wantOp:    OpWrite,
+			wantPaths: []string{"mobile://autostart/sync_data"},
+		},
+		{
+			name:      "register_background maps to autostart/background",
+			toolName:  "register_background",
+			args:      map[string]any{},
+			wantOp:    OpWrite,
+			wantPaths: []string{"mobile://autostart/_unknown"},
+		},
+		{
+			name:      "cancel_task",
+			toolName:  "cancel_task",
+			args:      map[string]any{"task_id": "sync_data"},
+			wantOp:    OpDelete,
+			wantPaths: []string{"mobile://autostart/sync_data"},
+		},
+		// Notifications
+		{
+			name:      "send_notification",
+			toolName:  "send_notification",
+			args:      map[string]any{"title": "Hello"},
+			wantOp:    OpWrite,
+			wantPaths: []string{"mobile://notification"},
+		},
+		// Permissions
+		{
+			name:      "request_permission with name",
+			toolName:  "request_permission",
+			args:      map[string]any{"permission": "camera"},
+			wantOp:    OpExecute,
+			wantPaths: []string{"mobile://permission/camera"},
+		},
+		// Sharing
+		{
+			name:      "share_data with target",
+			toolName:  "share_data",
+			args:      map[string]any{"target": "email"},
+			wantOp:    OpNetwork,
+			wantPaths: []string{"mobile://share/email"},
+		},
+		// Path traversal prevention
+		{
+			name:      "keychain_get with traversal attempt",
+			toolName:  "keychain_get",
+			args:      map[string]any{"key": "../../etc/passwd"},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://keychain/____etc_passwd"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			argsJSON, _ := json.Marshal(tt.args)
+			info := extractor.Extract(tt.toolName, argsJSON)
+
+			if info.Operation != tt.wantOp {
+				t.Errorf("Operation = %s, want %s", info.Operation, tt.wantOp)
+			}
+
+			// Check that expected paths are present (there may be additional paths from Layer 2)
+			for _, want := range tt.wantPaths {
+				found := slices.Contains(info.Paths, want)
+				if !found {
+					t.Errorf("expected path %q not found in %v", want, info.Paths)
+				}
+			}
+		})
+	}
+}
+
+func TestExtractURLScheme(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"tel:+1234567890", "tel"},
+		{"sms:+1234567890", "sms"},
+		{"https://example.com", "https"},
+		{"myapp://deep/link", "myapp"},
+		{"itms-services://action", "itms-services"},
+		{"app-settings:root=General", "app-settings"},
+		{"", ""},
+		{"no-scheme", ""},
+		{"://missing-scheme", ""},
+	}
+	for _, tt := range tests {
+		got := extractURLScheme(tt.input)
+		if got != tt.want {
+			t.Errorf("extractURLScheme(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestSanitizeVirtualPathSegment(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"api_token", "api_token"},
+		{"../../etc/passwd", "____etc_passwd"},
+		{"path/to/file", "path_to_file"},
+		{"back\\slash", "back_slash"},
+		{"", "_unknown"},
+	}
+	for _, tt := range tests {
+		got := sanitizeVirtualPathSegment(tt.input)
+		if got != tt.want {
+			t.Errorf("sanitizeVirtualPathSegment(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestIsMobileVirtualPath(t *testing.T) {
+	if !IsMobileVirtualPath("mobile://keychain/test") {
+		t.Error("expected true for mobile://keychain/test")
+	}
+	if IsMobileVirtualPath("/etc/passwd") {
+		t.Error("expected false for /etc/passwd")
+	}
+	if IsMobileVirtualPath("") {
+		t.Error("expected false for empty string")
+	}
+}

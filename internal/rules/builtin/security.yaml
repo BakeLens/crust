@@ -352,6 +352,8 @@ rules:
       - "$HOME/.local/share/keyrings/**"
       # KDE Wallet
       - "$HOME/.local/share/kwalletd/**"
+      # Mobile keychain (iOS Keychain / Android Keystore via virtual paths)
+      - "mobile://keychain/**"
     actions: [read, execute, write, delete, copy, move, network]
     message: "Blocked: OS keychain contains all saved passwords and credentials."
     severity: critical
@@ -454,8 +456,10 @@ rules:
       # XDG autostart (Linux desktop)
       - "$HOME/.config/autostart/**"
       - "/etc/xdg/autostart/**"
+      # Mobile background tasks (iOS Background App Refresh / Android JobScheduler)
+      - "mobile://autostart/**"
     actions: [write, delete]
-    message: "Blocked: cron/launchd/systemd entries are persistence vectors — malware uses these to survive reboot."
+    message: "Blocked: cron/launchd/systemd/mobile-background entries are persistence vectors — malware uses these to survive reboot."
     severity: critical
 
   # ===========================================================================
@@ -543,4 +547,52 @@ rules:
       - "**/.git/hooks/**"
     actions: [write, delete]
     message: "Blocked: git hooks auto-execute on commit/push/checkout — a persistence and RCE vector."
+    severity: critical
+
+  # ===========================================================================
+  # 24. MOBILE PII PROTECTION
+  # Blocks mobile AI agents from accessing sensitive personal data.
+  # Uses virtual paths (mobile://pii/*) mapped by the extractor from tool
+  # names like read_contacts, read_photos, read_calendar, etc.
+  # ===========================================================================
+  - name: protect-mobile-pii
+    locked: true
+    block:
+      - "mobile://pii/**"
+    actions: [read, write, delete, copy, move, network]
+    message: "Blocked: accessing contacts, photos, calendar, location, or health data is a privacy violation."
+    severity: critical
+
+  # ===========================================================================
+  # 25. MOBILE CLIPBOARD PROTECTION
+  # Clipboard often contains passwords, OTPs, and sensitive data.
+  # Only blocks reads — writes (copy-to-clipboard) are generally benign.
+  # ===========================================================================
+  - name: protect-mobile-clipboard
+    locked: true
+    block:
+      - "mobile://clipboard"
+    actions: [read]
+    message: "Blocked: reading clipboard may expose passwords, OTPs, or sensitive data copied by the user."
+    severity: high
+
+  # ===========================================================================
+  # 26. MOBILE URL SCHEME PROTECTION
+  # Blocks invocation of sensitive URL schemes that can trigger phone calls,
+  # send messages, install enterprise profiles, or modify system settings.
+  # Common safe schemes (https, http) are not blocked.
+  # ===========================================================================
+  - name: protect-mobile-url-schemes
+    locked: true
+    block:
+      - "mobile://url-scheme/tel"
+      - "mobile://url-scheme/sms"
+      - "mobile://url-scheme/facetime"
+      - "mobile://url-scheme/facetime-audio"
+      - "mobile://url-scheme/itms-services"
+      - "mobile://url-scheme/itms-appss"
+      - "mobile://url-scheme/app-settings"
+      - "mobile://url-scheme/prefs"
+    actions: [execute]
+    message: "Blocked: invoking sensitive URL schemes (tel:, sms:, itms-services:) without user consent."
     severity: critical

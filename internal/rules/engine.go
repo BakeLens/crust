@@ -468,9 +468,22 @@ func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
 
 // resolvePaths runs path resolution (steps 8-10): prepare paths,
 // resolve symlinks, and check hardcoded path guards.
+// Mobile virtual paths (mobile://) are passed through without filesystem
+// operations — symlink resolution and glob expansion are meaningless for them.
 func (e *Engine) resolvePaths(paths []string) ([]string, *MatchResult) {
+	// Separate virtual paths from filesystem paths to avoid wasting cycles
+	// on symlink resolution / glob expansion for mobile:// URIs.
+	var fsPaths, virtualPaths []string
+	for _, p := range paths {
+		if IsMobileVirtualPath(p) {
+			virtualPaths = append(virtualPaths, p)
+		} else {
+			fsPaths = append(fsPaths, p)
+		}
+	}
+
 	// Step 8: Prepare paths — filter bare shell globs, normalize, expand filesystem globs.
-	normalizedPaths := e.normalizer.PreparePaths(paths)
+	normalizedPaths := e.normalizer.PreparePaths(fsPaths)
 
 	// Step 9: Resolve symlinks — match both original and resolved paths.
 	resolvedPaths := e.normalizer.resolveSymlinks(normalizedPaths)
@@ -480,6 +493,9 @@ func (e *Engine) resolvePaths(paths []string) ([]string, *MatchResult) {
 	if m := checkHardcodedPaths(allPaths); m != nil {
 		return nil, m
 	}
+
+	// Re-add virtual paths (they bypass filesystem resolution but still need rule matching).
+	allPaths = append(allPaths, virtualPaths...)
 
 	return allPaths, nil
 }
