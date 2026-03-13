@@ -1100,7 +1100,9 @@ func FuzzEvasionDetectionBypass(f *testing.F) {
 			// cause inner arguments to become command names at runtime — check the
 			// evasive reason directly for the wildcard case.
 			hasGlobEvasion := strings.Contains(info.EvasiveReason, "wildcard")
-			if !hasDollarGlob && !suspicious && parseErr == nil && !hasGlobCmd && !hasGlobEvasion && !hasSubst && info.Evasive {
+			// Fork bomb detection (e.g., ":(){ :|:& };:") is a legitimate evasion flag.
+			hasForkBomb := strings.Contains(info.EvasiveReason, "fork bomb")
+			if !hasDollarGlob && !suspicious && parseErr == nil && !hasGlobCmd && !hasGlobEvasion && !hasSubst && !hasForkBomb && info.Evasive {
 				t.Errorf("FALSE POSITIVE: clean command flagged as evasive: %q reason=%q", actualCmd, info.EvasiveReason)
 			}
 		}
