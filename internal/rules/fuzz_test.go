@@ -1064,10 +1064,10 @@ func FuzzEvasionDetectionBypass(f *testing.F) {
 		if len(parsed) > 0 && jsonFields != nil {
 			jsonCmd := jsonFields["command"]
 			suspicious, _ := IsSuspiciousInput(jsonCmd)
-			// Also check if the command fails to parse (e.g., trailing backslash)
-			// — the extractor legitimately flags parse failures as evasive.
+			// Parse the command AST once — used for parse error detection and
+			// substitution detection below.
 			invParser := syntax.NewParser(syntax.KeepComments(false), syntax.Variant(syntax.LangBash))
-			_, parseErr := invParser.Parse(strings.NewReader(jsonCmd), "")
+			astFile, parseErr := invParser.Parse(strings.NewReader(jsonCmd), "")
 			// Also allow evasive flag for glob patterns in command name position
 			hasGlobCmd := false
 			for _, pc := range parsed {
@@ -1081,11 +1081,21 @@ func FuzzEvasionDetectionBypass(f *testing.F) {
 			// see these as globs in the command name. Check the extractor's resolved
 			// command for $+glob patterns to avoid FP.
 			hasDollarGlob := strings.ContainsAny(info.Command, "$") && strings.ContainsAny(info.Command, "*?[@")
-			// Commands with $() or backtick substitution are legitimately flagged
-			// evasive when the runner cannot statically resolve the substitution
-			// (e.g., the subcommand contains null bytes or otherwise fails to expand).
-			hasSubst := strings.Contains(jsonCmd, "$(") || strings.Contains(jsonCmd, "`") ||
-				strings.Contains(jsonCmd, ">(") || strings.Contains(jsonCmd, "<(")
+			// Commands with $(), backtick, >(), or <() substitution are legitimately
+			// flagged evasive when the runner cannot statically resolve them.
+			// Walk the AST instead of string matching to avoid FPs from literal
+			// substitution chars inside quotes (e.g., echo '$(not a subst)').
+			hasSubst := false
+			if astFile != nil {
+				syntax.Walk(astFile, func(node syntax.Node) bool {
+					switch node.(type) {
+					case *syntax.CmdSubst, *syntax.ProcSubst:
+						hasSubst = true
+						return false
+					}
+					return true
+				})
+			}
 			// hasGlobCmd covers top-level command names with glob chars, but eval/exec
 			// cause inner arguments to become command names at runtime — check the
 			// evasive reason directly for the wildcard case.
