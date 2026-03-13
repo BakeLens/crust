@@ -15,6 +15,7 @@ crust
 *.o
 *.exe
 **/target/
+build/
 
 # OS
 .DS_Store

@@ -255,6 +255,46 @@ jobs:
       - name: Test
         run: CGO_ENABLED=0 go test -tags libcrust ./pkg/libcrust/...
 
+  # gomobile bind produces the actual Libcrust.xcframework for iOS.
+  # Runs only on main (macOS runners are 10x cost).
+  gomobile:
+    name: gomobile bind (iOS)
+    needs: [libcrust]
+    runs-on: macos-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          gomobile init
+
+      - name: gomobile bind
+        run: |
+          gomobile bind \
+            -target ios \
+            -tags libcrust \
+            -o build/ios/Libcrust.xcframework \
+            ./pkg/libcrust/
+
+      - name: Verify xcframework
+        run: |
+          test -d build/ios/Libcrust.xcframework
+          ls -la build/ios/Libcrust.xcframework/
+
+      - name: Upload xcframework
+        uses: actions/upload-artifact@v4
+        with:
+          name: Libcrust.xcframework
+          path: build/ios/Libcrust.xcframework
+          retention-days: 14
+
   # Platform-specific tests run only on main to reduce CI costs.
   # macOS runners are 10x billing; MSYS2 adds a second windows-latest runner.
   # Jobs always complete (SUCCESS) so they can be listed as required status checks;
