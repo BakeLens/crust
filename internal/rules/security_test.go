@@ -8,7 +8,7 @@ import (
 	"github.com/BakeLens/crust/internal/pathutil"
 )
 
-// TestBuiltinRulesLoad verifies all 24 builtin security rules can be loaded.
+// TestBuiltinRulesLoad verifies all 27 builtin security rules can be loaded.
 // Tests rule: protect-env-files
 // Tests rule: protect-ssh-keys
 // Tests rule: protect-system-auth
@@ -30,6 +30,12 @@ import (
 // Tests rule: protect-persistence
 // Tests rule: detect-reverse-shell
 // Tests rule: block-ssrf-metadata
+// Tests rule: protect-agent-config
+// Tests rule: protect-vscode-settings
+// Tests rule: protect-git-hooks
+// Tests rule: protect-mobile-pii
+// Tests rule: protect-mobile-clipboard
+// Tests rule: protect-mobile-url-schemes
 // NOTE: protect-crust-api is hardcoded in engine.go (not a YAML rule)
 func TestBuiltinRulesLoad(t *testing.T) {
 	loader := NewLoader("")
