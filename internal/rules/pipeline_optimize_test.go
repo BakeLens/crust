@@ -9,11 +9,11 @@ import (
 
 // =============================================================================
 // Finding 1: NormalizeUnicode — RawJSON skipped when Content is set (FIXED)
-// Step 3 now only normalizes RawJSON when Content is empty.
+// Step 4 now only normalizes RawJSON when Content is empty.
 // =============================================================================
 
 // TestFinding_UnicodeNormalizesLargeRawJSON verifies that for Write calls,
-// RawJSON is a superset of Content. Step 3 now skips RawJSON normalization
+// RawJSON is a superset of Content. Step 4 now skips RawJSON normalization
 // when Content is set, avoiding 2x Unicode work.
 func TestFinding_UnicodeNormalizesLargeRawJSON(t *testing.T) {
 	bigContent := strings.Repeat("x", 100_000)
@@ -67,12 +67,12 @@ func BenchmarkFinding_UnicodeRawJSONRedundancy(b *testing.B) {
 }
 
 // =============================================================================
-// Finding 2: Null bytes in commands — already caught by step 5 (evasion)
+// Finding 2: Null bytes in commands — already caught by step 6 (evasion)
 // The extractor marks commands with null bytes as evasive. No change needed.
 // =============================================================================
 
 // TestFinding_NullByteInCommandCaughtByEvasion confirms that null bytes in
-// commands are blocked by step 5 (shell evasion), not step 4 (null byte check).
+// commands are blocked by step 6 (shell evasion), not step 5 (null byte check).
 func TestFinding_NullByteInCommandCaughtByEvasion(t *testing.T) {
 	engine, err := NewTestEngine(nil)
 	if err != nil {
@@ -92,12 +92,12 @@ func TestFinding_NullByteInCommandCaughtByEvasion(t *testing.T) {
 }
 
 // =============================================================================
-// Finding 3: Evasion boolean (step 5) now runs before PreFilter regex (step 6)
+// Finding 3: Evasion boolean (step 6) now runs before PreFilter regex (step 7)
 // (FIXED) Swapped to check the ~2ns boolean before the ~63ns regex.
 // =============================================================================
 
 // BenchmarkFinding_EvasiveCheckOrdering quantifies the cost difference between
-// the evasive boolean check (step 5) and the PreFilter regex scan (step 6).
+// the evasive boolean check (step 6) and the PreFilter regex scan (step 7).
 func BenchmarkFinding_EvasiveCheckOrdering(b *testing.B) {
 	pf := NewPreFilter()
 	cmd := "ls -la /tmp"

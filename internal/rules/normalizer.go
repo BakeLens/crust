@@ -206,7 +206,7 @@ func (n *Normalizer) NormalizeAll(paths []string) []string {
 	return result
 }
 
-// PreparePaths runs the path preparation pipeline (evaluation step 8):
+// PreparePaths runs the path preparation pipeline (evaluation step 9):
 // filter bare shell globs → normalize → expand filesystem globs.
 func (n *Normalizer) PreparePaths(paths []string) []string {
 	paths = filterShellGlobs(paths)

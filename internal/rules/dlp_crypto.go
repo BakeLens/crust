@@ -200,7 +200,7 @@ func scanWIFKey(content string) *cryptoDLPMatch {
 // --- Crypto Wallet Path Protection ---
 
 // cryptoWalletDirs are computed once at init using OS-specific data directories.
-// Checked after symlink resolution (step 10) so symlink bypasses are caught.
+// Checked after symlink resolution (step 11) so symlink bypasses are caught.
 var cryptoWalletDirs []string
 
 // cryptoDataDir returns the OS-specific data directory for a cryptocurrency.

@@ -184,7 +184,7 @@ let result = await engine.evaluateAsync(toolName: "read_contacts", arguments: [:
 print(result.matched)  // true — blocked by protect-mobile-pii
 ```
 
-**Mobile-specific protections** (9 locked rules):
+**Mobile-specific protections** (7 locked rules + shared rules):
 
 | Category | Blocked Tools | Rule |
 |----------|--------------|------|
@@ -228,7 +228,7 @@ Crust ships with **33 security rules** (30 locked, 3 user-disablable) and **46 D
 | **Persistence** | Shell RC files, `authorized_keys`, cron/systemd/launchd, git hooks, mobile background tasks |
 | **Mobile** | PII (contacts, photos, calendar, location, health, camera, microphone, call log, SMS), keychain, clipboard, URL schemes (`tel:`, `sms:`), Bluetooth/NFC, biometric auth, in-app purchases |
 | **Agent Config** | `.claude/settings.json`, `.cursor/mcp.json`, `.mcp.json` — prevents privilege escalation |
-| **DLP Token Detection** | Content-based scanning for real API keys and tokens (AWS, GitHub, Stripe, OpenAI, Anthropic, and [31 more](docs/how-it-works.md#dlp-secret-detection)) |
+| **DLP Token Detection** | Content-based scanning for real API keys and tokens (AWS, GitHub, Stripe, OpenAI, Anthropic, and [35 more](docs/how-it-works.md#dlp-secret-detection)) |
 | **Key Exfiltration** | Content-based PEM private key detection |
 | **Crypto Wallets** | BIP39 mnemonics, xprv/WIF keys (checksum-validated), wallet directories for 16 chains |
 | **Self-Protection** | Agents cannot read, modify, or disable Crust itself |

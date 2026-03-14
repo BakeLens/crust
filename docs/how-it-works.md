@@ -25,8 +25,8 @@ Rule Evaluation:
   3.  Extract paths, commands, content from tool arguments
   4.  Normalize Unicode → NFKC, strip invisible chars and confusables
   5.  Block null bytes in write content
-  6.  Detect encoding obfuscation (base64, hex)
-  7.  Block evasive commands (fork bombs, unparseable shell)
+  6.  Block evasive commands (fork bombs, unparseable shell)
+  7.  Detect encoding obfuscation (base64, hex)
   8.  DLP Secret Detection → API keys/tokens + crypto keys (BIP39, xprv, WIF)
   9.  Prepare paths → filter shell globs, normalize, expand filesystem globs
   10. Resolve symlinks → match both original and resolved
@@ -141,6 +141,13 @@ Cross-OS app paths can all be listed under `$HOME` — wrong-OS patterns compile
 | xprv/WIF private key in content | - | ✅ Blocked (crypto DLP) | - | ✅ Blocked (DLP) | ✅ Blocked (DLP) |
 | Access `~/.bitcoin/wallet.dat` | - | ✅ Blocked (hardcoded) | - | - | - |
 | Symlink to crypto wallet dir | - | ✅ Blocked (post-symlink) | - | - | - |
+| vCard/iCalendar data in content | - | ✅ Blocked (DLP) | - | ✅ Blocked (DLP) | ✅ Blocked (DLP) |
+| Apple mobileconfig payload | - | ✅ Blocked (DLP) | - | ✅ Blocked (DLP) | ✅ Blocked (DLP) |
+| FHIR health data bundle | - | ✅ Blocked (DLP) | - | ✅ Blocked (DLP) | ✅ Blocked (DLP) |
+| Mobile PII access (contacts, camera, etc.) | - | ✅ Blocked (rule) | - | - | - |
+| Bluetooth/NFC hardware access | - | ✅ Blocked (rule) | - | - | - |
+| Biometric auth bypass | - | ✅ Blocked (rule) | - | - | - |
+| Unauthorized in-app purchase | - | ✅ Blocked (rule) | - | - | - |
 | LLM messages in API response | - | - | ✅ Stripped | - | - |
 | Tool arguments in API response | - | - | ✅ Stripped | - | - |
 | API keys in target URL params | - | - | ✅ Stripped | - | - |
@@ -176,13 +183,13 @@ The shell parser detects several evasion techniques at the AST level:
 | **Base64 encoding** | Pre-filter regex catches `base64 -d` / `base64 --decode` patterns |
 | **Hex encoding** | Pre-filter catches 3+ consecutive `\xNN` escape sequences |
 
-Evasion techniques (fork bombs, eval) are detected at the AST level (step 5) after parsing. The pre-filter runs next (step 6) and catches encoding-based obfuscation where the actual command is hidden in encoded form — invisible to the parser at parse time.
+Evasion techniques (fork bombs, eval) are detected at the AST level (step 6) after parsing. The pre-filter runs next (step 7) and catches encoding-based obfuscation where the actual command is hidden in encoded form — invisible to the parser at parse time.
 
 ---
 
 ## DLP Secret Detection
 
-Step 7 of the evaluation pipeline runs DLP (Data Loss Prevention) patterns against all operations. These patterns detect real API keys, tokens, and cryptocurrency secrets by their format, regardless of file path or tool name.
+Step 8 of the evaluation pipeline runs DLP (Data Loss Prevention) patterns against all operations. These patterns detect real API keys, tokens, and cryptocurrency secrets by their format, regardless of file path or tool name.
 
 In stdio proxy modes (MCP Gateway, ACP Wrap, Auto-detect), DLP also scans **server/agent responses** before they reach the client. This catches secrets leaked by the subprocess — for example, an MCP server returning file content that contains an AWS access key. The response is replaced with a JSON-RPC error so the secret never reaches the client.
 
@@ -224,6 +231,10 @@ In stdio proxy modes (MCP Gateway, ACP Wrap, Auto-detect), DLP also scans **serv
 | Upstash | Redis/Kafka tokens (`AX...`) |
 | Turso/LibSQL | Auth tokens (JWT format) |
 | Neon | Database tokens (`neon_...`) |
+| vCard | Contact data export (`BEGIN:VCARD`) |
+| iCalendar | Calendar event export (`BEGIN:VCALENDAR`) |
+| Apple mobileconfig | Configuration Profiles (`PayloadType: Configuration`) |
+| HL7 FHIR | Health data bundles (`resourceType: Bundle`) |
 
 Tier 1 patterns (46 hardcoded) are sourced from [gitleaks v8.24](https://github.com/gitleaks/gitleaks) and extended for newer services and mobile PII formats (vCard, iCalendar, FHIR health data, Apple Configuration Profiles). See `internal/rules/dlp.go` for the full list.
 
@@ -231,7 +242,7 @@ Tier 1 patterns (46 hardcoded) are sourced from [gitleaks v8.24](https://github.
 
 ### Cryptocurrency Key Detection
 
-Step 7 also runs crypto-specific DLP with **cryptographic validation** — not just regex matching. This eliminates false positives by verifying checksums.
+Step 8 also runs crypto-specific DLP with **cryptographic validation** — not just regex matching. This eliminates false positives by verifying checksums.
 
 | Type | Detection | Validation |
 |------|-----------|------------|
@@ -243,7 +254,7 @@ BIP39 mnemonics are the universal seed phrase standard used by Bitcoin, Ethereum
 
 ### Crypto Wallet Path Protection
 
-Step 10 blocks access to sensitive path prefixes including `/proc` and cryptocurrency wallet directories. Paths are computed at init using OS-specific data directories (e.g., `~/Library/Application Support/Bitcoin/` on macOS, `~/.bitcoin/` on Linux, `%LOCALAPPDATA%\Bitcoin` on Windows). This check runs **after symlink resolution** (step 9) so symlink bypasses are caught. New guards can be added to the `pathGuards` registry without modifying the pipeline.
+Step 11 blocks access to sensitive path prefixes including `/proc` and cryptocurrency wallet directories. Paths are computed at init using OS-specific data directories (e.g., `~/Library/Application Support/Bitcoin/` on macOS, `~/.bitcoin/` on Linux, `%LOCALAPPDATA%\Bitcoin` on Windows). This check runs **after symlink resolution** (step 10) so symlink bypasses are caught. New guards can be added to the `pathGuards` registry without modifying the pipeline.
 
 Protected chains: Bitcoin, Litecoin, Dogecoin, Dash, Ethereum, Electrum, Monero, Zcash, Cardano, Cosmos, Polkadot, Avalanche, Tron, Solana, Sui, Aptos.
 
@@ -272,7 +283,7 @@ The rule engine can protect against various attack vectors:
 | Privilege Escalation | Sudoers, PAM, LD_PRELOAD |
 | Container Escape | Docker/containerd sockets |
 | Network | Internal networks, cloud metadata |
-| Mobile | PII (contacts, photos, calendar, location, health), keychain, clipboard, URL schemes |
+| Mobile | PII (contacts, photos, calendar, location, health, camera, microphone, call log, SMS), keychain, clipboard, URL schemes, Bluetooth/NFC, biometric auth, in-app purchases |
 
 See `internal/rules/builtin/security.yaml` for path rules, `internal/rules/dlp.go` for token patterns, and `internal/rules/dlp_crypto.go` for crypto key detection.
 

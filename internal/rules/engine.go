@@ -389,39 +389,39 @@ func (e *Engine) AddRulesFromFile(path string) (string, error) {
 // Evaluate evaluates a tool call through a 13-step pipeline (steps 0-12).
 // Returns MatchResult indicating whether the call is allowed, blocked, or logged.
 func (e *Engine) Evaluate(call ToolCall) MatchResult {
-	// Step 0: Pre-checker (self-protection).
+	// Step 1: Pre-checker (self-protection).
 	if e.preChecker != nil {
 		if m := e.preChecker(string(call.Arguments)); m != nil {
 			return *m
 		}
 	}
 
-	// Step 1: Sanitize tool name.
+	// Step 2: Sanitize tool name.
 	call.Name = SanitizeToolName(call.Name)
 
-	// Step 2: Extract paths and operation.
+	// Step 3: Extract paths and operation.
 	info := e.extractor.Extract(call.Name, call.Arguments)
 
-	// Steps 3-7: Content validation (Unicode, null bytes, evasion, obfuscation, DLP).
+	// Steps 4-8: Content validation (Unicode, null bytes, evasion, obfuscation, DLP).
 	if m := e.validateContent(&info); m != nil {
 		return *m
 	}
 
-	// Steps 8-10: Path resolution (normalize, symlinks, hardcoded guards).
+	// Steps 9-11: Path resolution (normalize, symlinks, hardcoded guards).
 	allPaths, m := e.resolvePaths(info.Paths)
 	if m != nil {
 		return *m
 	}
 
-	// Steps 11-12: Rule matching (operation-based + content-only fallback).
+	// Steps 12-13: Rule matching (operation-based + content-only fallback).
 	return e.matchRules(&info, allPaths, call.Name)
 }
 
-// validateContent runs content validation (steps 3-7): Unicode normalization,
+// validateContent runs content validation (steps 4-8): Unicode normalization,
 // null byte blocking, evasion blocking, obfuscation detection, and DLP.
 // Mutates info fields (Command, Content, RawJSON) via pointer.
 func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
-	// Step 3: Normalize Unicode (NFKC + strip invisible) before any matching.
+	// Step 4: Normalize Unicode (NFKC + strip invisible) before any matching.
 	if info.Command != "" {
 		info.Command = NormalizeUnicode(info.Command)
 	}
@@ -435,7 +435,7 @@ func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
 		info.RawJSON = NormalizeUnicode(info.RawJSON)
 	}
 
-	// Step 4: Block null bytes in write content.
+	// Step 5: Block null bytes in write content.
 	if (info.Operation == OpWrite || info.Operation == OpNone) && info.Content != "" {
 		if strings.ContainsRune(info.Content, 0) {
 			m := NewMatch("builtin:block-null-byte-write", SeverityHigh, ActionBlock, "Cannot write content containing null bytes")
@@ -443,13 +443,13 @@ func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
 		}
 	}
 
-	// Step 5: Block evasive commands that prevent static analysis.
+	// Step 6: Block evasive commands that prevent static analysis.
 	if info.Evasive {
 		m := NewMatch("builtin:block-shell-evasion", SeverityHigh, ActionBlock, info.EvasiveReason)
 		return &m
 	}
 
-	// Step 6: PreFilter — detect obfuscation (base64, hex encoding).
+	// Step 7: PreFilter — detect obfuscation (base64, hex encoding).
 	if info.Command != "" {
 		if match := e.preFilter.Check(info.Command); match != nil {
 			m := NewMatch("builtin:block-obfuscation", SeverityHigh, ActionBlock, fmt.Sprintf("Blocked: %s (%s)", match.Reason, match.PatternName))
@@ -457,7 +457,7 @@ func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
 		}
 	}
 
-	// Step 7: DLP — detect API keys/tokens in all operations.
+	// Step 8: DLP — detect API keys/tokens in all operations.
 	// Prefer Content (already normalized) over RawJSON (may be unnormalized when Content is set).
 	dlpContent := info.Content
 	if dlpContent == "" {
@@ -466,7 +466,7 @@ func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
 	return e.ScanDLP(dlpContent)
 }
 
-// resolvePaths runs path resolution (steps 8-10): prepare paths,
+// resolvePaths runs path resolution (steps 9-11): prepare paths,
 // resolve symlinks, and check hardcoded path guards.
 // Mobile virtual paths (mobile://) are passed through without filesystem
 // operations — symlink resolution and glob expansion are meaningless for them.
@@ -482,14 +482,14 @@ func (e *Engine) resolvePaths(paths []string) ([]string, *MatchResult) {
 		}
 	}
 
-	// Step 8: Prepare paths — filter bare shell globs, normalize, expand filesystem globs.
+	// Step 9: Prepare paths — filter bare shell globs, normalize, expand filesystem globs.
 	normalizedPaths := e.normalizer.PreparePaths(fsPaths)
 
-	// Step 9: Resolve symlinks — match both original and resolved paths.
+	// Step 10: Resolve symlinks — match both original and resolved paths.
 	resolvedPaths := e.normalizer.resolveSymlinks(normalizedPaths)
 	allPaths := mergeUnique(normalizedPaths, resolvedPaths)
 
-	// Step 10: Hardcoded path guards (after symlink resolution to catch symlink bypasses).
+	// Step 11: Hardcoded path guards (after symlink resolution to catch symlink bypasses).
 	if m := checkHardcodedPaths(allPaths); m != nil {
 		return nil, m
 	}
@@ -507,7 +507,7 @@ func (e *Engine) getMergedRules() []compiledRule {
 	return e.merged
 }
 
-// matchRules evaluates operation-based and content-only rules (steps 11-12).
+// matchRules evaluates operation-based and content-only rules (steps 12-13).
 func (e *Engine) matchRules(info *ExtractedInfo, allPaths []string, toolName string) MatchResult {
 	rules := e.getMergedRules()
 
@@ -517,14 +517,14 @@ func (e *Engine) matchRules(info *ExtractedInfo, allPaths []string, toolName str
 		info.Operations = []Operation{info.Operation}
 	}
 
-	// Step 11: Evaluate operation-based rules (for known tools).
+	// Step 12: Evaluate operation-based rules (for known tools).
 	if info.Operation != OpNone {
 		if result := e.evaluateOperationRules(rules, *info, allPaths, toolName); result.Matched {
 			return result
 		}
 	}
 
-	// Step 12: Fallback content-only rules — matches raw JSON of any tool.
+	// Step 13: Fallback content-only rules — matches raw JSON of any tool.
 	// Prefer Content (already normalized) over RawJSON.
 	contentForRules := info.Content
 	if contentForRules == "" {
