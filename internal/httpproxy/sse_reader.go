@@ -85,13 +85,12 @@ func (r *SSEReader) triggerComplete() {
 	r.finalizeToolCalls()
 	toolCalls := r.toolCallsArr
 
-	// Security interception for streaming responses
-	// SECURITY LIMITATION: For SSE streaming, tool calls are evaluated AFTER being sent to the client.
-	// This is an architectural limitation - the response is streamed in real-time.
-	// Blocking is only possible for non-streaming responses.
-	// For streaming: we log violations and emit warnings, but cannot prevent the tool call.
-	// MITIGATION: Consider implementing response buffering for critical security rules,
-	// or advise users to disable streaming for high-security use cases.
+	// Security interception for streaming responses.
+	// NOTE: This non-buffered path evaluates tool calls AFTER they've been sent to
+	// the client. It logs violations and emits warnings but cannot block them.
+	// The buffered streaming path (handleBufferedStreamingRequest) evaluates tool
+	// calls BEFORE sending to the client and can block them. Buffered streaming is
+	// used automatically when buffer_streaming is enabled and the request has tools.
 	interceptor := security.GetGlobalInterceptor()
 	if interceptor != nil && interceptor.IsEnabled() && len(toolCalls) > 0 {
 		engine := interceptor.GetEngine()
