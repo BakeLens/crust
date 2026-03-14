@@ -32,11 +32,8 @@ func (i *Interceptor) InterceptAnthropicResponse(responseBody []byte, ctx Interc
 				allowed = append(allowed, block)
 			}
 		}
-		if len(result.BlockedToolCalls) > 0 && !useReplaceMode {
-			allowed = append(allowed, anthropicContentBlock{Type: "text", Text: message.FormatRemoveWarning(toBlockedCalls(result.BlockedToolCalls))})
-			modified = true
-		}
-		// DLP: scan text blocks for leaked secrets.
+		// DLP: scan text blocks for leaked secrets (before appending
+		// Crust's own warning blocks, so warnings are never DLP-scanned).
 		for idx, block := range allowed {
 			if block.Type == "text" && block.Text != "" {
 				if dlpResult := i.engine.ScanDLP(block.Text); dlpResult != nil {
@@ -44,6 +41,10 @@ func (i *Interceptor) InterceptAnthropicResponse(responseBody []byte, ctx Interc
 					modified = true
 				}
 			}
+		}
+		if len(result.BlockedToolCalls) > 0 && !useReplaceMode {
+			allowed = append(allowed, anthropicContentBlock{Type: "text", Text: message.FormatRemoveWarning(toBlockedCalls(result.BlockedToolCalls))})
+			modified = true
 		}
 		resp.Content = allowed
 		return resp, modified

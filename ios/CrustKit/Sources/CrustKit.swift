@@ -347,11 +347,27 @@ public final class CrustEngine: Sendable {
         }.value
     }
 
-    /// Scan clipboard contents off the main thread.
+    /// Scan clipboard contents asynchronously.
+    /// Reads the clipboard on the main thread, then scans on a background thread.
     public func scanClipboardAsync() async -> ContentScanResult {
-        await Task.detached { [self] in
-            scanClipboard()
-        }.value
+        #if canImport(UIKit) && !os(macOS)
+            // UIPasteboard must be accessed on the main thread.
+            let text: String? = await MainActor.run {
+                UIPasteboard.general.string
+            }
+            guard let text, !text.isEmpty else {
+                return ContentScanResult(
+                    matched: false, patternName: nil, message: nil,
+                    severity: nil, error: nil
+                )
+            }
+            return await scanContentAsync(text)
+        #else
+            return ContentScanResult(
+                matched: false, patternName: nil, message: nil,
+                severity: nil, error: "clipboard scanning requires UIKit"
+            )
+        #endif
     }
 
     // MARK: - Private

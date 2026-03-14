@@ -88,14 +88,8 @@ func (i *Interceptor) InterceptOpenAIResponsesResponse(responseBody []byte, ctx 
 				allowed = append(allowed, item)
 			}
 		}
-		if len(result.BlockedToolCalls) > 0 && !useReplaceMode {
-			allowed = append(allowed, openAIResponsesOutputItem{
-				Type:    "message",
-				Content: []openAIResponsesContent{{Type: "output_text", Text: message.FormatRemoveWarning(toBlockedCalls(result.BlockedToolCalls))}},
-			})
-			modified = true
-		}
-		// DLP: scan output_text content items for leaked secrets.
+		// DLP: scan output_text content items for leaked secrets (before
+		// appending Crust's own warning blocks, so warnings are never DLP-scanned).
 		for idx, item := range allowed {
 			for cIdx, c := range item.Content {
 				if c.Type == "output_text" && c.Text != "" {
@@ -105,6 +99,13 @@ func (i *Interceptor) InterceptOpenAIResponsesResponse(responseBody []byte, ctx 
 					}
 				}
 			}
+		}
+		if len(result.BlockedToolCalls) > 0 && !useReplaceMode {
+			allowed = append(allowed, openAIResponsesOutputItem{
+				Type:    "message",
+				Content: []openAIResponsesContent{{Type: "output_text", Text: message.FormatRemoveWarning(toBlockedCalls(result.BlockedToolCalls))}},
+			})
+			modified = true
 		}
 		resp.Output = allowed
 		return resp, modified
