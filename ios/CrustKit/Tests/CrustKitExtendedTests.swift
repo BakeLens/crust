@@ -370,4 +370,38 @@ final class CrustKitExtendedTests: XCTestCase {
             XCTAssertEqual(result.error, "clipboard scanning requires UIKit")
         #endif
     }
+
+    // MARK: - Bug verification tests
+
+    /// FIXED: Google AI (generativelanguage.googleapis.com) removed from default
+    /// interceptedHosts since we can't parse its response format yet.
+    func testFixGoogleAINotInDefaultHosts() {
+        // Reset to defaults by reading the current interceptedHosts.
+        let defaultHosts = CrustURLProtocol.interceptedHosts
+        XCTAssertFalse(
+            defaultHosts.contains("generativelanguage.googleapis.com"),
+            "Google AI should not be in default interceptedHosts"
+        )
+        XCTAssertTrue(defaultHosts.contains("api.anthropic.com"))
+        XCTAssertTrue(defaultHosts.contains("api.openai.com"))
+    }
+
+    /// BUG: CrustURLProtocol.canInit reads engine and interceptedHosts in two
+    /// separate lock acquisitions. Between the two reads, configuration can change
+    /// (TOCTOU race). This test documents the race window.
+    func testBugCanInitTOCTOU() throws {
+        CrustURLProtocol.engine = engine
+        CrustURLProtocol.interceptedHosts = ["api.anthropic.com"]
+
+        let url = try XCTUnwrap(URL(string: "https://api.anthropic.com/v1/messages"))
+        let req = URLRequest(url: url)
+
+        // Two separate lock acquisitions in canInit:
+        // 1. guard engine != nil   (lock, read, unlock)
+        // 2. interceptedHosts.contains(host)  (lock, read, unlock)
+        // Between 1 and 2, another thread could set engine = nil.
+        // The request would be intercepted, then startLoading would fail.
+        // This is benign (startLoading has its own guard) but wasteful.
+        XCTAssertTrue(CrustURLProtocol.canInit(with: req))
+    }
 }

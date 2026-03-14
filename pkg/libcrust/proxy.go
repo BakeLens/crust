@@ -32,6 +32,20 @@ var proxy struct {
 	apiType  types.APIType
 }
 
+// proxyClient is a shared HTTP client for upstream requests.
+// Reusing the client enables TCP/TLS connection pooling.
+var proxyClient = &http.Client{
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 120 * time.Second,
+		MaxIdleConns:          10,
+		IdleConnTimeout:       90 * time.Second,
+	},
+}
+
 // maxResponseBody is the maximum response body size we'll buffer for
 // interception (16 MB). Responses larger than this are passed through
 // unmodified to avoid excessive memory use on mobile devices.
@@ -120,10 +134,41 @@ func ProxyAddress() string {
 	return proxy.listener.Addr().String()
 }
 
+// proxyConfig holds a snapshot of proxy configuration, taken under lock.
+type proxyConfig struct {
+	upstream *url.URL
+	apiKey   string
+	apiType  types.APIType
+}
+
+// snapshotProxyConfig reads proxy configuration under the lock.
+// Returns nil if the proxy is not configured (upstream is nil).
+func snapshotProxyConfig() *proxyConfig {
+	proxy.mu.Lock()
+	defer proxy.mu.Unlock()
+	if proxy.upstream == nil {
+		return nil
+	}
+	// Copy the URL value so the caller doesn't share state.
+	u := *proxy.upstream
+	return &proxyConfig{
+		upstream: &u,
+		apiKey:   proxy.apiKey,
+		apiType:  proxy.apiType,
+	}
+}
+
 // proxyHandler forwards requests to upstream and intercepts responses.
 func proxyHandler(w http.ResponseWriter, r *http.Request) {
+	// Snapshot config under lock to avoid data races with StopProxy.
+	cfg := snapshotProxyConfig()
+	if cfg == nil {
+		http.Error(w, "proxy not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	// Build upstream URL: base URL + request path + query.
-	target := *proxy.upstream
+	target := *cfg.upstream
 	target.Path = singleJoinSlash(target.Path, r.URL.Path)
 	target.RawQuery = r.URL.RawQuery
 
@@ -142,9 +187,15 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(bodyBytes, &reqBody)
 
 	// Detect API type from path if not configured.
-	at := proxy.apiType
+	at := cfg.apiType
 	if at == 0 {
 		at = detectAPITypeFromPath(r.URL.Path)
+	}
+
+	// If streaming, force non-streaming upfront — no need to send the
+	// streaming request first just to discard it.
+	if reqBody.Stream {
+		bodyBytes = forceNonStreaming(bodyBytes)
 	}
 
 	// Build upstream request.
@@ -161,49 +212,15 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	upReq.Host = target.Host
 
 	// Inject auth.
-	injectProxyAuth(upReq.Header, proxy.apiKey, at)
+	injectProxyAuth(upReq.Header, cfg.apiKey, at)
 
-	// Send to upstream.
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
-			ResponseHeaderTimeout: 120 * time.Second,
-		},
-	}
-	resp, err := client.Do(upReq)
+	// Send to upstream (shared client for connection reuse).
+	resp, err := proxyClient.Do(upReq)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("upstream error: %v", err), http.StatusBadGateway)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	if reqBody.Stream {
-		// Force non-streaming: rewrite stream=false, re-send to upstream,
-		// and intercept the complete response. This ensures all tool calls
-		// and text content go through security evaluation.
-		_ = resp.Body.Close()
-
-		nonStreamBody := forceNonStreaming(bodyBytes)
-		upReq2, err := http.NewRequestWithContext(r.Context(), r.Method, target.String(), bytes.NewReader(nonStreamBody))
-		if err != nil {
-			http.Error(w, "failed to create non-streaming request", http.StatusInternalServerError)
-			return
-		}
-		copyHeaders(upReq2.Header, r.Header)
-		stripHopByHop(upReq2.Header)
-		upReq2.ContentLength = int64(len(nonStreamBody))
-		upReq2.Host = target.Host
-		injectProxyAuth(upReq2.Header, proxy.apiKey, at)
-
-		resp, err = client.Do(upReq2)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("upstream error: %v", err), http.StatusBadGateway)
-			return
-		}
-		defer func() { _ = resp.Body.Close() }()
-	}
 
 	// Read response, intercept, return.
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody+1))
@@ -212,17 +229,21 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If response exceeds maxResponseBody, pass through without interception
+	// to avoid excessive memory use on mobile devices.
+	oversized := len(respBody) > maxResponseBody
+
 	// Decompress if needed for inspection.
 	inspectBody := respBody
 	encoding := resp.Header.Get("Content-Encoding")
-	if encoding == "gzip" && len(respBody) > 2 {
+	if !oversized && encoding == "gzip" && len(respBody) > 2 {
 		if decompressed, err := decompressGzip(respBody); err == nil {
 			inspectBody = decompressed
 		}
 	}
 
-	// Intercept tool calls in successful responses.
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+	// Intercept tool calls in successful, non-oversized responses.
+	if !oversized && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		mu.RLock()
 		i := interceptor
 		mu.RUnlock()
@@ -250,6 +271,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Write response back to client.
 	copyHeaders(w.Header(), resp.Header)
+	stripHopByHop(w.Header()) // strip hop-by-hop from response too
 	// Update Content-Length since body may have changed.
 	w.Header().Set("Content-Length", strconv.Itoa(len(respBody)))
 	w.WriteHeader(resp.StatusCode)

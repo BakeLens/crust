@@ -415,7 +415,8 @@ public final class CrustEngine: Sendable {
 ///
 /// Limitations:
 /// - Only works for URLSession-based networking (not NWConnection, raw sockets, etc.)
-/// - Streaming (SSE) responses are passed through without interception
+/// - Streaming (SSE) responses are passed through without interception by URLProtocol;
+///   use the local proxy (``startProxy``) for full streaming protection
 /// - The protocol must be registered before creating the URLSession
 public final class CrustURLProtocol: URLProtocol {
     // MARK: - Thread-safe static configuration
@@ -425,7 +426,6 @@ public final class CrustURLProtocol: URLProtocol {
     private static var _interceptedHosts: Set<String> = [
         "api.anthropic.com",
         "api.openai.com",
-        "generativelanguage.googleapis.com",
     ]
     private static var _blockMode: BlockMode = .remove
 
