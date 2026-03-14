@@ -148,6 +148,11 @@ Cross-OS app paths can all be listed under `$HOME` — wrong-OS patterns compile
 | Bluetooth/NFC hardware access | - | ✅ Blocked (rule) | - | - | - |
 | Biometric auth bypass | - | ✅ Blocked (rule) | - | - | - |
 | Unauthorized in-app purchase | - | ✅ Blocked (rule) | - | - | - |
+| Secret leaked in AI text response | - | ✅ Redacted (text DLP) | - | - | - |
+| Secret in OpenAI message.content | - | ✅ Redacted (text DLP) | - | - | - |
+| Secret in Responses output_text | - | ✅ Redacted (text DLP) | - | - | - |
+| User pastes API key into AI chat | - | ✅ Blocked (outbound DLP) | - | - | - |
+| Phishing URL in AI text (tel:, sms:) | - | ✅ Blocked (URL validation) | - | - | - |
 | LLM messages in API response | - | - | ✅ Stripped | - | - |
 | Tool arguments in API response | - | - | ✅ Stripped | - | - |
 | API keys in target URL params | - | - | ✅ Stripped | - | - |

@@ -5,6 +5,9 @@
 
 import Foundation
 import Libcrust  // gomobile-generated framework
+#if canImport(UIKit) && !os(macOS)
+import UIKit
+#endif
 
 // MARK: - Public types
 
@@ -66,6 +69,30 @@ public enum APIType: String, Sendable {
 public enum BlockMode: String, Sendable {
     case remove
     case replace
+}
+
+/// Result of scanning content for secrets/PII.
+public struct ContentScanResult: Codable, Sendable {
+    public let matched: Bool
+    public let patternName: String?
+    public let message: String?
+    public let severity: String?
+    public let error: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case matched
+        case patternName = "pattern_name"
+        case message, severity, error
+    }
+}
+
+/// Result of validating a URL against scheme rules.
+public struct URLValidationResult: Codable, Sendable {
+    public let scheme: String
+    public let blocked: Bool
+    public let rule: String?
+    public let message: String?
+    public let error: String?
 }
 
 // MARK: - CrustEngine
@@ -152,6 +179,52 @@ public final class CrustEngine: Sendable {
     /// Release engine resources.
     public func shutdown() {
         LibcrustShutdown()
+    }
+
+    // MARK: - Content Scanning
+
+    /// Scan any text for secrets, PII, or sensitive data using the DLP engine.
+    public func scanContent(_ content: String) -> ContentScanResult {
+        let resultJSON = LibcrustScanContent(content)
+        return decode(resultJSON) ?? ContentScanResult(
+            matched: false, patternName: nil, message: nil,
+            severity: nil, error: "decode failed"
+        )
+    }
+
+    /// Scan outbound user→AI message for secrets before sending.
+    /// Alias for `scanContent` — same DLP engine, clearer intent.
+    public func scanOutbound(_ content: String) -> ContentScanResult {
+        scanContent(content)
+    }
+
+    /// Validate a URL against mobile URL scheme rules.
+    /// Returns whether the URL scheme is blocked (e.g. tel:, sms:).
+    public func validateURL(_ rawURL: String) -> URLValidationResult {
+        let resultJSON = LibcrustValidateURL(rawURL)
+        return decode(resultJSON) ?? URLValidationResult(
+            scheme: "", blocked: false, rule: nil,
+            message: nil, error: "decode failed"
+        )
+    }
+
+    /// Scan clipboard contents for secrets.
+    /// Uses UIPasteboard on iOS; returns not-matched on non-iOS platforms.
+    public func scanClipboard() -> ContentScanResult {
+        #if canImport(UIKit) && !os(macOS)
+        guard let text = UIPasteboard.general.string, !text.isEmpty else {
+            return ContentScanResult(
+                matched: false, patternName: nil, message: nil,
+                severity: nil, error: nil
+            )
+        }
+        return scanContent(text)
+        #else
+        return ContentScanResult(
+            matched: false, patternName: nil, message: nil,
+            severity: nil, error: "clipboard scanning requires UIKit"
+        )
+        #endif
     }
 
     // MARK: - Local Proxy
@@ -251,6 +324,34 @@ public final class CrustEngine: Sendable {
     public func validateYAMLAsync(_ yaml: String) async -> String? {
         await Task.detached { [self] in
             validateYAML(yaml)
+        }.value
+    }
+
+    /// Scan content for secrets off the main thread.
+    public func scanContentAsync(_ content: String) async -> ContentScanResult {
+        await Task.detached { [self] in
+            scanContent(content)
+        }.value
+    }
+
+    /// Scan outbound user→AI message off the main thread.
+    public func scanOutboundAsync(_ content: String) async -> ContentScanResult {
+        await Task.detached { [self] in
+            scanOutbound(content)
+        }.value
+    }
+
+    /// Validate a URL against scheme rules off the main thread.
+    public func validateURLAsync(_ rawURL: String) async -> URLValidationResult {
+        await Task.detached { [self] in
+            validateURL(rawURL)
+        }.value
+    }
+
+    /// Scan clipboard contents off the main thread.
+    public func scanClipboardAsync() async -> ContentScanResult {
+        await Task.detached { [self] in
+            scanClipboard()
         }.value
     }
 

@@ -182,6 +182,11 @@ let session = URLSession(configuration: .crustProtected)
 // Best for custom integrations or manual checks.
 let result = await engine.evaluateAsync(toolName: "read_contacts", arguments: [:])
 print(result.matched)  // true — blocked by protect-mobile-pii
+
+// ── Content scanning (DLP for text responses & user input) ──
+let scan = engine.scanContent(aiTextResponse)     // secrets in AI output
+let outbound = engine.scanOutbound(userMessage)    // secrets in user input
+let urlCheck = engine.validateURL("tel:+1234567890") // blocked URL schemes
 ```
 
 **Mobile-specific protections** (7 locked rules + shared rules):
@@ -197,6 +202,8 @@ print(result.matched)  // true — blocked by protect-mobile-pii
 | Purchases | in-app purchases, financial transactions | `protect-mobile-purchases` |
 | Persistence | background task scheduling | `protect-persistence` |
 | Notifications | push/local notification sending | (user-configurable) |
+| Content DLP | secrets/PII in AI text responses, user input, clipboard | DLP engine (46 patterns) |
+| URL Validation | dangerous URL schemes (`tel:`, `sms:`, etc.) | `protect-mobile-url-schemes` |
 
 **Installation:**
 

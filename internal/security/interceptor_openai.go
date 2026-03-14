@@ -15,6 +15,16 @@ func (i *Interceptor) InterceptOpenAIResponse(responseBody []byte, ctx Intercept
 			return nil, false
 		}
 		modified := false
+		// DLP: scan message content for leaked secrets.
+		for choiceIdx := range resp.Choices {
+			choice := &resp.Choices[choiceIdx]
+			if choice.Message.Content != "" {
+				if dlpResult := i.engine.ScanDLP(choice.Message.Content); dlpResult != nil {
+					choice.Message.Content = "[REDACTED by Crust: " + dlpResult.Message + "]"
+					modified = true
+				}
+			}
+		}
 		for choiceIdx := range resp.Choices {
 			choice := &resp.Choices[choiceIdx]
 			if choice.Message.ToolCalls == nil {
@@ -84,6 +94,17 @@ func (i *Interceptor) InterceptOpenAIResponsesResponse(responseBody []byte, ctx 
 				Content: []openAIResponsesContent{{Type: "output_text", Text: message.FormatRemoveWarning(toBlockedCalls(result.BlockedToolCalls))}},
 			})
 			modified = true
+		}
+		// DLP: scan output_text content items for leaked secrets.
+		for idx, item := range allowed {
+			for cIdx, c := range item.Content {
+				if c.Type == "output_text" && c.Text != "" {
+					if dlpResult := i.engine.ScanDLP(c.Text); dlpResult != nil {
+						allowed[idx].Content[cIdx].Text = "[REDACTED by Crust: " + dlpResult.Message + "]"
+						modified = true
+					}
+				}
+			}
 		}
 		resp.Output = allowed
 		return resp, modified

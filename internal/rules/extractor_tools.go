@@ -464,9 +464,15 @@ func mobilePurchasePath(args map[string]any) string {
 	return MobileVirtualPathPrefix + "purchase/_unknown"
 }
 
-// extractURLScheme returns the scheme portion of a URL string.
+// ExtractURLScheme returns the scheme portion of a URL string.
 // e.g., "tel:+1234567890" → "tel", "https://example.com" → "https"
 // Per RFC 3986, schemes must start with a letter.
+// Exported for use by libcrust's ValidateURL.
+func ExtractURLScheme(rawURL string) string {
+	return extractURLScheme(rawURL)
+}
+
+// extractURLScheme is the internal implementation.
 func extractURLScheme(rawURL string) string {
 	if i := strings.Index(rawURL, ":"); i > 0 && i < 32 {
 		scheme := strings.ToLower(rawURL[:i])

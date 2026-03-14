@@ -394,6 +394,77 @@ final class CrustKitTests: XCTestCase {
         XCTAssertNotNil(errorMsg, "invalid YAML should return error")
     }
 
+    // MARK: - Content Scanning
+
+    func testScanContentClean() throws {
+        try engine.initialize()
+
+        let result = engine.scanContent("Hello, this is a normal message.")
+        XCTAssertFalse(result.matched, "clean content should not match")
+    }
+
+    func testScanContentSecret() throws {
+        try engine.initialize()
+
+        let result = engine.scanContent("Here is a token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12")
+        XCTAssertTrue(result.matched, "GitHub token should be detected")
+        XCTAssertNotNil(result.patternName)
+        XCTAssertNotNil(result.message)
+    }
+
+    func testScanContentVCard() throws {
+        try engine.initialize()
+
+        let result = engine.scanContent("BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD")
+        XCTAssertTrue(result.matched, "vCard should be detected")
+    }
+
+    func testScanContentAsync() async throws {
+        try engine.initialize()
+
+        let result = await engine.scanContentAsync("Here is a token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12")
+        XCTAssertTrue(result.matched, "GitHub token should be detected async")
+    }
+
+    func testScanOutbound() throws {
+        try engine.initialize()
+
+        let result = engine.scanOutbound("My API key is ghp_TestSecretTokenForDLP00000000000000scan")
+        XCTAssertTrue(result.matched, "API key in outbound message should be detected")
+    }
+
+    // MARK: - URL Validation
+
+    func testValidateURLTelBlocked() throws {
+        try engine.initialize()
+
+        let result = engine.validateURL("tel:+1234567890")
+        XCTAssertTrue(result.blocked, "tel: URL should be blocked")
+        XCTAssertEqual(result.scheme, "tel")
+    }
+
+    func testValidateURLHttpsAllowed() throws {
+        try engine.initialize()
+
+        let result = engine.validateURL("https://example.com")
+        XCTAssertFalse(result.blocked, "https: URL should be allowed")
+        XCTAssertEqual(result.scheme, "https")
+    }
+
+    func testValidateURLSmsBlocked() throws {
+        try engine.initialize()
+
+        let result = engine.validateURL("sms:+1234567890")
+        XCTAssertTrue(result.blocked, "sms: URL should be blocked")
+    }
+
+    func testValidateURLAsync() async throws {
+        try engine.initialize()
+
+        let result = await engine.validateURLAsync("tel:+1234567890")
+        XCTAssertTrue(result.blocked, "tel: URL should be blocked async")
+    }
+
     // MARK: - CrustURLProtocol
 
     func testURLProtocolCanInitMatchesConfiguredHosts() {

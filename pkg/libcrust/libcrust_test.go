@@ -428,3 +428,99 @@ rules:
 		t.Error("custom rule should not persist after shutdown+reinit")
 	}
 }
+
+func TestScanContent_Clean(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	result := ScanContent("Hello, this is a normal message with no secrets.")
+	if strings.Contains(result, `"matched":true`) {
+		t.Errorf("expected clean content, got: %s", result)
+	}
+}
+
+func TestScanContent_GitHubToken(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	result := ScanContent("Here is a token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12")
+	if !strings.Contains(result, `"matched":true`) {
+		t.Errorf("expected GitHub token to be detected, got: %s", result)
+	}
+}
+
+func TestScanContent_VCard(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	result := ScanContent("BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD")
+	if !strings.Contains(result, `"matched":true`) {
+		t.Errorf("expected vCard to be detected, got: %s", result)
+	}
+}
+
+func TestScanContent_BIP39(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	result := ScanContent(mnemonic)
+	if !strings.Contains(result, `"matched":true`) {
+		t.Errorf("expected BIP39 mnemonic to be detected, got: %s", result)
+	}
+}
+
+func TestScanContent_BeforeInit(t *testing.T) {
+	Shutdown()
+	result := ScanContent("test content")
+	if !strings.Contains(result, "not initialized") {
+		t.Errorf("expected not-initialized error, got: %s", result)
+	}
+}
+
+func TestValidateURL_Tel(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	result := ValidateURL("tel:+1234567890")
+	if !strings.Contains(result, `"blocked":true`) {
+		t.Errorf("expected tel: to be blocked, got: %s", result)
+	}
+	if !strings.Contains(result, `"scheme":"tel"`) {
+		t.Errorf("expected scheme=tel, got: %s", result)
+	}
+}
+
+func TestValidateURL_Https(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	result := ValidateURL("https://example.com")
+	if strings.Contains(result, `"blocked":true`) {
+		t.Errorf("expected https: to be allowed, got: %s", result)
+	}
+}
+
+func TestValidateURL_SMS(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	result := ValidateURL("sms:+1234567890")
+	if !strings.Contains(result, `"blocked":true`) {
+		t.Errorf("expected sms: to be blocked, got: %s", result)
+	}
+}

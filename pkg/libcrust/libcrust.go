@@ -206,6 +206,73 @@ func GetVersion() string {
 	return Version
 }
 
+// ScanContent scans arbitrary text for secrets/PII using the DLP engine.
+// Returns a JSON string with the scan result:
+//
+//	{"matched":true,"pattern_name":"builtin:dlp-github-token","message":"...","severity":"critical"}
+//
+// or {"matched":false} if the content is clean.
+func ScanContent(content string) string {
+	mu.RLock()
+	e := engine
+	mu.RUnlock()
+
+	if e == nil {
+		return `{"matched":false,"error":"engine not initialized"}`
+	}
+
+	result := e.ScanDLP(content)
+	if result == nil {
+		return `{"matched":false}`
+	}
+
+	out, err := json.Marshal(contentScanResult{
+		Matched:     true,
+		PatternName: result.RuleName,
+		Message:     result.Message,
+		Severity:    string(result.Severity),
+	})
+	if err != nil {
+		return `{"matched":false,"error":"marshal failed"}`
+	}
+	return string(out)
+}
+
+// ValidateURL checks a URL against the mobile URL scheme rules.
+// Returns a JSON string with the validation result:
+//
+//	{"scheme":"tel","blocked":true,"rule":"protect-mobile-url-schemes","message":"..."}
+//
+// or {"scheme":"https","blocked":false} if the URL is allowed.
+func ValidateURL(rawURL string) string {
+	mu.RLock()
+	e := engine
+	mu.RUnlock()
+
+	if e == nil {
+		return `{"scheme":"","blocked":false,"error":"engine not initialized"}`
+	}
+
+	scheme := rules.ExtractURLScheme(rawURL)
+
+	// Evaluate using the open_url tool path to hit URL scheme rules.
+	result := e.Evaluate(rules.ToolCall{
+		Name:      "open_url",
+		Arguments: json.RawMessage(`{"url":` + jsonString(rawURL) + `}`),
+	})
+
+	out, err := json.Marshal(urlValidationResult{
+		Scheme:  scheme,
+		Blocked: result.Matched && result.Action == rules.ActionBlock,
+		Rule:    result.RuleName,
+		Message: result.Message,
+	})
+	if err != nil {
+		return `{"scheme":"","blocked":false,"error":"marshal failed"}`
+	}
+	return string(out)
+}
+
 // Shutdown releases resources. Safe to call multiple times.
 func Shutdown() {
 	mu.Lock()
@@ -234,6 +301,28 @@ type blockedCall struct {
 
 type allowedCall struct {
 	ToolName string `json:"tool_name"`
+}
+
+type contentScanResult struct {
+	Matched     bool   `json:"matched"`
+	PatternName string `json:"pattern_name,omitempty"`
+	Message     string `json:"message,omitempty"`
+	Severity    string `json:"severity,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
+type urlValidationResult struct {
+	Scheme  string `json:"scheme"`
+	Blocked bool   `json:"blocked"`
+	Rule    string `json:"rule,omitempty"`
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// jsonString returns a JSON-encoded string value (with quotes and escaping).
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 func parseAPIType(s string) types.APIType {

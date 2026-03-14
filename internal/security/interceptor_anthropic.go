@@ -36,6 +36,15 @@ func (i *Interceptor) InterceptAnthropicResponse(responseBody []byte, ctx Interc
 			allowed = append(allowed, anthropicContentBlock{Type: "text", Text: message.FormatRemoveWarning(toBlockedCalls(result.BlockedToolCalls))})
 			modified = true
 		}
+		// DLP: scan text blocks for leaked secrets.
+		for idx, block := range allowed {
+			if block.Type == "text" && block.Text != "" {
+				if dlpResult := i.engine.ScanDLP(block.Text); dlpResult != nil {
+					allowed[idx].Text = "[REDACTED by Crust: " + dlpResult.Message + "]"
+					modified = true
+				}
+			}
+		}
 		resp.Content = allowed
 		return resp, modified
 	})

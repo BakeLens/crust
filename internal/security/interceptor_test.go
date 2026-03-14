@@ -1423,3 +1423,112 @@ func TestInterceptOpenAIResponses_NoToolCalls(t *testing.T) {
 		t.Error("response with no tool calls should be unchanged")
 	}
 }
+
+// --- Text-block DLP tests ---
+
+func TestAnthropicTextBlockDLP_SecretRedacted(t *testing.T) {
+	interceptor := createTestInterceptor(t, "")
+	content := []anthropicContentBlock{
+		{Type: "text", Text: "Here is a token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12"},
+	}
+	resp := createAnthropicResponse(content)
+
+	result, err := interceptor.InterceptAnthropicResponse(resp, anthropicCtx(types.BlockModeRemove))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed anthropicResponse
+	if err := json.Unmarshal(result.ModifiedResponse, &parsed); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if len(parsed.Content) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(parsed.Content))
+	}
+	if !strings.Contains(parsed.Content[0].Text, "[REDACTED by Crust:") {
+		t.Errorf("expected text to be redacted, got: %s", parsed.Content[0].Text)
+	}
+}
+
+func TestAnthropicTextBlockDLP_CleanPassThrough(t *testing.T) {
+	interceptor := createTestInterceptor(t, "")
+	content := []anthropicContentBlock{
+		{Type: "text", Text: "This is a perfectly normal message."},
+	}
+	resp := createAnthropicResponse(content)
+
+	result, err := interceptor.InterceptAnthropicResponse(resp, anthropicCtx(types.BlockModeRemove))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Clean text should pass through unchanged.
+	if !bytes.Equal(result.ModifiedResponse, resp) {
+		t.Error("clean text response should be unchanged")
+	}
+}
+
+func TestOpenAIContentDLP_SecretRedacted(t *testing.T) {
+	interceptor := createTestInterceptor(t, "")
+	resp := createOpenAIResponse(nil, "Here is a token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12")
+
+	result, err := interceptor.InterceptOpenAIResponse(resp, openaiCtx(types.BlockModeRemove))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed openAIResponse
+	if err := json.Unmarshal(result.ModifiedResponse, &parsed); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if len(parsed.Choices) == 0 {
+		t.Fatal("expected at least one choice")
+	}
+	if !strings.Contains(parsed.Choices[0].Message.Content, "[REDACTED by Crust:") {
+		t.Errorf("expected content to be redacted, got: %s", parsed.Choices[0].Message.Content)
+	}
+}
+
+func TestOpenAIContentDLP_CleanPassThrough(t *testing.T) {
+	interceptor := createTestInterceptor(t, "")
+	resp := createOpenAIResponse(nil, "This is a perfectly normal message.")
+
+	result, err := interceptor.InterceptOpenAIResponse(resp, openaiCtx(types.BlockModeRemove))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !bytes.Equal(result.ModifiedResponse, resp) {
+		t.Error("clean text response should be unchanged")
+	}
+}
+
+func TestOpenAIResponsesDLP_SecretRedacted(t *testing.T) {
+	interceptor := createTestInterceptor(t, "")
+	output := []openAIResponsesOutputItem{
+		{
+			Type: "message",
+			ID:   "msg_1",
+			Content: []openAIResponsesContent{
+				{Type: "output_text", Text: "Here is a token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12"},
+			},
+		},
+	}
+	resp := createOpenAIResponsesResponse(output)
+
+	result, err := interceptor.InterceptOpenAIResponsesResponse(resp, responsesCtx(types.BlockModeRemove))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed openAIResponsesResponse
+	if err := json.Unmarshal(result.ModifiedResponse, &parsed); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if len(parsed.Output) == 0 || len(parsed.Output[0].Content) == 0 {
+		t.Fatal("expected output content")
+	}
+	if !strings.Contains(parsed.Output[0].Content[0].Text, "[REDACTED by Crust:") {
+		t.Errorf("expected output_text to be redacted, got: %s", parsed.Output[0].Content[0].Text)
+	}
+}

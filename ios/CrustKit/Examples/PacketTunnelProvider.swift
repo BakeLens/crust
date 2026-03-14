@@ -209,6 +209,56 @@ func asyncExample() async throws {
 //
 // Both approaches use the same rule engine and provide identical security.
 
+// MARK: - Content Scanning
+
+/// Scan AI text responses and user input for secrets/PII.
+func contentScanningExample() throws {
+    let engine = CrustEngine()
+    try engine.initialize()
+
+    // Scan an AI text response for leaked secrets.
+    let aiResponse = "Here's your config: API_KEY=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12"
+    let scanResult = engine.scanContent(aiResponse)
+    if scanResult.matched {
+        print("Secret found in AI response: \(scanResult.message ?? "")")
+        // Don't display this response to the user.
+    }
+
+    // Scan user input before sending to AI (outbound DLP).
+    let userMessage = "Please use this key: ghp_TestSecretTokenForDLP00000000000000scan"
+    let outboundResult = engine.scanOutbound(userMessage)
+    if outboundResult.matched {
+        print("Warning: your message contains a secret — \(outboundResult.message ?? "")")
+        // Warn the user or block the message.
+    }
+
+    // Clipboard guard — check before pasting into AI chat.
+    let clipResult = engine.scanClipboard()
+    if clipResult.matched {
+        print("Clipboard contains sensitive data: \(clipResult.message ?? "")")
+    }
+}
+
+// MARK: - URL Validation
+
+/// Validate URLs before opening them (e.g. links from AI responses).
+func urlValidationExample() throws {
+    let engine = CrustEngine()
+    try engine.initialize()
+
+    let urls = ["tel:+1234567890", "https://example.com", "sms:+1234567890"]
+
+    for url in urls {
+        let result = engine.validateURL(url)
+        if result.blocked {
+            print("Blocked URL: \(url) (rule: \(result.rule ?? ""), \(result.message ?? ""))")
+        } else {
+            print("Allowed URL: \(url)")
+            // Safe to open with UIApplication.shared.open(...)
+        }
+    }
+}
+
 // MARK: - Network Extension (Alternative)
 //
 // If you need to intercept traffic from apps you don't control
