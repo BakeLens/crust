@@ -235,6 +235,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	// Update Content-Length since body may have changed.
 	w.Header().Set("Content-Length", strconv.Itoa(len(respBody)))
 	w.WriteHeader(resp.StatusCode)
+	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter -- reverse proxy forwarding JSON API responses, not rendering HTML
 	_, _ = w.Write(respBody)
 }
 
@@ -249,6 +250,7 @@ func streamPassthrough(w http.ResponseWriter, resp *http.Response) {
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter -- streaming proxy pass-through, not HTML
 			_, _ = w.Write(buf[:n])
 			if canFlush {
 				flusher.Flush()
