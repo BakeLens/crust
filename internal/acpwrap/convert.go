@@ -80,6 +80,9 @@ func ACPMethodToToolCall(method string, params json.RawMessage) (*rules.ToolCall
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, fmt.Errorf("malformed %s params: %w", method, err)
 		}
+		if p.Command == "" {
+			return nil, fmt.Errorf("empty command in %s params", method)
+		}
 		fullCmd, err := shellutil.Command(append([]string{p.Command}, p.Args...)...)
 		if err != nil {
 			return nil, fmt.Errorf("cannot construct command: %w", err)

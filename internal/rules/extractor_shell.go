@@ -91,7 +91,9 @@ func (e *Extractor) extractBashCommand(info *ExtractedInfo) {
 			// Unparseable as bash, and either no pwsh worker or pwsh also
 			// rejected it (parse errors): treat as evasive.
 			info.Evasive = true
-			info.EvasiveReason = "unparseable shell command: " + err.Error()
+			if info.EvasiveReason == "" {
+				info.EvasiveReason = "unparseable shell command: " + err.Error()
+			}
 			printed = append(printed, strings.TrimSpace(cmd))
 			continue
 		}

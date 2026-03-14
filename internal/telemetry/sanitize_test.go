@@ -146,11 +146,24 @@ func TestSanitizeTargetURL(t *testing.T) {
 }
 
 // TestSanitizeSpan_MalformedJSON ensures graceful handling of corrupt data.
+// Bug #15: previously returned raw unsanitized data on parse failure.
 func TestSanitizeSpan_MalformedJSON(t *testing.T) {
 	span := Span{Attributes: json.RawMessage(`{invalid json`)}
 	sanitized := SanitizeSpan(span)
-	// Should return the original malformed JSON rather than panic.
-	if string(sanitized.Attributes) != `{invalid json` {
-		t.Error("malformed attributes should be returned as-is")
+	// Unparseable attributes must be discarded to prevent leaking unsanitized data.
+	if sanitized.Attributes != nil {
+		t.Errorf("malformed attributes should be nil, got %q", string(sanitized.Attributes))
+	}
+}
+
+// TestSanitizeAttributes_MalformedJSONWithSensitiveData verifies that
+// malformed JSON containing sensitive data is discarded, not returned as-is.
+func TestSanitizeAttributes_MalformedJSONWithSensitiveData(t *testing.T) {
+	// This JSON is malformed but contains what looks like sensitive data.
+	// sanitizeAttributes must NOT return it.
+	malformed := json.RawMessage(`{"input.value": "secret password", INVALID`)
+	result := sanitizeAttributes(malformed)
+	if result != nil {
+		t.Errorf("malformed JSON with sensitive data should return nil, got %q", string(result))
 	}
 }

@@ -267,8 +267,91 @@ func TestStartProxyInvalidURL(t *testing.T) {
 }
 
 func TestStreamInterceptionSupported(t *testing.T) {
-	if StreamInterceptionSupported() {
-		t.Error("expected streaming interception to be unsupported for now")
+	if !StreamInterceptionSupported() {
+		t.Error("expected streaming interception to be supported")
+	}
+}
+
+func TestForceNonStreaming(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool // stream should be false in output
+	}{
+		{"sets stream=false", `{"model":"gpt-4","stream":true,"messages":[]}`, true},
+		{"adds stream=false when absent", `{"model":"claude-3","messages":[]}`, true},
+		{"preserves other fields", `{"model":"x","stream":true,"temperature":0.5}`, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out := forceNonStreaming([]byte(tc.input))
+			var m map[string]json.RawMessage
+			if err := json.Unmarshal(out, &m); err != nil {
+				t.Fatalf("invalid JSON output: %v", err)
+			}
+			if string(m["stream"]) != "false" {
+				t.Errorf("stream = %s, want false", m["stream"])
+			}
+		})
+	}
+}
+
+func TestForceNonStreaming_InvalidJSON(t *testing.T) {
+	input := []byte("not json")
+	out := forceNonStreaming(input)
+	if string(out) != string(input) {
+		t.Errorf("expected unchanged input on parse error")
+	}
+}
+
+func TestProxyInterceptsStreamingRequest(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	// Fake upstream: verify it receives stream=false, return blocked tool call.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]json.RawMessage
+		if err := json.Unmarshal(body, &req); err != nil {
+			w.WriteHeader(500)
+			return
+		}
+		// Verify stream was forced to false.
+		if string(req["stream"]) != "false" {
+			w.WriteHeader(500)
+			w.Write([]byte(`{"error":"stream was not forced to false"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// Return a malicious tool call that should be blocked.
+		w.Write([]byte(`{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"write_file","input":{"file_path":"/etc/crontab","content":"* * * * * evil"}}]}`))
+	}))
+	defer upstream.Close()
+
+	if err := StartProxy(0, upstream.URL, "", "anthropic"); err != nil {
+		t.Fatalf("StartProxy failed: %v", err)
+	}
+	defer StopProxy()
+
+	// Send a streaming request.
+	reqBody := `{"model":"claude-3","stream":true,"messages":[{"role":"user","content":"test"}]}`
+	resp, err := http.Post(
+		"http://"+ProxyAddress()+"/v1/messages",
+		"application/json",
+		strings.NewReader(reqBody),
+	)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	// The malicious tool call should be blocked even though it was a streaming request.
+	if strings.Contains(string(body), "/etc/crontab") {
+		t.Errorf("expected streaming request to be intercepted, but blocked tool call passed through: %s", string(body))
 	}
 }
 

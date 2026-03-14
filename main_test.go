@@ -172,16 +172,24 @@ func TestRulePriority(t *testing.T) {
 	tests := []struct {
 		name         string
 		jsonData     string
+		wantNil      bool
 		wantPriority int
 	}{
 		{
-			name:         "priority omitted (zero value)",
-			jsonData:     `{"name": "test", "actions": ["read"], "block": {}}`,
+			name:     "priority omitted (nil)",
+			jsonData: `{"name": "test", "actions": ["read"], "block": {}}`,
+			wantNil:  true,
+		},
+		{
+			name:         "priority explicit zero",
+			jsonData:     `{"name": "test", "priority": 0, "actions": ["read"], "block": {}}`,
+			wantNil:      false,
 			wantPriority: 0,
 		},
 		{
 			name:         "priority explicit",
 			jsonData:     `{"name": "test", "priority": 10, "actions": ["read"], "block": {}}`,
+			wantNil:      false,
 			wantPriority: 10,
 		},
 	}
@@ -192,8 +200,17 @@ func TestRulePriority(t *testing.T) {
 			if err := json.Unmarshal([]byte(tt.jsonData), &r); err != nil {
 				t.Fatalf("unmarshal error: %v", err)
 			}
-			if r.Priority != tt.wantPriority {
-				t.Errorf("priority = %d, want %d", r.Priority, tt.wantPriority)
+			if tt.wantNil {
+				if r.Priority != nil {
+					t.Errorf("priority = %v, want nil", *r.Priority)
+				}
+			} else {
+				if r.Priority == nil {
+					t.Fatalf("priority = nil, want %d", tt.wantPriority)
+				}
+				if *r.Priority != tt.wantPriority {
+					t.Errorf("priority = %d, want %d", *r.Priority, tt.wantPriority)
+				}
 			}
 		})
 	}

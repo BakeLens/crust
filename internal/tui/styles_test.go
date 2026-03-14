@@ -167,3 +167,23 @@ func TestSetPlainMode_Overrides(t *testing.T) {
 
 	SetPlainMode(false)
 }
+
+func TestPlainMode_ConcurrentAccess(t *testing.T) {
+	// Bug #16: Data race on plainMode — initPlainMode writes without holding plainMu.
+	// This test verifies no race occurs when SetPlainMode and IsPlainMode are called concurrently.
+	// Run with -race to detect the issue.
+	SetPlainMode(false)
+	defer SetPlainMode(false)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 1000 {
+			SetPlainMode(i%2 == 0)
+		}
+	}()
+	for range 1000 {
+		_ = IsPlainMode()
+	}
+	<-done
+}

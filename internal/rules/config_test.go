@@ -288,3 +288,69 @@ rules:
 		t.Errorf("expected lowercase 'write', got %q", rules[0].Actions[1])
 	}
 }
+
+func TestRuleSetConfig_VersionValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "version 0 (unset) is accepted",
+			input: `
+rules:
+  - block: "**/.env"
+`,
+			wantErr: false,
+		},
+		{
+			name: "version 1 is accepted",
+			input: `
+version: 1
+rules:
+  - block: "**/.env"
+`,
+			wantErr: false,
+		},
+		{
+			name: "version 2 is rejected",
+			input: `
+version: 2
+rules:
+  - block: "**/.env"
+`,
+			wantErr: true,
+			errMsg:  "unsupported version",
+		},
+		{
+			name: "version 99 is rejected",
+			input: `
+version: 99
+rules:
+  - block: "**/.env"
+`,
+			wantErr: true,
+			errMsg:  "unsupported version",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var rs RuleSetConfig
+			if err := yaml.Unmarshal([]byte(tt.input), &rs); err != nil {
+				t.Fatalf("YAML parse error: %v", err)
+			}
+			err := rs.Validate()
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				} else if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("error %q does not contain %q", err.Error(), tt.errMsg)
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}

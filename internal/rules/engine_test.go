@@ -227,7 +227,7 @@ func TestEngine_NetworkHostMatching(t *testing.T) {
 			Name:    "block-malicious-hosts",
 			Actions: []Operation{OpNetwork},
 			Block: Block{
-				Hosts: []string{"evil.com", "*.malware.net", "192.168.1.*"},
+				Hosts: []string{"evil.com", "*.malware.net", "192.168.1.**"},
 			},
 			Message: "BLOCKED: Network access to blocked host",
 		},

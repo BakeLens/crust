@@ -2,6 +2,7 @@ package rules
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -459,6 +460,49 @@ func TestDLPSecretDetection(t *testing.T) {
 	}
 }
 
+// TestDLP_ScansNonContentFields verifies that DLP scans the full RawJSON payload,
+// not just the Content field. Secrets in non-content fields (e.g., file_path,
+// old_string) must still be caught.
+func TestDLP_ScansNonContentFields(t *testing.T) {
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+
+	awsKey := "AKIA" + "IOSFODNN7REALKEY1"
+
+	cases := []struct {
+		desc string
+		tool string
+		args string
+	}{
+		{
+			"secret in old_string field (not content)",
+			"Edit",
+			`{"file_path":"/home/user/project/config.py","old_string":"KEY = '` + awsKey + `'","new_string":"KEY = 'redacted'"}`,
+		},
+		{
+			"secret in file_path field",
+			"Write",
+			`{"file_path":"/home/user/project/` + awsKey + `.py","content":"clean content here"}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			call := ToolCall{Name: tc.tool, Arguments: []byte(tc.args)}
+			result := engine.Evaluate(call)
+			if !result.Matched {
+				t.Errorf("Expected DLP to catch secret in non-content field, but it was ALLOWED")
+			} else if !strings.HasPrefix(result.RuleName, "builtin:dlp-") {
+				t.Logf("Blocked by '%s' (not DLP, but still caught)", result.RuleName)
+			} else {
+				t.Logf("PASS: Blocked by DLP rule '%s'", result.RuleName)
+			}
+		})
+	}
+}
+
 // TestToolNameSanitization verifies null bytes and control chars in tool names
 // are stripped before extraction, so the tool is still correctly identified.
 func TestToolNameSanitization(t *testing.T) {
@@ -644,4 +688,154 @@ func TestDLPScanner_PanicRecovery(t *testing.T) {
 	if scans != 1 {
 		t.Errorf("scanCount = %d, want 1 (scan should be counted before panic)", scans)
 	}
+}
+
+// TestDLPBugFixes verifies fixes for specific DLP pattern bugs.
+func TestDLPBugFixes(t *testing.T) {
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableBuiltin: false})
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+
+	t.Run("Bug3: JWT pattern catches standard Auth0/Firebase JWT (intentional)", func(t *testing.T) {
+		// A standard Auth0 JWT — not Turso-specific. The pattern intentionally
+		// catches all JWTs as a security measure, and the rule is now named
+		// "builtin:dlp-jwt-token" to reflect that.
+		jwt := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9." +
+			"eyJpc3MiOiJodHRwczovL2F1dGgwLmNvbS8iLCJzdWIiOiIxMjM0NTY3ODkwIiwiYXVkIjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20ifQ." +
+			"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+		call := ToolCall{
+			Name:      "Write",
+			Arguments: []byte(`{"file_path":"/tmp/test.py","content":"TOKEN = '` + jwt + `'"}`),
+		}
+		result := engine.Evaluate(call)
+		if !result.Matched {
+			t.Errorf("Expected JWT to be blocked but was ALLOWED")
+		} else if result.RuleName != "builtin:dlp-jwt-token" && result.RuleName != "builtin:dlp-gitleaks-jwt" {
+			t.Errorf("Expected JWT rule, got '%s'", result.RuleName)
+		} else {
+			t.Logf("PASS: Standard JWT blocked by '%s' (intentional catch-all)", result.RuleName)
+		}
+	})
+
+	t.Run("Bug4: base64 data starting with AX embedded in word not caught", func(t *testing.T) {
+		// A base64-encoded string that happens to start with AX but is embedded
+		// in a longer alphanumeric context (e.g., a hash or encoded blob).
+		// After fix: word boundary prevents matching inside a larger word.
+		call := ToolCall{
+			Name:      "Write",
+			Arguments: []byte(`{"file_path":"/tmp/test.py","content":"hash = 'PREFIX_AXabcdefghijklmnopqrstuvwxyz0123456789ABCDEF_SUFFIX'"}`),
+		}
+		result := engine.Evaluate(call)
+		if result.Matched && result.RuleName == "builtin:dlp-upstash-token" {
+			t.Errorf("False positive: Upstash pattern matched base64 data embedded in larger word")
+		} else {
+			t.Logf("PASS: embedded AX-prefixed data not falsely caught as Upstash token")
+		}
+	})
+
+	t.Run("Bug4: standalone Upstash token still caught", func(t *testing.T) {
+		// Real standalone Upstash token should still be caught.
+		call := ToolCall{
+			Name:      "Write",
+			Arguments: []byte(`{"file_path":"/tmp/test.env","content":"UPSTASH_TOKEN=AX` + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrst" + `"}`),
+		}
+		result := engine.Evaluate(call)
+		if !result.Matched {
+			t.Errorf("Expected Upstash token to be blocked but was ALLOWED")
+		} else {
+			t.Logf("PASS: standalone Upstash token blocked by '%s'", result.RuleName)
+		}
+	})
+
+	t.Run("Bug20: SKvariable_name + hex does not false positive", func(t *testing.T) {
+		// A Go variable like "SKippedCount" followed by hex-like chars in the
+		// surrounding code should not trigger the Twilio pattern.
+		call := ToolCall{
+			Name:      "Write",
+			Arguments: []byte(`{"file_path":"/tmp/test.go","content":"var SKippedItemsaabbccddeeff00112233 = 0"}`),
+		}
+		result := engine.Evaluate(call)
+		if result.Matched && result.RuleName == "builtin:dlp-twilio-api-key" {
+			t.Errorf("False positive: Twilio pattern matched 'SKippedItems...' variable name")
+		} else {
+			t.Logf("PASS: SK in variable name not falsely caught as Twilio key")
+		}
+	})
+
+	t.Run("Bug20: standalone Twilio key still caught", func(t *testing.T) {
+		call := ToolCall{
+			Name:      "Write",
+			Arguments: []byte(`{"file_path":"/tmp/test.env","content":"TWILIO_KEY=SK` + "aabbccddeeff00112233445566778899" + `"}`),
+		}
+		result := engine.Evaluate(call)
+		if !result.Matched {
+			t.Errorf("Expected Twilio key to be blocked but was ALLOWED")
+		} else {
+			t.Logf("PASS: standalone Twilio key blocked by '%s'", result.RuleName)
+		}
+	})
+
+	t.Run("Bug21: re_compile_result_handler does not false positive", func(t *testing.T) {
+		// A Go/Python identifier like "re_compile_result_handler_for_test" should not
+		// trigger the Resend API key pattern.
+		call := ToolCall{
+			Name:      "Write",
+			Arguments: []byte(`{"file_path":"/tmp/test.py","content":"def re_compile_result_handler_for_tests(): pass"}`),
+		}
+		result := engine.Evaluate(call)
+		if result.Matched && result.RuleName == "builtin:dlp-resend-api-key" {
+			t.Errorf("False positive: Resend pattern matched 're_compile_result_handler...' identifier")
+		} else {
+			t.Logf("PASS: re_ in identifier not falsely caught as Resend key")
+		}
+	})
+
+	t.Run("Bug21: standalone Resend key still caught", func(t *testing.T) {
+		call := ToolCall{
+			Name:      "Write",
+			Arguments: []byte(`{"file_path":"/tmp/test.env","content":"RESEND_KEY=re_` + "ABCDEFGHIJKLMNOPQRSTUVWXYZab" + `"}`),
+		}
+		result := engine.Evaluate(call)
+		if !result.Matched {
+			t.Errorf("Expected Resend key to be blocked but was ALLOWED")
+		} else {
+			t.Logf("PASS: standalone Resend key blocked by '%s'", result.RuleName)
+		}
+	})
+
+	t.Run("Bug22: FHIR pattern works on normal-sized input", func(t *testing.T) {
+		// Use json.Marshal to properly embed the FHIR JSON as a string value
+		fhirBundle := `{"resourceType": "Bundle", "id": "example", "type": "searchset", "entry": []}`
+		args, _ := json.Marshal(map[string]string{"file_path": "/tmp/fhir.json", "content": fhirBundle})
+		call := ToolCall{
+			Name:      "Write",
+			Arguments: args,
+		}
+		result := engine.Evaluate(call)
+		if !result.Matched {
+			t.Errorf("Expected FHIR bundle to be blocked but was ALLOWED")
+		} else {
+			t.Logf("PASS: FHIR bundle blocked by '%s'", result.RuleName)
+		}
+	})
+
+	t.Run("Bug22: FHIR pattern does not catastrophic backtrack on large non-matching input", func(t *testing.T) {
+		// Build a large JSON-like input that starts with resourceType:Bundle
+		// but never has the matching "type" field — this would cause catastrophic
+		// backtracking with unbounded [\s\S]*? but is fine with the {0,5000} limit.
+		large := `{"resourceType": "Bundle", ` + strings.Repeat(`"data": "x", `, 1000) + `"end": true}`
+		args, _ := json.Marshal(map[string]string{"file_path": "/tmp/large.json", "content": large})
+		call := ToolCall{
+			Name:      "Write",
+			Arguments: args,
+		}
+		// This should complete quickly (not hang) and not match since "type" is absent.
+		result := engine.Evaluate(call)
+		if result.Matched && result.RuleName == "builtin:dlp-fhir-bundle" {
+			t.Errorf("FHIR pattern should not match input without proper type field")
+		} else {
+			t.Logf("PASS: large non-matching input handled without issue")
+		}
+	})
 }

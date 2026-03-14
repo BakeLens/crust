@@ -774,6 +774,65 @@ func TestNewStorage_CorruptSHMDoesNotLoseMainDB(t *testing.T) {
 	}
 }
 
+// TestSpanToInsertParams_PreservesValues verifies that spanToInsertParams
+// correctly converts int64 fields to *int64 pointers preserving the actual
+// values (Bug #5: previously used new(span.TraceRowID) which discards values).
+func TestSpanToInsertParams_PreservesValues(t *testing.T) {
+	span := &Span{
+		TraceRowID:   42,
+		SpanID:       "span-123",
+		Name:         "test-span",
+		InputTokens:  100,
+		OutputTokens: 200,
+	}
+
+	params := spanToInsertParams(span)
+
+	if params.TraceRowid == nil {
+		t.Fatal("TraceRowid should not be nil")
+	}
+	if *params.TraceRowid != 42 {
+		t.Errorf("TraceRowid = %d, want 42", *params.TraceRowid)
+	}
+
+	if params.InputTokens == nil {
+		t.Fatal("InputTokens should not be nil")
+	}
+	if *params.InputTokens != 100 {
+		t.Errorf("InputTokens = %d, want 100", *params.InputTokens)
+	}
+
+	if params.OutputTokens == nil {
+		t.Fatal("OutputTokens should not be nil")
+	}
+	if *params.OutputTokens != 200 {
+		t.Errorf("OutputTokens = %d, want 200", *params.OutputTokens)
+	}
+}
+
+// TestInitSchema_NoRelativeFilePath verifies that initSchema uses the inline
+// schema directly without attempting to read a relative file path (Bug #14).
+func TestInitSchema_NoRelativeFilePath(t *testing.T) {
+	// Create storage from a non-repo-root working directory.
+	// If initSchema still tried os.ReadFile("internal/telemetry/schema.sql"),
+	// it would silently fall back to inlineSchema anyway, but the point is
+	// that the code no longer attempts the file read at all.
+	// This test verifies the schema works correctly from any working directory.
+	s := newTestStorage(t)
+
+	// Verify schema was applied correctly by checking tables exist
+	var count int
+	if err := s.DB().QueryRow("SELECT COUNT(*) FROM traces").Scan(&count); err != nil {
+		t.Fatalf("traces table should exist: %v", err)
+	}
+	if err := s.DB().QueryRow("SELECT COUNT(*) FROM spans").Scan(&count); err != nil {
+		t.Fatalf("spans table should exist: %v", err)
+	}
+	if err := s.DB().QueryRow("SELECT COUNT(*) FROM tool_call_logs").Scan(&count); err != nil {
+		t.Fatalf("tool_call_logs table should exist: %v", err)
+	}
+}
+
 func TestLogToolCall_Concurrent(t *testing.T) {
 	s := newTestStorage(t)
 

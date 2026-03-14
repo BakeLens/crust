@@ -78,6 +78,47 @@ func (m *Matcher) Match(p string) bool {
 	return false
 }
 
+// NewHostMatcher creates a matcher for hostname patterns using '.' as separator.
+// This ensures that *.evil.com matches sub.evil.com but not sub.sub.evil.com.
+func NewHostMatcher(patterns []string) (*Matcher, error) {
+	m := &Matcher{
+		patterns: make([]glob.Glob, 0, len(patterns)),
+	}
+	for _, p := range patterns {
+		g, err := glob.Compile(strings.ToLower(p), '.')
+		if err != nil {
+			return nil, err
+		}
+		m.patterns = append(m.patterns, g)
+	}
+	return m, nil
+}
+
+// MatchHost checks if a hostname matches any pattern. Does not apply
+// filesystem-specific lowercasing (hostnames are always case-insensitive).
+func (m *Matcher) MatchHost(host string) bool {
+	if len(m.patterns) == 0 {
+		return false
+	}
+	host = strings.ToLower(host)
+	for _, pat := range m.patterns {
+		if pat.Match(host) {
+			return true
+		}
+	}
+	return false
+}
+
+// MatchAnyHost checks if any hostname matches, returns the first match.
+func (m *Matcher) MatchAnyHost(hosts []string) (matched bool, matchedHost string) {
+	for _, host := range hosts {
+		if m.MatchHost(host) {
+			return true, host
+		}
+	}
+	return false, ""
+}
+
 // containsGlob returns true if s contains unescaped glob metacharacters.
 func containsGlob(s string) bool {
 	return strings.ContainsAny(s, "*?[")

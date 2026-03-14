@@ -251,11 +251,11 @@ func compileOneRule(rule Rule) (compiledRule, error) {
 		}
 	}
 
-	// Compile host matcher (Block.Hosts)
+	// Compile host matcher (Block.Hosts) — uses '.' separator for domain names
 	var hostMatcher *Matcher
 	if len(rule.Block.Hosts) > 0 {
 		var err error
-		hostMatcher, err = NewMatcher(rule.Block.Hosts, nil)
+		hostMatcher, err = NewHostMatcher(rule.Block.Hosts)
 		if err != nil {
 			return compiledRule{}, fmt.Errorf("rule %q: %w", rule.Name, err)
 		}

@@ -2,7 +2,10 @@ package selfprotect
 
 import (
 	"regexp"
+	"strings"
 	"testing"
+
+	"github.com/BakeLens/crust/internal/rules"
 )
 
 // SECURITY: Check must block all loopback representations targeting Crust API.
@@ -320,6 +323,83 @@ func TestCheck_ExfilAllows(t *testing.T) {
 				t.Errorf("Check should allow %q but blocked with rule %s", tt.input, m.RuleName)
 			}
 		})
+	}
+}
+
+// SECURITY: Check must block double and triple URL-encoded bypass attempts.
+func TestCheck_DoubleURLEncodingBypass(t *testing.T) {
+	blocked := []struct {
+		name  string
+		input string
+	}{
+		// Double URL-encoding: %25XX → %XX → char
+		// "crust" = %63%72%75%73%74, double-encoded = %2563%2572%2575%2573%2574
+		{"double-encoded crust in API path", "localhost:8080/%2563%2572%2575%2573%2574/api"},
+		{"double-encoded crust in data path", "cat ~/.crust/%2563rust.db"},
+		// Double-encoded slash + crust
+		{"double-encoded path with crust", "127.0.0.1:8080%2F%2563%2572%2575%2573%2574"},
+		// Triple URL-encoding: %25 → %, then decode twice more
+		{"triple-encoded crust", "localhost:8080/%252563%252572%252575%252573%252574/api"},
+	}
+
+	for _, tt := range blocked {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Check(tt.input)
+			if m == nil {
+				t.Errorf("SECURITY: Check must block double/triple URL-encoded %q but returned nil", tt.input)
+			}
+		})
+	}
+}
+
+// TestVerifyRegexMatchesProduction ensures the verify script's hardcoded regex
+// fragments stay in sync with the production selfprotect.go patterns.
+// This catches drift between the two files (Bug #6 scenario).
+func TestVerifyRegexMatchesProduction(t *testing.T) {
+	prodAPI := selfProtectAPIRegex.String()
+
+	// 1. The API regex must use the wide character class [:/.\w~] not the narrow [:/]
+	if !strings.Contains(prodAPI, `[:/.\w~]`) {
+		t.Errorf("selfProtectAPIRegex missing wide char class [:/.\\.w~], got: %s", prodAPI)
+	}
+
+	// 2. The bare-0 branch must use [:/.]  not [:/]
+	if !strings.Contains(prodAPI, `://0[:/.]`) {
+		t.Errorf("selfProtectAPIRegex bare-0 branch missing dot in char class, got: %s", prodAPI)
+	}
+
+	// 3. Verify that every RebindingSuffix appears in the compiled regex.
+	for _, suffix := range rules.RebindingSuffixes {
+		core := strings.TrimPrefix(suffix, ".")
+		core = strings.TrimSuffix(core, ".io")
+		if !strings.Contains(prodAPI, core) {
+			t.Errorf("selfProtectAPIRegex missing rebinding suffix core %q from rules.RebindingSuffixes", core)
+		}
+	}
+
+	// 4. Verify that every RebindingExact domain name appears in the compiled regex.
+	for domain := range rules.RebindingExact {
+		parts := strings.SplitN(domain, ".", 2)
+		if len(parts) == 0 {
+			continue
+		}
+		name := parts[0]
+		if !strings.Contains(prodAPI, name) {
+			t.Errorf("selfProtectAPIRegex missing rebinding exact domain %q from rules.RebindingExact", domain)
+		}
+	}
+
+	// 5. Verify socket, data, binary, process, exfil regexes compile (smoke test).
+	for name, re := range map[string]*regexp.Regexp{
+		"socket":  selfProtectSocketRegex,
+		"data":    selfProtectDataRegex,
+		"binary":  selfProtectBinaryRegex,
+		"process": selfProtectProcessRegex,
+		"exfil":   selfProtectExfilRegex,
+	} {
+		if re.String() == "" {
+			t.Errorf("selfProtect%sRegex compiled to empty string", name)
+		}
 	}
 }
 

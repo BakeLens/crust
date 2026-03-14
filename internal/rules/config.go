@@ -250,11 +250,15 @@ func parseActions(ops []Operation) []Operation {
 
 // RuleSetConfig is the top-level YAML structure
 type RuleSetConfig struct {
-	Rules []RuleConfig `yaml:"rules"`
+	Version int          `yaml:"version"`
+	Rules   []RuleConfig `yaml:"rules"`
 }
 
 // Validate validates all rules in the set
 func (rs *RuleSetConfig) Validate() error {
+	if rs.Version != 0 && rs.Version != 1 {
+		return fmt.Errorf("unsupported version: %d (expected 1)", rs.Version)
+	}
 	names := make(map[string]bool)
 	for i, rule := range rs.Rules {
 		if err := rule.Validate(); err != nil {

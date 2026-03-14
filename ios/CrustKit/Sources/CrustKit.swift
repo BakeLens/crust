@@ -284,8 +284,8 @@ public final class CrustEngine: Sendable {
     }
 
     /// Whether streaming interception is supported.
-    /// Currently returns false — streaming requests are passed through
-    /// without tool call filtering. Use non-streaming mode for full security.
+    /// Returns true — streaming requests are transparently converted to
+    /// non-streaming for full security evaluation by the proxy.
     public var streamInterceptionSupported: Bool {
         LibcrustStreamInterceptionSupported()
     }
@@ -418,22 +418,45 @@ public final class CrustEngine: Sendable {
 /// - Streaming (SSE) responses are passed through without interception
 /// - The protocol must be registered before creating the URLSession
 public final class CrustURLProtocol: URLProtocol {
-    /// The Crust engine used for rule evaluation. Must be set before use.
-    public static var engine: CrustEngine?
+    // MARK: - Thread-safe static configuration
 
-    /// Hosts to intercept (e.g. ["api.anthropic.com", "api.openai.com"]).
-    /// Requests to other hosts pass through unmodified.
-    public static var interceptedHosts: Set<String> = [
+    private static let lock = NSLock()
+    private static var _engine: CrustEngine?
+    private static var _interceptedHosts: Set<String> = [
         "api.anthropic.com",
         "api.openai.com",
         "generativelanguage.googleapis.com",
     ]
+    private static var _blockMode: BlockMode = .remove
+
+    /// The Crust engine used for rule evaluation. Must be set before use.
+    public static var engine: CrustEngine? {
+        get { lock.withLock { _engine } }
+        set { lock.withLock { _engine = newValue } }
+    }
+
+    /// Hosts to intercept (e.g. ["api.anthropic.com", "api.openai.com"]).
+    /// Requests to other hosts pass through unmodified.
+    public static var interceptedHosts: Set<String> {
+        get { lock.withLock { _interceptedHosts } }
+        set { lock.withLock { _interceptedHosts = newValue } }
+    }
 
     /// Block mode for intercepted responses.
-    public static var blockMode: BlockMode = .remove
+    public static var blockMode: BlockMode {
+        get { lock.withLock { _blockMode } }
+        set { lock.withLock { _blockMode = newValue } }
+    }
 
     /// Key used to mark requests we've already handled (prevent infinite recursion).
     private static let handledKey = "com.bakelens.crust.handled"
+
+    /// Shared session for upstream requests (avoids per-request session leak).
+    private static let upstreamSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [] // no custom protocols — prevents recursion
+        return URLSession(configuration: config)
+    }()
 
     private var dataTask: URLSessionDataTask?
 
@@ -478,12 +501,7 @@ public final class CrustURLProtocol: URLProtocol {
         // Check if this is a streaming request.
         let isStreaming = Self.isStreamingRequest(request)
 
-        // Create a session that won't trigger this protocol again.
-        let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [] // no custom protocols — prevents recursion
-        let session = URLSession(configuration: config)
-
-        dataTask = session.dataTask(with: mutableRequest as URLRequest) { [weak self] data, response, error in
+        dataTask = Self.upstreamSession.dataTask(with: mutableRequest as URLRequest) { [weak self] data, response, error in
             guard let self else { return }
 
             if let error {

@@ -29,8 +29,8 @@ var selfProtectAPIRegex = regexp.MustCompile(
 		`[a-z0-9.-]*\.(?:nip|sslip|xip)\.io|` +
 		`(?:localtest|lvh|vcap)\.me|` +
 		`lacolhost\.com` +
-		`)[:/].*crust` +
-		`|://0[:/].*crust` +
+		`)[:/.\w~].*crust` +
+		`|://0[:/.].*crust` +
 		`|crust\w*://(?:` +
 		`localhost|` +
 		`127\.\d{1,3}\.\d{1,3}\.\d{1,3}|` +

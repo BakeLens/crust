@@ -83,6 +83,8 @@ var selfProtectSocketRegex = regexp.MustCompile(
 		`\bnc\s.*\s-U\s|` + // nc -U /path/to/socket (netcat)
 		`\bncat\s.*\s-U\s|` + // ncat -U /path/to/socket
 		`UNIX-CONNECT:|` + // socat UNIX-CONNECT:
+		`UNIX-CLIENT:|` + // socat UNIX-CLIENT:
+		`UNIX-LISTEN:|` + // socat UNIX-LISTEN: (API hijacking)
 		`UNIX:|` + // socat UNIX: (short alias)
 		`AF_UNIX|` + // Python/C socket code
 		`crust-api[-.]\S*\.sock|` + // socket filenames (crust-api-9090.sock etc.)
@@ -151,7 +153,17 @@ func Check(rawJSON string) *rules.MatchResult {
 	input := rules.NormalizeUnicode(rawJSON)
 
 	// URL-decode to catch %63%72%75%73%74 ("crust") bypass.
-	if decoded, err := url.QueryUnescape(input); err == nil && decoded != input {
+	// Loop to handle double/triple URL-encoding (e.g., %2563 → %63 → c).
+	// Max 3 iterations to prevent infinite loop on adversarial input.
+	decoded := input
+	for range 3 {
+		next, err := url.QueryUnescape(decoded)
+		if err != nil || next == decoded {
+			break
+		}
+		decoded = next
+	}
+	if decoded != input {
 		input = input + " " + decoded
 	}
 

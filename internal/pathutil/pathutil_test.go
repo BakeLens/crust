@@ -478,6 +478,65 @@ func FuzzExpandMSYS2Path(f *testing.F) {
 	})
 }
 
+func TestCleanPath_NullByteStripping(t *testing.T) {
+	tests := []struct {
+		name     string
+		in, want string
+	}{
+		{"null byte in middle", "/etc/passwd\x00.txt", "/etc/passwd.txt"},
+		{"null byte at start", "\x00/etc/passwd", "/etc/passwd"},
+		{"null byte at end", "/etc/passwd\x00", "/etc/passwd"},
+		{"multiple null bytes", "/etc/\x00pass\x00wd", "/etc/passwd"},
+		{"only null bytes", "\x00\x00\x00", ""},
+		{"null byte between components", "/home\x00/user", "/home/user"},
+		{"null byte bypass attempt", "/etc/passwd\x00.txt", "/etc/passwd.txt"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CleanPath(tt.in)
+			if got != tt.want {
+				t.Errorf("CleanPath(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasPathPrefixFS(t *testing.T) {
+	tests := []struct {
+		name          string
+		path, dir     string
+		caseSensitive bool
+		want          bool
+	}{
+		// Case-insensitive filesystem (macOS APFS, Windows NTFS)
+		{"case-insensitive exact match", "/Users/Secret", "/users/secret", false, true},
+		{"case-insensitive prefix match", "/Users/Secret/file.txt", "/users/secret", false, true},
+		{"case-insensitive no match", "/Users/Other", "/users/secret", false, false},
+		{"case-insensitive partial name no match", "/Users/SecretBackup", "/users/secret", false, false},
+
+		// Case-sensitive filesystem (Linux ext4)
+		{"case-sensitive exact match", "/home/user", "/home/user", true, true},
+		{"case-sensitive mismatch", "/home/User", "/home/user", true, false},
+		{"case-sensitive prefix match", "/home/user/docs", "/home/user", true, true},
+		{"case-sensitive prefix mismatch", "/home/User/docs", "/home/user", true, false},
+
+		// Edge cases
+		{"empty both", "", "", false, true},
+		{"empty path", "", "/home", false, false},
+		{"mixed case subdir", "/USERS/SECRET/SubDir/File", "/users/secret", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := FSInfo{CaseSensitive: tt.caseSensitive}
+			got := HasPathPrefixFS(tt.path, tt.dir, fs)
+			if got != tt.want {
+				t.Errorf("HasPathPrefixFS(%q, %q, {CaseSensitive: %v}) = %v, want %v",
+					tt.path, tt.dir, tt.caseSensitive, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHasExtFold(t *testing.T) {
 	tests := []struct {
 		name string

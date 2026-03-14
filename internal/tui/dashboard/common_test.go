@@ -139,6 +139,32 @@ func TestFetchSessionEvents(t *testing.T) {
 	}
 }
 
+func TestTruncate(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		n    int
+		want string
+	}{
+		{"normal", "hello world", 5, "hell…"},
+		{"fits", "hello", 10, "hello"},
+		{"exact", "hello", 5, "hello"},
+		{"zero", "hello", 0, ""},
+		{"negative", "hello", -1, ""},
+		{"one", "hello", 1, "…"},
+		{"empty_string", "", 5, ""},
+		{"empty_zero", "", 0, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncate(tt.s, tt.n)
+			if got != tt.want {
+				t.Errorf("truncate(%q, %d) = %q, want %q", tt.s, tt.n, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRenderPlain(t *testing.T) {
 	tests := []struct {
 		name string

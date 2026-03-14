@@ -192,6 +192,7 @@ func (p *Provider) EndLLMSpan(spanCtx *SpanContext, data LLMSpanData) {
 	attrsJSON, err := json.Marshal(attrs)
 	if err != nil {
 		log.Debug("Failed to marshal span attributes: %v", err)
+		attrsJSON = []byte("{}")
 	}
 
 	// Determine status code
@@ -241,6 +242,7 @@ func (p *Provider) buildToolSpan(parentSpanID types.SpanID, traceID types.TraceI
 	attrsJSON, err := json.Marshal(attrs)
 	if err != nil {
 		log.Debug("Failed to marshal tool span attributes: %v", err)
+		attrsJSON = []byte("{}")
 	}
 
 	return &Span{
@@ -272,12 +274,15 @@ func truncateString(s string, maxLen int) string {
 	return string(runes[:maxLen]) + "...[truncated]"
 }
 
-// generateSpanID generates a cryptographically secure span ID
+// generateSpanID generates a cryptographically secure span ID.
+// crypto/rand.Read never returns an error on modern platforms (Linux 3.17+,
+// macOS, Windows), so the fallback is purely defensive. If it ever fires,
+// we panic rather than silently producing a predictable ID that could
+// collide or be guessed.
 func generateSpanID() string {
 	b := make([]byte, 8)
 	if _, err := crypto_rand.Read(b); err != nil {
-		// Fallback should never happen, but handle gracefully
-		return hex.EncodeToString([]byte(time.Now().Format(time.RFC3339Nano))[:8])
+		panic("crypto/rand.Read failed: " + err.Error())
 	}
 	return hex.EncodeToString(b)
 }

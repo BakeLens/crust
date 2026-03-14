@@ -822,7 +822,7 @@ func FuzzHostRegexBypass(f *testing.F) {
 		{
 			Name: "block-internal-net",
 			Block: Block{
-				Hosts: []string{"10.*", "192.168.*", "172.16.*"},
+				Hosts: []string{"10.**", "192.168.**", "172.16.**"},
 			},
 			Actions:  []Operation{OpNetwork},
 			Message:  "blocked SSRF",

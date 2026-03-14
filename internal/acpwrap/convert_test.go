@@ -57,6 +57,28 @@ func TestAcpMethodToToolCall_Unknown(t *testing.T) {
 	}
 }
 
+func TestAcpMethodToToolCall_EmptyCommand(t *testing.T) {
+	// Bug #18: terminal/create with empty command should return an error.
+	tests := []struct {
+		name   string
+		params string
+	}{
+		{"empty_command", `{"sessionId":"s1","command":""}`},
+		{"missing_command", `{"sessionId":"s1"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tc, err := ACPMethodToToolCall("terminal/create", json.RawMessage(tt.params))
+			if err == nil {
+				t.Error("expected error for empty command, got nil")
+			}
+			if tc != nil {
+				t.Errorf("expected nil ToolCall, got %+v", tc)
+			}
+		})
+	}
+}
+
 func TestAcpMethodToToolCall_MalformedParams(t *testing.T) {
 	methods := []string{"fs/read_text_file", "fs/write_text_file", "terminal/create"}
 	badInputs := []json.RawMessage{

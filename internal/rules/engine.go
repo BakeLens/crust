@@ -428,10 +428,8 @@ func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
 	if info.Content != "" {
 		info.Content = NormalizeUnicode(info.Content)
 	}
-	// Only normalize RawJSON if Content is empty (DLP/content-rules fall back to RawJSON).
-	// When Content is set, it's already normalized above and is a substring of RawJSON —
-	// normalizing both doubles the work for no security benefit.
-	if info.RawJSON != "" && info.Content == "" {
+	// Always normalize RawJSON — DLP also scans it to catch secrets in non-content fields.
+	if info.RawJSON != "" {
 		info.RawJSON = NormalizeUnicode(info.RawJSON)
 	}
 
@@ -458,12 +456,14 @@ func (e *Engine) validateContent(info *ExtractedInfo) *MatchResult {
 	}
 
 	// Step 8: DLP — detect API keys/tokens in all operations.
-	// Prefer Content (already normalized) over RawJSON (may be unnormalized when Content is set).
-	dlpContent := info.Content
-	if dlpContent == "" {
-		dlpContent = info.RawJSON
+	// Scan Content first (clean text, better for structured patterns like FHIR).
+	// Then scan RawJSON to catch secrets in non-content fields.
+	if info.Content != "" {
+		if m := e.ScanDLP(info.Content); m != nil {
+			return m
+		}
 	}
-	return e.ScanDLP(dlpContent)
+	return e.ScanDLP(info.RawJSON)
 }
 
 // resolvePaths runs path resolution (steps 9-11): prepare paths,
@@ -577,7 +577,7 @@ func (e *Engine) evaluateOperationRules(rules []compiledRule, info ExtractedInfo
 		// This enables host rules to fire for scp (OpCopy), rsync, etc.
 		// The HasAction check at the top of this loop still scopes correctly.
 		if compiled.HostMatcher != nil && len(info.Hosts) > 0 {
-			matched, matchedHost := compiled.HostMatcher.MatchAny(info.Hosts)
+			matched, matchedHost := compiled.HostMatcher.MatchAnyHost(info.Hosts)
 			if matched {
 				e.incrementHitCount(compiled.Rule.Name)
 				return blockResult(&compiled.Rule, matchedHost)

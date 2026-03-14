@@ -4996,6 +4996,13 @@ func TestExtract_MobileTools(t *testing.T) {
 			wantPaths: []string{"mobile://purchase/premium_monthly"},
 		},
 		{
+			name:      "purchase_item with item_id (normalized to itemid)",
+			toolName:  "purchase_item",
+			args:      map[string]any{"item_id": "gold_pack"},
+			wantOp:    OpExecute,
+			wantPaths: []string{"mobile://purchase/gold_pack"},
+		},
+		{
 			name:      "in_app_purchase without product_id",
 			toolName:  "in_app_purchase",
 			args:      map[string]any{},

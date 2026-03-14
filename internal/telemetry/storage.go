@@ -158,15 +158,7 @@ func (s *Storage) Queries() *db.Queries {
 }
 
 func (s *Storage) initSchema() error {
-	// Read schema from embedded file or inline
-	schemaFile := "internal/telemetry/schema.sql"
-	schema, err := os.ReadFile(schemaFile)
-	if err != nil {
-		// Fallback to inline schema if file not found
-		schema = []byte(inlineSchema)
-	}
-
-	_, err = s.conn.ExecContext(context.Background(), string(schema))
+	_, err := s.conn.ExecContext(context.Background(), inlineSchema)
 	if err != nil {
 		return err
 	}

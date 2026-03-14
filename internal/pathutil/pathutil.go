@@ -134,6 +134,13 @@ func CleanPath(p string) string {
 		return ""
 	}
 
+	// Strip null bytes to prevent rule bypass: "/etc/passwd\x00.txt"
+	// matches as ".txt" extension but OS opens "/etc/passwd".
+	p = strings.ReplaceAll(p, "\x00", "")
+	if p == "" {
+		return ""
+	}
+
 	// Ensure forward slashes before cleaning.
 	p = ToSlash(p)
 
@@ -188,6 +195,11 @@ func HasExtFold(name, ext string) bool {
 // Prevents false prefix matches like dir="/rules" matching path="/rules-backup".
 // Accepts both "/" and "\" as separators so it works with both native paths
 // (from filepath.Abs/Join) and normalized paths (from pathutil.CleanPath/ToSlash).
+//
+// NOTE: This function compares strings literally — it does NOT account for
+// filesystem case sensitivity. On case-insensitive filesystems (macOS APFS,
+// Windows NTFS), callers must either pre-lowercase both arguments via
+// FSInfo.Lower() or use HasPathPrefixFS instead.
 func HasPathPrefix(p, dir string) bool {
 	if p == dir {
 		return true
@@ -199,6 +211,14 @@ func HasPathPrefix(p, dir string) bool {
 		return strings.HasPrefix(p, dir+`\`)
 	}
 	return false
+}
+
+// HasPathPrefixFS is like HasPathPrefix but applies FSInfo.Lower() to both
+// arguments before comparison. This correctly handles case-insensitive
+// filesystems (macOS APFS, Windows NTFS) without requiring callers to
+// pre-lowercase paths.
+func HasPathPrefixFS(p, dir string, fs FSInfo) bool {
+	return HasPathPrefix(fs.Lower(p), fs.Lower(dir))
 }
 
 // ExpandMSYS2Path converts an MSYS2/Git Bash mount-point path to a Windows

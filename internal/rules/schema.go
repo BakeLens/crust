@@ -23,7 +23,7 @@ type Rule struct {
 	Description string      `yaml:"description,omitempty" json:"description,omitempty"`
 	Enabled     *bool       `yaml:"enabled,omitempty" json:"enabled,omitempty"`   // default true
 	Locked      *bool       `yaml:"locked,omitempty" json:"locked,omitempty"`     // locked rules survive --disable-builtin
-	Priority    int         `yaml:"priority,omitempty" json:"priority,omitempty"` // lower = higher priority, default 50
+	Priority    *int        `yaml:"priority,omitempty" json:"priority,omitempty"` // lower = higher priority, default 50
 	Block       Block       `yaml:"block" json:"block"`
 	Actions     []Operation `yaml:"actions" json:"actions"`
 	Message     string      `yaml:"message" json:"message"`
@@ -108,11 +108,14 @@ var lockedTrue = func() *bool { t := true; return &t }()
 
 // GetPriority returns the rule priority (default 50)
 func (r *Rule) GetPriority() int {
-	if r.Priority == 0 {
+	if r.Priority == nil {
 		return DefaultRulePriority
 	}
-	return r.Priority
+	return *r.Priority
 }
+
+// IntPtr is a convenience helper for creating *int values in Go-constructed rules.
+func IntPtr(v int) *int { return new(v) }
 
 // GetSeverity returns the rule severity (default critical)
 func (r *Rule) GetSeverity() Severity {

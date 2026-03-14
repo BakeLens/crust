@@ -223,7 +223,7 @@ var dlpPatterns = []dlpPattern{
 	// Twilio
 	{
 		name:    "builtin:dlp-twilio-api-key",
-		re:      regexp.MustCompile(`SK[a-fA-F0-9]{32}`),
+		re:      regexp.MustCompile(`\bSK[a-fA-F0-9]{32}\b`),
 		message: "Cannot write Twilio API key — potential credential leak",
 	},
 
@@ -258,7 +258,7 @@ var dlpPatterns = []dlpPattern{
 	// Resend
 	{
 		name:    "builtin:dlp-resend-api-key",
-		re:      regexp.MustCompile(`re_[A-Za-z0-9]{20,}`),
+		re:      regexp.MustCompile(`\bre_[A-Za-z0-9]{20,}\b`),
 		message: "Cannot write Resend API key — potential credential leak",
 	},
 
@@ -286,15 +286,18 @@ var dlpPatterns = []dlpPattern{
 	// Upstash
 	{
 		name:    "builtin:dlp-upstash-token",
-		re:      regexp.MustCompile(`AX[A-Za-z0-9]{40,}`),
+		re:      regexp.MustCompile(`\bAX[A-Za-z0-9]{40,}\b`),
 		message: "Cannot write Upstash token — potential credential leak",
 	},
 
-	// Turso/LibSQL
+	// JWT token — catches all JWTs (header starts with eyJhbGciOi = base64 of {"alg":").
+	// This intentionally matches any JWT, not just Turso/LibSQL tokens, because
+	// JWTs in source code / tool output are almost always auth tokens that should
+	// not be leaked. Renaming from "Turso/LibSQL" to make the scope clear.
 	{
-		name:    "builtin:dlp-turso-token",
+		name:    "builtin:dlp-jwt-token",
 		re:      regexp.MustCompile(`eyJhbGciOi[A-Za-z0-9_\-]{50,}\.[A-Za-z0-9_\-]{50,}\.[A-Za-z0-9_\-]{20,}`),
-		message: "Cannot write Turso/LibSQL auth token — potential credential leak",
+		message: "Cannot write JWT token — potential credential leak",
 	},
 
 	// Neon

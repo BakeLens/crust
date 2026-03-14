@@ -454,7 +454,7 @@ func mobileSharePath(args map[string]any) string {
 // mobilePurchasePath builds a virtual purchase path from args.
 // e.g., {"product_id": "premium_monthly"} → "mobile://purchase/premium_monthly"
 func mobilePurchasePath(args map[string]any) string {
-	for _, field := range []string{"product_id", "productid", "sku", "item", "item_id", "name", "identifier"} {
+	for _, field := range []string{"productid", "sku", "item", "itemid", "name", "identifier"} {
 		if val, ok := args[field]; ok {
 			if strs := fieldStrings(val); len(strs) > 0 {
 				return MobileVirtualPathPrefix + "purchase/" + sanitizeVirtualPathSegment(strs[0])

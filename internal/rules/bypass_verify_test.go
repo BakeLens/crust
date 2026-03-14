@@ -800,7 +800,7 @@ func TestBypassFix_SymlinkMatching(t *testing.T) {
 	rules := []Rule{
 		{
 			Name:     "test-symlink-path-rule",
-			Priority: 10, // higher priority (lower number) so it wins when both match
+			Priority: new(10), // higher priority (lower number) so it wins when both match
 			Block: Block{
 				Paths: []string{"/etc/passwd"},
 			},
@@ -810,7 +810,7 @@ func TestBypassFix_SymlinkMatching(t *testing.T) {
 		},
 		{
 			Name:     "test-real-path-rule",
-			Priority: 20,
+			Priority: new(20),
 			Block: Block{
 				Paths: []string{"/private/etc/passwd"},
 			},

@@ -180,14 +180,32 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if reqBody.Stream {
-		// Streaming: pass through SSE events directly.
-		// Tool call interception for streaming requires buffering the full
-		// stream, which we leave for a future enhancement.
-		streamPassthrough(w, resp)
-		return
+		// Force non-streaming: rewrite stream=false, re-send to upstream,
+		// and intercept the complete response. This ensures all tool calls
+		// and text content go through security evaluation.
+		_ = resp.Body.Close()
+
+		nonStreamBody := forceNonStreaming(bodyBytes)
+		upReq2, err := http.NewRequestWithContext(r.Context(), r.Method, target.String(), bytes.NewReader(nonStreamBody))
+		if err != nil {
+			http.Error(w, "failed to create non-streaming request", http.StatusInternalServerError)
+			return
+		}
+		copyHeaders(upReq2.Header, r.Header)
+		stripHopByHop(upReq2.Header)
+		upReq2.ContentLength = int64(len(nonStreamBody))
+		upReq2.Host = target.Host
+		injectProxyAuth(upReq2.Header, proxy.apiKey, at)
+
+		resp, err = client.Do(upReq2)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("upstream error: %v", err), http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
 	}
 
-	// Non-streaming: read response, intercept, return.
+	// Read response, intercept, return.
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody+1))
 	if err != nil {
 		http.Error(w, "failed to read upstream response", http.StatusBadGateway)
@@ -237,29 +255,6 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter -- reverse proxy forwarding JSON API responses, not rendering HTML
 	_, _ = w.Write(respBody)
-}
-
-// streamPassthrough forwards an SSE stream from upstream to the client.
-func streamPassthrough(w http.ResponseWriter, resp *http.Response) {
-	copyHeaders(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-
-	flusher, canFlush := w.(http.Flusher)
-
-	buf := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter -- streaming proxy pass-through, not HTML
-			_, _ = w.Write(buf[:n])
-			if canFlush {
-				flusher.Flush()
-			}
-		}
-		if err != nil {
-			break
-		}
-	}
 }
 
 // detectAPITypeFromPath guesses API type from the request path.
@@ -322,6 +317,25 @@ func singleJoinSlash(base, extra string) string {
 	return base + extra
 }
 
+// forceNonStreaming returns a copy of the JSON body with "stream" set to false.
+// Preserves all other fields byte-for-byte via json.RawMessage.
+func forceNonStreaming(body []byte) []byte {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil || raw == nil {
+		return body // best-effort: return unchanged on parse failure
+	}
+	raw["stream"] = json.RawMessage("false")
+	// Also remove stream_options to avoid upstream errors.
+	delete(raw, "stream_options")
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(raw); err != nil {
+		return body
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n")
+}
+
 // decompressGzip decompresses a gzip'd byte slice.
 func decompressGzip(data []byte) ([]byte, error) {
 	r, err := gzip.NewReader(bytes.NewReader(data))
@@ -355,26 +369,8 @@ func EvaluateStream(responseBody string, apiType string) string {
 	return InterceptResponse(responseBody, apiType, "remove")
 }
 
-// --- Streaming interception (placeholder for future) ---
-
-// StreamCallback is called for each intercepted SSE event.
-// gomobile does not support function parameters, so streaming interception
-// will use a polling model or a separate listener in a future release.
-
-// startStreamInterceptor is a placeholder for future streaming support.
-// The planned approach:
-//   - Buffer content_block_start/delta/stop events
-//   - Reassemble complete tool calls
-//   - Evaluate each via the rule engine
-//   - Drop blocked tool_use content blocks from the stream
-//   - Forward allowed events with correct indexing
-//
-// This is non-trivial due to SSE framing, partial JSON deltas, and the
-// need to maintain backpressure. For now, streaming requests are passed
-// through without interception — use non-streaming mode for full security.
-
-// StreamInterceptionSupported returns false until streaming interception
-// is implemented.
+// StreamInterceptionSupported returns true — streaming requests are
+// transparently converted to non-streaming for full security evaluation.
 func StreamInterceptionSupported() bool {
-	return false
+	return true
 }

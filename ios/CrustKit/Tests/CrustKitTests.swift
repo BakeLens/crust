@@ -327,8 +327,8 @@ final class CrustKitTests: XCTestCase {
         XCTAssertNil(engine.proxyBaseURL)
     }
 
-    func testStreamInterceptionNotYetSupported() {
-        XCTAssertFalse(engine.streamInterceptionSupported)
+    func testStreamInterceptionSupported() {
+        XCTAssertTrue(engine.streamInterceptionSupported)
     }
 
     // MARK: - Async API

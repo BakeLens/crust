@@ -94,7 +94,7 @@ func sanitizeAttributes(raw json.RawMessage) json.RawMessage {
 
 	var attrs map[string]any
 	if err := json.Unmarshal(raw, &attrs); err != nil {
-		return raw // unparseable — return as-is rather than fail
+		return nil // unparseable — discard to avoid leaking unsanitized data
 	}
 
 	changed := false

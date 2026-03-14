@@ -24,6 +24,8 @@ var (
 // Precedence: NO_COLOR > TTY detection > terminal capability detection.
 func initPlainMode() {
 	plainOnce.Do(func() {
+		plainMu.Lock()
+		defer plainMu.Unlock()
 		// NO_COLOR wins — https://no-color.org
 		if _, ok := os.LookupEnv("NO_COLOR"); ok {
 			plainMode = true
