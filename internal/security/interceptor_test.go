@@ -1535,16 +1535,23 @@ func TestOpenAIResponsesDLP_SecretRedacted(t *testing.T) {
 
 // --- E2E: DLP + tool blocking together, warning text not DLP-scanned ---
 
+// dlpTriggerMessage is a rule message that itself triggers the GitHub token DLP
+// pattern (ghp_ + 36 chars). If DLP scans the warning text containing this message,
+// the warning will be redacted — exactly the regression we're testing against.
+const dlpTriggerMessage = "Blocked ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
 // TestAnthropicDLP_WarningNotRedacted verifies that Crust's own warning text blocks
 // (appended when tool calls are blocked) are never fed through DLP scanning.
-// Regression test for a bug where DLP ran after warning append.
+// Regression test: with the old (buggy) ordering (DLP after warning append),
+// the warning containing dlpTriggerMessage would be redacted. With the fix
+// (DLP before warning append), the warning passes through intact.
 func TestAnthropicDLP_WarningNotRedacted(t *testing.T) {
 	rulesYAML := `
 rules:
   - name: block-env
     block: "**/.env"
     actions: [read]
-    message: "Credential file access blocked"
+    message: "` + dlpTriggerMessage + `"
     severity: critical
 `
 	interceptor := createTestInterceptor(t, rulesYAML)
@@ -1569,13 +1576,14 @@ rules:
 	if len(parsed.Content) != 2 {
 		t.Fatalf("expected 2 content blocks, got %d", len(parsed.Content))
 	}
-	// The warning block should NOT be redacted.
+	// The warning block should NOT be redacted — the DLP-triggering text is
+	// in Crust's own warning, which must not be scanned.
 	warningBlock := parsed.Content[1]
 	if strings.Contains(warningBlock.Text, "[REDACTED by Crust:") {
 		t.Errorf("Crust's warning block was incorrectly DLP-scanned and redacted: %s", warningBlock.Text)
 	}
-	if !strings.Contains(warningBlock.Text, "Credential file access blocked") {
-		t.Errorf("warning should mention the block message, got: %s", warningBlock.Text)
+	if !strings.Contains(warningBlock.Text, dlpTriggerMessage) {
+		t.Errorf("warning should contain the rule message, got: %s", warningBlock.Text)
 	}
 }
 
@@ -1627,14 +1635,14 @@ rules:
 }
 
 // TestOpenAIDLP_WarningNotRedacted verifies OpenAI Chat path: DLP runs before
-// warning text is appended, so warning is never scanned.
+// warning text is appended, so the DLP-triggering warning is never scanned.
 func TestOpenAIDLP_WarningNotRedacted(t *testing.T) {
 	rulesYAML := `
 rules:
   - name: block-env
     block: "**/.env"
     actions: [read]
-    message: "Credential file access blocked"
+    message: "` + dlpTriggerMessage + `"
     severity: critical
 `
 	interceptor := createTestInterceptor(t, rulesYAML)
@@ -1660,20 +1668,21 @@ rules:
 	if strings.Contains(content, "[REDACTED by Crust:") {
 		t.Errorf("Crust's warning was incorrectly DLP-scanned: %s", content)
 	}
-	if !strings.Contains(content, "Credential file access blocked") {
-		t.Errorf("warning should mention the block message, got: %s", content)
+	if !strings.Contains(content, dlpTriggerMessage) {
+		t.Errorf("warning should contain the rule message, got: %s", content)
 	}
 }
 
 // TestOpenAIResponsesDLP_WarningNotRedacted verifies that warning output_text
-// blocks appended by Crust are not fed through DLP.
+// blocks appended by Crust are not fed through DLP. Uses dlpTriggerMessage
+// to ensure the test would fail if DLP scanned the warning.
 func TestOpenAIResponsesDLP_WarningNotRedacted(t *testing.T) {
 	rulesYAML := `
 rules:
   - name: block-env
     block: "**/.env"
     actions: [read]
-    message: "Credential file access blocked"
+    message: "` + dlpTriggerMessage + `"
     severity: critical
 `
 	interceptor := createTestInterceptor(t, rulesYAML)
@@ -1707,7 +1716,7 @@ rules:
 	if strings.Contains(warningText, "[REDACTED by Crust:") {
 		t.Errorf("Crust's warning was incorrectly DLP-scanned: %s", warningText)
 	}
-	if !strings.Contains(warningText, "Credential file access blocked") {
-		t.Errorf("warning should mention the block message, got: %s", warningText)
+	if !strings.Contains(warningText, dlpTriggerMessage) {
+		t.Errorf("warning should contain the rule message, got: %s", warningText)
 	}
 }

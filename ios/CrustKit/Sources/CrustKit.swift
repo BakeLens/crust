@@ -209,6 +209,10 @@ public final class CrustEngine: Sendable {
 
     /// Scan clipboard contents for secrets.
     /// Uses UIPasteboard on iOS; returns not-matched on non-iOS platforms.
+    ///
+    /// - Important: Must be called from the main thread (UIPasteboard requirement).
+    ///   Use ``scanClipboardAsync()`` from background contexts.
+    @MainActor
     public func scanClipboard() -> ContentScanResult {
         #if canImport(UIKit) && !os(macOS)
             guard let text = UIPasteboard.general.string, !text.isEmpty else {
