@@ -184,7 +184,7 @@ let result = await engine.evaluateAsync(toolName: "read_contacts", arguments: [:
 print(result.matched)  // true — blocked by protect-mobile-pii
 ```
 
-**Mobile-specific protections** (7 locked rules + shared rules):
+**Mobile-specific protections** (9 locked rules):
 
 | Category | Blocked Tools | Rule |
 |----------|--------------|------|
