@@ -304,5 +304,40 @@ var dlpPatterns = []dlpPattern{
 		message: "Cannot write Neon database token — potential credential leak",
 	},
 
+	// ── Mobile PII / data exfiltration patterns ──
+	// These detect structured personal data formats in write/share/network
+	// operations, catching exfiltration of contacts, calendar, health, and
+	// location data even if the initial read was somehow allowed.
+
+	// vCard (RFC 6350) — contact data export format
+	{
+		name:    "builtin:dlp-vcard",
+		re:      regexp.MustCompile(`BEGIN:VCARD\r?\nVERSION:\d`),
+		message: "Cannot write vCard data — potential contact information exfiltration",
+	},
+
+	// iCalendar (RFC 5545) — calendar event export format
+	{
+		name:    "builtin:dlp-icalendar",
+		re:      regexp.MustCompile(`BEGIN:VCALENDAR\r?\nVERSION:\d`),
+		message: "Cannot write iCalendar data — potential calendar exfiltration",
+	},
+
+	// Apple mobileconfig (Configuration Profile)
+	// These XML plists can enroll devices in MDM, install root CAs,
+	// configure VPN, or install enterprise apps — a social engineering vector.
+	{
+		name:    "builtin:dlp-mobileconfig",
+		re:      regexp.MustCompile(`<key>PayloadType</key>\s*<string>Configuration</string>`),
+		message: "Cannot write Apple Configuration Profile — potential MDM enrollment attack",
+	},
+
+	// HL7 FHIR health data bundle — structured health records
+	{
+		name:    "builtin:dlp-fhir-bundle",
+		re:      regexp.MustCompile(`"resourceType"\s*:\s*"Bundle"[\s\S]*?"type"\s*:\s*"(?:searchset|collection|document)"`),
+		message: "Cannot write FHIR health data bundle — potential health record exfiltration",
+	},
+
 	// Add new patterns above this line.
 }

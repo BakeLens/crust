@@ -225,7 +225,7 @@ In stdio proxy modes (MCP Gateway, ACP Wrap, Auto-detect), DLP also scans **serv
 | Turso/LibSQL | Auth tokens (JWT format) |
 | Neon | Database tokens (`neon_...`) |
 
-Tier 1 patterns (42 hardcoded) are sourced from [gitleaks v8.24](https://github.com/gitleaks/gitleaks) and extended for newer services. See `internal/rules/dlp.go` for the full list.
+Tier 1 patterns (46 hardcoded) are sourced from [gitleaks v8.24](https://github.com/gitleaks/gitleaks) and extended for newer services and mobile PII formats (vCard, iCalendar, FHIR health data, Apple Configuration Profiles). See `internal/rules/dlp.go` for the full list.
 
 [gitleaks](https://github.com/gitleaks/gitleaks) is integrated as an in-process Go library, providing 200+ additional token formats beyond the hardcoded patterns. No external binary is required.
 

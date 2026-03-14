@@ -64,9 +64,56 @@ jobs:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}
 
+  ios:
+    name: Build iOS xcframework
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          gomobile init
+
+      - name: Build Libcrust.xcframework
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          COMMIT="${GITHUB_SHA:0:7}"
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gomobile bind \
+            -target ios \
+            -tags libcrust \
+            -ldflags "-X github.com/BakeLens/crust/pkg/libcrust.Version=${VERSION} -X github.com/BakeLens/crust/pkg/libcrust.Commit=${COMMIT} -X github.com/BakeLens/crust/pkg/libcrust.BuildDate=${BUILD_DATE}" \
+            -o build/ios/Libcrust.xcframework \
+            ./pkg/libcrust/
+
+      - name: Zip xcframework
+        run: |
+          cd build/ios
+          zip -r Libcrust.xcframework.zip Libcrust.xcframework
+
+      - name: Compute checksum
+        run: |
+          shasum -a 256 build/ios/Libcrust.xcframework.zip | awk '{print $1}' > build/ios/Libcrust.xcframework.zip.sha256
+          echo "XCFRAMEWORK_CHECKSUM=$(cat build/ios/Libcrust.xcframework.zip.sha256)" >> "$GITHUB_ENV"
+          echo "xcframework checksum: $(cat build/ios/Libcrust.xcframework.zip.sha256)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Libcrust.xcframework.zip
+          path: |
+            build/ios/Libcrust.xcframework.zip
+            build/ios/Libcrust.xcframework.zip.sha256
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, ios]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8

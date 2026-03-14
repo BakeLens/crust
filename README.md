@@ -158,7 +158,9 @@ Supports JetBrains IDEs and other ACP-compatible editors. See the [ACP setup gui
 
 ### iOS / Mobile
 
-Crust ships as a native iOS library (`CrustKit`) for embedding in mobile apps. The same rule engine that protects desktop agents also protects mobile AI agents — blocking PII access, keychain theft, clipboard exfiltration, and sensitive URL scheme invocations.
+Crust ships as a native iOS 15+ library (`CrustKit`) for embedding in mobile apps. The same rule engine that protects desktop agents also protects mobile AI agents.
+
+**Three integration paths** — pick one:
 
 ```swift
 import CrustKit
@@ -166,34 +168,54 @@ import CrustKit
 let engine = CrustEngine()
 try engine.initialize()
 
-// Blocked: protect-mobile-pii
-let result = engine.evaluate(toolName: "read_contacts", arguments: [:])
-print(result.matched)  // true
+// ── Option 1: Local reverse proxy ──
+// Best when your AI SDK doesn't use URLSession or you want explicit control.
+try engine.startProxy(port: 8080, upstreamURL: "https://api.anthropic.com")
+// Point your AI SDK base URL to http://127.0.0.1:8080
 
-// Blocked: protect-os-keychains (unified desktop + mobile rule)
-let keychain = engine.evaluate(toolName: "keychain_get", arguments: ["key": "api_token"])
-print(keychain.matched)  // true
+// ── Option 2: URLProtocol (zero-config) ──
+// Best when your AI SDK uses URLSession — no base URL change needed.
+CrustURLProtocol.engine = engine
+let session = URLSession(configuration: .crustProtected)
 
-// Allowed: safe URL scheme
-let https = engine.evaluate(toolName: "open_url", arguments: ["url": "https://example.com"])
-print(https.matched)  // false
+// ── Option 3: Direct evaluation ──
+// Best for custom integrations or manual checks.
+let result = await engine.evaluateAsync(toolName: "read_contacts", arguments: [:])
+print(result.matched)  // true — blocked by protect-mobile-pii
 ```
 
-**Build the xcframework:**
+**Mobile-specific protections** (9 locked rules):
+
+| Category | Blocked Tools | Rule |
+|----------|--------------|------|
+| PII | contacts, photos, calendar, location, health, camera, microphone, call log, SMS | `protect-mobile-pii` |
+| Keychain | keychain read/write/delete | `protect-os-keychains` |
+| Clipboard | clipboard read (writes allowed) | `protect-mobile-clipboard` |
+| URL Schemes | `tel:`, `sms:`, `facetime:`, `itms-services:`, `app-settings:` | `protect-mobile-url-schemes` |
+| Hardware | Bluetooth scan/connect, NFC read/write | `protect-mobile-hardware` |
+| Biometric | Face ID, Touch ID, biometric auth | `protect-mobile-biometric` |
+| Purchases | in-app purchases, financial transactions | `protect-mobile-purchases` |
+| Persistence | background task scheduling | `protect-persistence` |
+| Notifications | push/local notification sending | (user-configurable) |
+
+**Installation:**
 
 ```bash
-./scripts/build-ios.sh    # produces Libcrust.xcframework (~78MB, device + simulator)
+# Local development — build the xcframework
+./scripts/build-ios.sh
+
+# Then add ios/CrustKit/ as a local Swift Package in Xcode
 ```
 
-Add `ios/CrustKit/` as a local Swift Package in Xcode. The package depends on the xcframework and provides a type-safe Swift API with Codable result types.
+For release builds, `Libcrust.xcframework.zip` is attached to each [GitHub release](https://github.com/BakeLens/crust/releases) with a SHA-256 checksum for use as a remote SPM binary target.
 
-Mobile and desktop rules are unified using virtual paths (`mobile://`) — the same YAML file protects both platforms. See [`internal/rules/builtin/security.yaml`](internal/rules/builtin/security.yaml) for all rules.
+Mobile and desktop rules are unified using virtual paths (`mobile://`) — the same YAML file protects both platforms. See [`internal/rules/builtin/security.yaml`](internal/rules/builtin/security.yaml) for all 33 rules.
 
 ## Protection
 
 ### Built-in Rules
 
-Crust ships with **30 security rules** (27 locked, 3 user-disablable) and **42 DLP token-detection patterns** out of the box:
+Crust ships with **33 security rules** (30 locked, 3 user-disablable) and **46 DLP token-detection patterns** out of the box:
 
 | Category | What's Protected |
 |----------|-----------------|
@@ -204,7 +226,7 @@ Crust ships with **30 security rules** (27 locked, 3 user-disablable) and **42 D
 | **Package Tokens** | npm, pip, Cargo, Composer, NuGet, Gem auth tokens |
 | **Git Credentials** | `.git-credentials`, `.config/git/credentials` |
 | **Persistence** | Shell RC files, `authorized_keys`, cron/systemd/launchd, git hooks, mobile background tasks |
-| **Mobile** | PII (contacts, photos, calendar, location, health), keychain, clipboard, sensitive URL schemes (`tel:`, `sms:`, `itms-services:`) |
+| **Mobile** | PII (contacts, photos, calendar, location, health, camera, microphone, call log, SMS), keychain, clipboard, URL schemes (`tel:`, `sms:`), Bluetooth/NFC, biometric auth, in-app purchases |
 | **Agent Config** | `.claude/settings.json`, `.cursor/mcp.json`, `.mcp.json` — prevents privilege escalation |
 | **DLP Token Detection** | Content-based scanning for real API keys and tokens (AWS, GitHub, Stripe, OpenAI, Anthropic, and [31 more](docs/how-it-works.md#dlp-secret-detection)) |
 | **Key Exfiltration** | Content-based PEM private key detection |

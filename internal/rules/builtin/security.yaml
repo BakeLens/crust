@@ -596,3 +596,50 @@ rules:
     actions: [execute]
     message: "Blocked: invoking sensitive URL schemes (tel:, sms:, itms-services:) without user consent."
     severity: critical
+
+  # ===========================================================================
+  # 27. MOBILE HARDWARE ACCESS PROTECTION
+  # Blocks AI agents from accessing Bluetooth and NFC hardware.
+  # These can be used for device fingerprinting, unauthorized pairing,
+  # or proximity-based attacks.
+  # ===========================================================================
+  - name: protect-mobile-hardware
+    locked: true
+    block:
+      - "mobile://hardware/**"
+    actions: [read, write, execute, network]
+    message: "Blocked: accessing Bluetooth or NFC hardware without user consent."
+    severity: high
+
+  # ===========================================================================
+  # 28. MOBILE BIOMETRIC AUTHENTICATION PROTECTION
+  # Prevents AI agents from triggering biometric authentication prompts.
+  # An agent should never be able to silently authorize actions via
+  # Face ID / Touch ID — this must be user-initiated.
+  # ===========================================================================
+  - name: protect-mobile-biometric
+    locked: true
+    block:
+      - "mobile://auth/biometric"
+    actions: [execute]
+    message: "Blocked: triggering biometric authentication (Face ID / Touch ID) must be user-initiated."
+    severity: critical
+
+  # ===========================================================================
+  # 29. MOBILE IN-APP PURCHASE PROTECTION
+  # Prevents AI agents from initiating purchases or financial transactions.
+  # ===========================================================================
+  - name: protect-mobile-purchases
+    locked: true
+    block:
+      - "mobile://purchase/**"
+    actions: [execute]
+    message: "Blocked: AI agents cannot initiate in-app purchases or financial transactions."
+    severity: critical
+
+  # ===========================================================================
+  # 30. MOBILE CALL LOG / SMS HISTORY PROTECTION
+  # Call logs and SMS history contain highly sensitive communication metadata.
+  # Already partially covered by protect-mobile-pii (mobile://pii/**), but
+  # explicitly listed for clarity.
+  # ===========================================================================

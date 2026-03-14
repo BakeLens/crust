@@ -125,6 +125,9 @@ func TestLockedRulesSurviveDisableBuiltin(t *testing.T) {
 		"protect-mobile-pii",
 		"protect-mobile-clipboard",
 		"protect-mobile-url-schemes",
+		"protect-mobile-hardware",
+		"protect-mobile-biometric",
+		"protect-mobile-purchases",
 	}
 	unlockedNames := []string{
 		"detect-private-key-write",

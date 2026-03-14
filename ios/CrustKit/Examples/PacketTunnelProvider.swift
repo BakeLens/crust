@@ -1,100 +1,222 @@
-// PacketTunnelProvider — Network Extension stub for Crust iOS.
+// CrustProxy Usage Examples
 //
-// This NEPacketTunnelProvider intercepts HTTP traffic on-device and applies
-// Crust rule evaluation to LLM API responses before they reach the app.
+// Crust's local reverse proxy intercepts AI API responses on-device.
+// Instead of packet-level interception (which requires TCP reassembly,
+// TLS termination, and a Network Extension entitlement), the proxy
+// runs as a plain HTTP server inside your app process.
 //
-// Setup:
-// 1. Add a "Network Extension" target to your Xcode project
-// 2. Set the NEProviderClasses key in the extension's Info.plist
-// 3. Configure a NETunnelProviderManager in the host app
+// Architecture:
 //
-// This is a scaffold — the actual packet parsing and response interception
-// logic should be implemented based on your deployment architecture.
+//   Your App (AI SDK)
+//       │ base_url = http://127.0.0.1:8080
+//       ▼
+//   CrustProxy (in-process, port 8080)
+//       │ intercepts tool calls in responses
+//       ▼
+//   https://api.anthropic.com (or OpenAI, etc.)
 
-import NetworkExtension
+import Foundation
 
-class PacketTunnelProvider: NEPacketTunnelProvider {
+// MARK: - Basic Usage
 
+/// Minimal integration — three lines to protect your app.
+func basicExample() throws {
+    let engine = CrustEngine()
+
+    // 1. Initialize the rule engine (loads 30+ builtin security rules).
+    try engine.initialize()
+
+    // 2. Start the local proxy targeting Anthropic's API.
+    try engine.startProxy(
+        port: 8080,
+        upstreamURL: "https://api.anthropic.com",
+        apiKey: "sk-ant-...",         // or leave empty to pass through from client
+        apiType: .anthropic
+    )
+
+    // 3. Point your AI SDK at the proxy instead of the real API.
+    //    e.g. AnthropicClient(baseURL: engine.proxyBaseURL!)
+    print("Proxy running at \(engine.proxyBaseURL!)")
+
+    // When done:
+    engine.stopProxy()
+    engine.shutdown()
+}
+
+// MARK: - With Custom Rules
+
+/// Add project-specific rules on top of builtins.
+func customRulesExample() throws {
+    let engine = CrustEngine()
+    try engine.initialize()
+
+    // Block access to your app's private database.
+    try engine.addRules(yaml: """
+    rules:
+      - name: protect-app-db
+        message: "Blocked: AI agent cannot access app database"
+        actions: [read, write, delete]
+        block: "/var/mobile/Containers/Data/Application/*/Documents/*.sqlite"
+    """)
+
+    try engine.startProxy(port: 0, upstreamURL: "https://api.openai.com")
+
+    // Port 0 = system-assigned. Read the actual address:
+    print("Proxy running at \(engine.proxyAddress ?? "not running")")
+}
+
+// MARK: - OpenAI Integration
+
+/// Works with any OpenAI-compatible API.
+func openAIExample() throws {
+    let engine = CrustEngine()
+    try engine.initialize()
+
+    try engine.startProxy(
+        port: 8080,
+        upstreamURL: "https://api.openai.com",
+        apiKey: "sk-...",
+        apiType: .openai
+    )
+
+    // Your OpenAI SDK request goes to http://127.0.0.1:8080/v1/chat/completions
+    // Crust intercepts the response and blocks dangerous tool calls.
+}
+
+// MARK: - SwiftUI Integration
+
+/*
+import SwiftUI
+
+@Observable
+final class AIManager {
     private let engine = CrustEngine()
+    private(set) var isProtected = false
+    private(set) var proxyURL: URL?
 
-    override func startTunnel(
-        options: [String: NSObject]? = nil
-    ) async throws {
-        // Initialize Crust engine with builtin rules
+    func start(upstream: String, apiKey: String) throws {
         try engine.initialize()
-
-        // Load custom rules from the app group container if available
-        if let rulesYAML = loadCustomRules() {
-            try engine.addRules(yaml: rulesYAML)
-        }
-
-        // Configure tunnel network settings
-        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
-
-        // Proxy only HTTPS traffic to known AI API endpoints
-        let proxySettings = NEProxySettings()
-        proxySettings.httpEnabled = true
-        proxySettings.httpsEnabled = true
-        proxySettings.matchDomains = [
-            "api.anthropic.com",
-            "api.openai.com",
-            "generativelanguage.googleapis.com",
-        ]
-        settings.proxySettings = proxySettings
-
-        try await setTunnelNetworkSettings(settings)
-
-        // Start reading packets
-        readPackets()
+        try engine.startProxy(
+            port: 0,
+            upstreamURL: upstream,
+            apiKey: apiKey
+        )
+        proxyURL = engine.proxyBaseURL
+        isProtected = true
     }
 
-    override func stopTunnel(
-        with reason: NEProviderStopReason
-    ) async {
+    func stop() {
+        engine.stopProxy()
         engine.shutdown()
+        isProtected = false
+        proxyURL = nil
     }
 
-    // MARK: - Packet handling (scaffold)
-
-    private func readPackets() {
-        packetFlow.readPackets { [weak self] packets, protocols in
-            guard let self else { return }
-            for (i, packet) in packets.enumerated() {
-                self.handlePacket(packet, protocol: protocols[i])
-            }
-            // Continue reading
-            self.readPackets()
-        }
-    }
-
-    private func handlePacket(_ packet: Data, protocol proto: NSNumber) {
-        // TODO: Implement HTTP response parsing and Crust interception.
-        //
-        // High-level flow:
-        // 1. Reassemble TCP stream from IP packets
-        // 2. Parse HTTP response from AI API endpoints
-        // 3. Extract response body
-        // 4. Call engine.interceptResponse(body:apiType:blockMode:)
-        // 5. If tool calls were blocked, rewrite the response
-        // 6. Forward the (possibly modified) packet
-        //
-        // For production use, consider using a local HTTP proxy (e.g., NWListener)
-        // instead of raw packet manipulation — it's significantly simpler.
-
-        packetFlow.writePackets([packet], withProtocols: [proto])
-    }
-
-    // MARK: - Configuration
-
-    private func loadCustomRules() -> String? {
-        // Load rules from App Group shared container
-        guard let containerURL = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: "group.com.bakelens.crust"
-        ) else {
-            return nil
-        }
-
-        let rulesURL = containerURL.appendingPathComponent("crust-rules.yaml")
-        return try? String(contentsOf: rulesURL, encoding: .utf8)
+    /// Check a tool call manually (for apps that don't use the proxy).
+    func check(tool: String, args: [String: Any]) -> EvaluationResult {
+        engine.evaluate(toolName: tool, arguments: args)
     }
 }
+
+struct ContentView: View {
+    @State private var manager = AIManager()
+
+    var body: some View {
+        VStack {
+            if manager.isProtected {
+                Label("Protected", systemImage: "shield.checkmark.fill")
+                Text(manager.proxyURL?.absoluteString ?? "")
+                    .font(.caption)
+            } else {
+                Button("Enable Protection") {
+                    try? manager.start(
+                        upstream: "https://api.anthropic.com",
+                        apiKey: ""
+                    )
+                }
+            }
+        }
+    }
+}
+*/
+
+// MARK: - CrustURLProtocol (Zero-Config Alternative)
+
+/// Use CrustURLProtocol when you don't want to run a local proxy.
+/// It hooks into URLSession directly — no port, no base URL change.
+func urlProtocolExample() throws {
+    let engine = CrustEngine()
+    try engine.initialize()
+
+    // Configure once at app launch.
+    CrustURLProtocol.engine = engine
+    CrustURLProtocol.interceptedHosts = [
+        "api.anthropic.com",
+        "api.openai.com",
+    ]
+
+    // Option A: Protect a specific URLSession.
+    let config = URLSessionConfiguration.crustProtected
+    let session = URLSession(configuration: config)
+
+    // Option B: Or register on an existing config.
+    // let config = URLSessionConfiguration.default
+    // config.registerCrustProtocol()
+
+    // All requests through this session to matched hosts are now protected.
+    // No base URL change needed — the SDK keeps using https://api.anthropic.com.
+    _ = session
+}
+
+// MARK: - Async API
+
+/// Use async variants to avoid blocking the main thread.
+func asyncExample() async throws {
+    let engine = CrustEngine()
+    try engine.initialize()
+
+    // Safe to call from @MainActor — the Go work runs on a background thread.
+    let result = await engine.evaluateAsync(
+        toolName: "write_file",
+        arguments: ["file_path": "/etc/crontab", "content": "evil"]
+    )
+
+    if result.matched {
+        print("Blocked: \(result.message ?? "unknown reason")")
+    }
+
+    // Intercept a full API response asynchronously.
+    let body = """
+    {"content":[{"type":"tool_use","id":"t1","name":"read_contacts","input":{}}]}
+    """
+    let interception = await engine.interceptResponseAsync(body: body)
+    if let interception {
+        print("Blocked \(interception.blocked.count) tool calls")
+    }
+}
+
+// MARK: - Choosing Between Proxy and URLProtocol
+//
+// Use the local proxy (startProxy) when:
+//   - Your AI SDK doesn't use URLSession (e.g. uses NWConnection, gRPC, etc.)
+//   - You need to protect multiple processes or extensions
+//   - You want explicit control over the proxy lifecycle
+//
+// Use CrustURLProtocol when:
+//   - Your AI SDK uses URLSession (most Swift SDKs do)
+//   - You want zero-config integration with no base URL changes
+//   - You're adding Crust to an existing app with minimal changes
+//
+// Both approaches use the same rule engine and provide identical security.
+
+// MARK: - Network Extension (Alternative)
+//
+// If you need to intercept traffic from apps you don't control
+// (e.g. an enterprise MDM scenario), you can still use the proxy
+// inside a Network Extension. But instead of raw packet handling,
+// use NETransparentProxyProvider which gives you TCP/UDP flows —
+// much simpler than NEPacketTunnelProvider.
+//
+// For most apps where you control the AI SDK configuration,
+// the in-process proxy or URLProtocol above is simpler, faster,
+// and doesn't require special entitlements.

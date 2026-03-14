@@ -13,7 +13,7 @@ import (
 )
 
 // expectedPatternCount is the number of DLP patterns in dlp.go.
-const expectedPatternCount = 42
+const expectedPatternCount = 46
 
 // dlpVector defines a test vector for a single DLP pattern.
 type dlpVector struct {
@@ -28,7 +28,7 @@ type dlpVector struct {
 // push protection's secret scanning.
 func pad(n int) string { return strings.Repeat("0", n) }
 
-// vectors contains test vectors for all 42 DLP patterns.
+// vectors contains test vectors for all 46 DLP patterns.
 // Vectors are built with pad() to avoid triggering secret scanners.
 var vectors = []dlpVector{
 	{
@@ -484,6 +484,63 @@ var vectors = []dlpVector{
 			"neon_short",
 		},
 	},
+	// ── Mobile PII patterns ──
+	{
+		name:  "builtin:dlp-vcard",
+		regex: `BEGIN:VCARD\r?\nVERSION:\d`,
+		mustHit: []string{
+			"BEGIN:VCARD\nVERSION:3",
+			"BEGIN:VCARD\r\nVERSION:4",
+			"BEGIN:VCARD\nVERSION:2",
+		},
+		mustMis: []string{
+			"BEGIN:VCARD",           // missing VERSION line
+			"BEGIN:VCALENDAR",       // wrong type
+			"VCARD",                 // no BEGIN:
+			"BEGIN:VCARD VERSION:3", // missing newline
+		},
+	},
+	{
+		name:  "builtin:dlp-icalendar",
+		regex: `BEGIN:VCALENDAR\r?\nVERSION:\d`,
+		mustHit: []string{
+			"BEGIN:VCALENDAR\nVERSION:2",
+			"BEGIN:VCALENDAR\r\nVERSION:2",
+		},
+		mustMis: []string{
+			"BEGIN:VCALENDAR",           // missing VERSION
+			"BEGIN:VCARD\nVERSION:3",    // wrong type
+			"BEGIN:VCALENDAR VERSION:2", // missing newline
+		},
+	},
+	{
+		name:  "builtin:dlp-mobileconfig",
+		regex: `<key>PayloadType</key>\s*<string>Configuration</string>`,
+		mustHit: []string{
+			"<key>PayloadType</key><string>Configuration</string>",
+			"<key>PayloadType</key>\n\t\t<string>Configuration</string>",
+			"<key>PayloadType</key> <string>Configuration</string>",
+		},
+		mustMis: []string{
+			"<key>PayloadType</key><string>VPN</string>", // not Configuration
+			"PayloadType Configuration",                  // not XML
+			"<key>OtherKey</key><string>Configuration</string>",
+		},
+	},
+	{
+		name:  "builtin:dlp-fhir-bundle",
+		regex: `"resourceType"\s*:\s*"Bundle"[\s\S]*?"type"\s*:\s*"(?:searchset|collection|document)"`,
+		mustHit: []string{
+			`"resourceType":"Bundle","type":"searchset"`,
+			`"resourceType" : "Bundle", "id": "123", "type" : "collection"`,
+			`"resourceType":"Bundle","meta":{},"type":"document"`,
+		},
+		mustMis: []string{
+			`"resourceType":"Patient"`,                     // wrong resource
+			`"resourceType":"Bundle","type":"transaction"`, // non-PII bundle type
+			`"type":"searchset"`,                           // no resourceType
+		},
+	},
 }
 
 func main() {
@@ -516,7 +573,7 @@ func main() {
 
 	// 3. Verify SHA-512 of dlp.go source.
 	hash := fmt.Sprintf("%x", sha512.Sum512(data))
-	const expectedHash = "e862e8bfa6735807725acfeb5de4b841108411e0cf3d6a35d6f81fc401d81634c41d00b1a7e7e072226fd4e79b7025b90e8e58977f963ff57eb232111fd2b9fb"
+	const expectedHash = "129d44e6902af86ed460dfd5af99ba1dd6905855cb1db318e0a71738d4ebb31566fbca793e34ea306c3ee2e51c7fe6589fa7e3ca09435d28c8b16b01b5db3399"
 	if hash != expectedHash {
 		fmt.Fprintf(os.Stderr, "FAIL: dlp.go SHA-512 mismatch\n  got:  %s\n  want: %s\n", hash, expectedHash)
 		failed++

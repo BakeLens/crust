@@ -4,6 +4,9 @@ package libcrust
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -195,6 +198,156 @@ func TestConcurrentEvaluateAndShutdown(t *testing.T) {
 	// Shutdown while evaluators are running.
 	Shutdown()
 	wg.Wait()
+}
+
+func TestStartStopProxy(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	// Start proxy on a random port.
+	if err := StartProxy(0, "https://api.anthropic.com", "", "anthropic"); err != nil {
+		t.Fatalf("StartProxy failed: %v", err)
+	}
+	defer StopProxy()
+
+	addr := ProxyAddress()
+	if addr == "" {
+		t.Fatal("expected non-empty proxy address")
+	}
+
+	// Verify it's listening by connecting.
+	resp, err := http.Get("http://" + addr + "/health-check-nonexistent")
+	if err != nil {
+		t.Fatalf("failed to connect to proxy: %v", err)
+	}
+	_ = resp.Body.Close()
+	// We expect a 502 (upstream unreachable) or similar, not a connection error.
+}
+
+func TestStartProxyDoubleStart(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	if err := StartProxy(0, "https://api.anthropic.com", "", "anthropic"); err != nil {
+		t.Fatalf("StartProxy failed: %v", err)
+	}
+	defer StopProxy()
+
+	// Second start should fail.
+	if err := StartProxy(0, "https://api.openai.com", "", "openai"); err == nil {
+		t.Error("expected error on double start")
+	}
+}
+
+func TestStopProxyIdempotent(t *testing.T) {
+	StopProxy() // should not panic when not running
+	StopProxy() // second call should not panic either
+}
+
+func TestProxyAddressWhenNotRunning(t *testing.T) {
+	StopProxy()
+	if addr := ProxyAddress(); addr != "" {
+		t.Errorf("expected empty address when proxy not running, got: %s", addr)
+	}
+}
+
+func TestStartProxyInvalidURL(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	if err := StartProxy(0, "not-a-url", "", ""); err == nil {
+		t.Error("expected error for invalid upstream URL")
+	}
+}
+
+func TestStreamInterceptionSupported(t *testing.T) {
+	if StreamInterceptionSupported() {
+		t.Error("expected streaming interception to be unsupported for now")
+	}
+}
+
+func TestProxyInterceptsBlockedToolCall(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	// Start a fake upstream that returns a response with a malicious tool call.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Anthropic response with a tool call that writes to /etc/crontab.
+		resp := `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"write_file","input":{"file_path":"/etc/crontab","content":"* * * * * evil"}}]}`
+		w.Write([]byte(resp))
+	}))
+	defer upstream.Close()
+
+	if err := StartProxy(0, upstream.URL, "", "anthropic"); err != nil {
+		t.Fatalf("StartProxy failed: %v", err)
+	}
+	defer StopProxy()
+
+	// Send a request through the proxy.
+	reqBody := `{"model":"claude-3","messages":[{"role":"user","content":"test"}]}`
+	resp, err := http.Post(
+		"http://"+ProxyAddress()+"/v1/messages",
+		"application/json",
+		strings.NewReader(reqBody),
+	)
+	if err != nil {
+		t.Fatalf("request through proxy failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	// The malicious tool call should have been removed.
+	if strings.Contains(string(body), "/etc/crontab") {
+		t.Errorf("expected /etc/crontab tool call to be blocked, got: %s", string(body))
+	}
+}
+
+func TestProxyPassesThroughAllowedToolCall(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer Shutdown()
+
+	// Fake upstream returning a benign tool call.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"read_file","input":{"path":"/tmp/test.txt"}}]}`
+		w.Write([]byte(resp))
+	}))
+	defer upstream.Close()
+
+	if err := StartProxy(0, upstream.URL, "", "anthropic"); err != nil {
+		t.Fatalf("StartProxy failed: %v", err)
+	}
+	defer StopProxy()
+
+	reqBody := `{"model":"claude-3","messages":[{"role":"user","content":"test"}]}`
+	resp, err := http.Post(
+		"http://"+ProxyAddress()+"/v1/messages",
+		"application/json",
+		strings.NewReader(reqBody),
+	)
+	if err != nil {
+		t.Fatalf("request through proxy failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	// The benign tool call should pass through.
+	if !strings.Contains(string(body), "read_file") {
+		t.Errorf("expected read_file tool call to pass through, got: %s", string(body))
+	}
 }
 
 func TestShutdownIsIdempotent(t *testing.T) {

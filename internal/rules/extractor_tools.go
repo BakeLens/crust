@@ -331,6 +331,50 @@ func (e *Extractor) extractMobileTool(info *ExtractedInfo, toolLower string) boo
 		info.addOperation(OpNetwork)
 		info.Paths = append(info.Paths, mobileSharePath(info.RawArgs))
 
+	// ── Camera ──
+	case "capture_photo", "take_photo", "take_picture", "capture_image",
+		"record_video", "start_video_recording", "capture_video":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, "mobile://pii/camera")
+
+	// ── Microphone ──
+	case "record_audio", "start_recording", "capture_audio",
+		"start_audio_recording", "voice_record":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, "mobile://pii/microphone")
+
+	// ── Bluetooth / NFC ──
+	case "scan_bluetooth", "bluetooth_scan", "discover_bluetooth",
+		"bluetooth_connect", "connect_bluetooth":
+		info.addOperation(OpNetwork)
+		info.Paths = append(info.Paths, "mobile://hardware/bluetooth")
+	case "read_nfc", "scan_nfc", "nfc_read", "nfc_scan":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, "mobile://hardware/nfc")
+	case "write_nfc", "nfc_write":
+		info.addOperation(OpWrite)
+		info.Paths = append(info.Paths, "mobile://hardware/nfc")
+
+	// ── Biometric authentication ──
+	case "authenticate_biometric", "biometric_auth", "request_biometric",
+		"touch_id", "face_id", "fingerprint_auth":
+		info.addOperation(OpExecute)
+		info.Paths = append(info.Paths, "mobile://auth/biometric")
+
+	// ── In-app purchases ──
+	case "purchase_item", "buy_item", "make_purchase", "in_app_purchase",
+		"start_purchase", "request_purchase":
+		info.addOperation(OpExecute)
+		info.Paths = append(info.Paths, mobilePurchasePath(info.RawArgs))
+
+	// ── Call log / SMS history ──
+	case "read_call_log", "get_call_history", "access_call_log":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, "mobile://pii/call-log")
+	case "read_sms", "get_sms", "read_messages", "get_messages":
+		info.addOperation(OpRead)
+		info.Paths = append(info.Paths, "mobile://pii/sms")
+
 	default:
 		return false // not a known mobile tool
 	}
@@ -405,6 +449,19 @@ func mobileSharePath(args map[string]any) string {
 		}
 	}
 	return MobileVirtualPathPrefix + "share/_unknown"
+}
+
+// mobilePurchasePath builds a virtual purchase path from args.
+// e.g., {"product_id": "premium_monthly"} → "mobile://purchase/premium_monthly"
+func mobilePurchasePath(args map[string]any) string {
+	for _, field := range []string{"product_id", "productid", "sku", "item", "item_id", "name", "identifier"} {
+		if val, ok := args[field]; ok {
+			if strs := fieldStrings(val); len(strs) > 0 {
+				return MobileVirtualPathPrefix + "purchase/" + sanitizeVirtualPathSegment(strs[0])
+			}
+		}
+	}
+	return MobileVirtualPathPrefix + "purchase/_unknown"
 }
 
 // extractURLScheme returns the scheme portion of a URL string.

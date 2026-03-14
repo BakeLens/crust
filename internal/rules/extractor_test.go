@@ -4912,6 +4912,111 @@ func TestExtract_MobileTools(t *testing.T) {
 			wantOp:    OpNetwork,
 			wantPaths: []string{"mobile://share/email"},
 		},
+		// Camera
+		{
+			name:      "capture_photo maps to mobile://pii/camera",
+			toolName:  "capture_photo",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://pii/camera"},
+		},
+		{
+			name:      "record_video maps to mobile://pii/camera",
+			toolName:  "record_video",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://pii/camera"},
+		},
+		// Microphone
+		{
+			name:      "record_audio maps to mobile://pii/microphone",
+			toolName:  "record_audio",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://pii/microphone"},
+		},
+		{
+			name:      "capture_audio maps to mobile://pii/microphone",
+			toolName:  "capture_audio",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://pii/microphone"},
+		},
+		// Bluetooth
+		{
+			name:      "scan_bluetooth maps to mobile://hardware/bluetooth",
+			toolName:  "scan_bluetooth",
+			args:      map[string]any{},
+			wantOp:    OpNetwork,
+			wantPaths: []string{"mobile://hardware/bluetooth"},
+		},
+		{
+			name:      "bluetooth_connect maps to mobile://hardware/bluetooth",
+			toolName:  "bluetooth_connect",
+			args:      map[string]any{},
+			wantOp:    OpNetwork,
+			wantPaths: []string{"mobile://hardware/bluetooth"},
+		},
+		// NFC
+		{
+			name:      "read_nfc maps to mobile://hardware/nfc",
+			toolName:  "read_nfc",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://hardware/nfc"},
+		},
+		{
+			name:      "write_nfc maps to mobile://hardware/nfc",
+			toolName:  "write_nfc",
+			args:      map[string]any{},
+			wantOp:    OpWrite,
+			wantPaths: []string{"mobile://hardware/nfc"},
+		},
+		// Biometric
+		{
+			name:      "authenticate_biometric maps to mobile://auth/biometric",
+			toolName:  "authenticate_biometric",
+			args:      map[string]any{},
+			wantOp:    OpExecute,
+			wantPaths: []string{"mobile://auth/biometric"},
+		},
+		{
+			name:      "face_id maps to mobile://auth/biometric",
+			toolName:  "face_id",
+			args:      map[string]any{},
+			wantOp:    OpExecute,
+			wantPaths: []string{"mobile://auth/biometric"},
+		},
+		// In-app purchases
+		{
+			name:      "purchase_item with product_id",
+			toolName:  "purchase_item",
+			args:      map[string]any{"product_id": "premium_monthly"},
+			wantOp:    OpExecute,
+			wantPaths: []string{"mobile://purchase/premium_monthly"},
+		},
+		{
+			name:      "in_app_purchase without product_id",
+			toolName:  "in_app_purchase",
+			args:      map[string]any{},
+			wantOp:    OpExecute,
+			wantPaths: []string{"mobile://purchase/_unknown"},
+		},
+		// Call log / SMS
+		{
+			name:      "read_call_log maps to mobile://pii/call-log",
+			toolName:  "read_call_log",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://pii/call-log"},
+		},
+		{
+			name:      "read_sms maps to mobile://pii/sms",
+			toolName:  "read_sms",
+			args:      map[string]any{},
+			wantOp:    OpRead,
+			wantPaths: []string{"mobile://pii/sms"},
+		},
 		// Path traversal prevention
 		{
 			name:      "keychain_get with traversal attempt",

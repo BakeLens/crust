@@ -78,7 +78,7 @@ crust uninstall                             # Complete removal
 | `--config PATH` | Path to configuration file |
 | `--log-level LEVEL` | `trace`, `debug`, `info`, `warn` (default), `error` |
 | `--rules-dir DIR` | Override user rules directory |
-| `--disable-builtin` | Disable builtin security rules (27 locked rules remain active) |
+| `--disable-builtin` | Disable builtin security rules (30 locked rules remain active) |
 
 ## Environment Variables
 

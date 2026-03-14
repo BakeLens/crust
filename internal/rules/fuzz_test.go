@@ -337,6 +337,9 @@ func FuzzExtractBashCommand(f *testing.F) {
 // COVERS: protect-mobile-pii
 // COVERS: protect-mobile-clipboard
 // COVERS: protect-mobile-url-schemes
+// COVERS: protect-mobile-hardware
+// COVERS: protect-mobile-biometric
+// COVERS: protect-mobile-purchases
 // NOTE: protect-crust-api is hardcoded in engine.go, tested by FuzzLoopbackRegex + FuzzJSONUnicodeEscapeBypass
 // =============================================================================
 
@@ -424,6 +427,15 @@ func FuzzBuiltinRuleBypass(f *testing.F) {
 	// protect-mobile-url-schemes
 	f.Add("open_url", `{"url":"tel:+1234567890"}`)
 	f.Add("open_url", `{"url":"sms:+1234567890"}`)
+	// protect-mobile-hardware
+	f.Add("scan_bluetooth", `{}`)
+	f.Add("read_nfc", `{}`)
+	// protect-mobile-biometric
+	f.Add("authenticate_biometric", `{}`)
+	f.Add("face_id", `{}`)
+	// protect-mobile-purchases
+	f.Add("purchase_item", `{"product_id":"premium"}`)
+	f.Add("in_app_purchase", `{}`)
 	// Safe operations (should NOT be blocked)
 	f.Add("Bash", `{"command":"echo hello"}`)
 	f.Add("Read", `{"file_path":"/tmp/safe.txt"}`)
