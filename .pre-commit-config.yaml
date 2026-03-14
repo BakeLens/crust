@@ -42,6 +42,26 @@ repos:
         pass_filenames: false
 
 
+  # Swift formatting (auto-fixes files, runs before linting)
+  - repo: local
+    hooks:
+      - id: swiftformat
+        name: swiftformat
+        entry: swiftformat
+        language: system
+        files: \.swift$
+        exclude: \.build/
+
+  # Swift linting
+  - repo: local
+    hooks:
+      - id: swiftlint
+        name: swiftlint
+        entry: swiftlint lint --quiet --strict
+        language: system
+        files: \.swift$
+        exclude: \.build/
+
   # Shell script checking
   - repo: local
     hooks:

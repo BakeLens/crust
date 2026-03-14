@@ -1,8 +1,7 @@
-import XCTest
 @testable import CrustKit
+import XCTest
 
 final class CrustKitTests: XCTestCase {
-
     var engine: CrustEngine!
 
     override func setUp() {
@@ -94,9 +93,9 @@ final class CrustKitTests: XCTestCase {
         """
         let result = engine.interceptResponse(body: body)
         XCTAssertNotNil(result)
-        XCTAssertTrue(result!.blocked.isEmpty, "benign tool call should not be blocked")
-        XCTAssertEqual(result!.allowed.count, 1)
-        XCTAssertEqual(result!.allowed.first?.toolName, "read_file")
+        XCTAssertTrue(try XCTUnwrap(result?.blocked.isEmpty), "benign tool call should not be blocked")
+        XCTAssertEqual(result?.allowed.count, 1)
+        XCTAssertEqual(result?.allowed.first?.toolName, "read_file")
     }
 
     func testInterceptResponseBlocked() throws {
@@ -107,7 +106,7 @@ final class CrustKitTests: XCTestCase {
         """
         let result = engine.interceptResponse(body: body)
         XCTAssertNotNil(result)
-        XCTAssertFalse(result!.blocked.isEmpty, "malicious tool call should be blocked")
+        XCTAssertFalse(try XCTUnwrap(result?.blocked.isEmpty), "malicious tool call should be blocked")
     }
 
     // MARK: - Validation
@@ -134,7 +133,7 @@ final class CrustKitTests: XCTestCase {
 
     // MARK: - Version
 
-    func testVersion() throws {
+    func testVersion() {
         let version = engine.version
         XCTAssertFalse(version.isEmpty, "version should not be empty")
     }
@@ -154,7 +153,7 @@ final class CrustKitTests: XCTestCase {
 
     func testDoubleShutdown() {
         engine.shutdown()
-        engine.shutdown()  // should not crash
+        engine.shutdown() // should not crash
     }
 
     // MARK: - Mobile Virtual Path Rules
@@ -288,7 +287,7 @@ final class CrustKitTests: XCTestCase {
         """
         let result = engine.interceptResponse(body: body)
         XCTAssertNotNil(result)
-        XCTAssertFalse(result!.blocked.isEmpty, "read_contacts should be blocked in interception")
+        XCTAssertFalse(try XCTUnwrap(result?.blocked.isEmpty), "read_contacts should be blocked in interception")
     }
 
     // MARK: - Local Proxy
@@ -299,7 +298,7 @@ final class CrustKitTests: XCTestCase {
         try engine.startProxy(port: 0, upstreamURL: "https://api.anthropic.com")
         XCTAssertNotNil(engine.proxyAddress, "proxy should be running")
         XCTAssertNotNil(engine.proxyBaseURL, "should have a base URL")
-        XCTAssertTrue(engine.proxyBaseURL!.absoluteString.hasPrefix("http://127.0.0.1:"))
+        XCTAssertTrue(try XCTUnwrap(engine.proxyBaseURL?.absoluteString.hasPrefix("http://127.0.0.1:")))
 
         engine.stopProxy()
         XCTAssertNil(engine.proxyAddress, "proxy should be stopped")
@@ -373,7 +372,7 @@ final class CrustKitTests: XCTestCase {
         """
         let result = await engine.interceptResponseAsync(body: body)
         XCTAssertNotNil(result)
-        XCTAssertFalse(result!.blocked.isEmpty, "malicious tool call should be blocked")
+        XCTAssertFalse(try XCTUnwrap(result?.blocked.isEmpty), "malicious tool call should be blocked")
     }
 
     func testValidateYAMLAsync() async throws {
@@ -467,36 +466,36 @@ final class CrustKitTests: XCTestCase {
 
     // MARK: - CrustURLProtocol
 
-    func testURLProtocolCanInitMatchesConfiguredHosts() {
+    func testURLProtocolCanInitMatchesConfiguredHosts() throws {
         CrustURLProtocol.engine = engine
         CrustURLProtocol.interceptedHosts = ["api.anthropic.com", "api.openai.com"]
 
         // Should match configured hosts.
-        let anthropicReq = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        let anthropicReq = try URLRequest(url: XCTUnwrap(URL(string: "https://api.anthropic.com/v1/messages")))
         XCTAssertTrue(CrustURLProtocol.canInit(with: anthropicReq))
 
-        let openaiReq = URLRequest(url: URL(string: "https://api.openai.com/v1/chat/completions")!)
+        let openaiReq = try URLRequest(url: XCTUnwrap(URL(string: "https://api.openai.com/v1/chat/completions")))
         XCTAssertTrue(CrustURLProtocol.canInit(with: openaiReq))
 
         // Should not match other hosts.
-        let otherReq = URLRequest(url: URL(string: "https://example.com/api")!)
+        let otherReq = try URLRequest(url: XCTUnwrap(URL(string: "https://example.com/api")))
         XCTAssertFalse(CrustURLProtocol.canInit(with: otherReq))
     }
 
-    func testURLProtocolSkipsWithoutEngine() {
+    func testURLProtocolSkipsWithoutEngine() throws {
         CrustURLProtocol.engine = nil
 
-        let req = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        let req = try URLRequest(url: XCTUnwrap(URL(string: "https://api.anthropic.com/v1/messages")))
         XCTAssertFalse(CrustURLProtocol.canInit(with: req), "should skip without engine")
     }
 
-    func testURLProtocolDetectsAPIType() {
+    func testURLProtocolDetectsAPIType() throws {
         // The detectAPIType is private, so we test indirectly via canInit
         // and the interceptedHosts configuration.
         CrustURLProtocol.engine = engine
         CrustURLProtocol.interceptedHosts = ["api.anthropic.com"]
 
-        let req = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        let req = try URLRequest(url: XCTUnwrap(URL(string: "https://api.anthropic.com/v1/messages")))
         XCTAssertTrue(CrustURLProtocol.canInit(with: req))
     }
 

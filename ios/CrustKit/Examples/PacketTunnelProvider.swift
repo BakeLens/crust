@@ -30,7 +30,7 @@ func basicExample() throws {
     try engine.startProxy(
         port: 8080,
         upstreamURL: "https://api.anthropic.com",
-        apiKey: "sk-ant-...",         // or leave empty to pass through from client
+        apiKey: "sk-ant-...", // or leave empty to pass through from client
         apiType: .anthropic
     )
 
@@ -86,59 +86,59 @@ func openAIExample() throws {
 // MARK: - SwiftUI Integration
 
 /*
-import SwiftUI
+ import SwiftUI
 
-@Observable
-final class AIManager {
-    private let engine = CrustEngine()
-    private(set) var isProtected = false
-    private(set) var proxyURL: URL?
+ @Observable
+ final class AIManager {
+     private let engine = CrustEngine()
+     private(set) var isProtected = false
+     private(set) var proxyURL: URL?
 
-    func start(upstream: String, apiKey: String) throws {
-        try engine.initialize()
-        try engine.startProxy(
-            port: 0,
-            upstreamURL: upstream,
-            apiKey: apiKey
-        )
-        proxyURL = engine.proxyBaseURL
-        isProtected = true
-    }
+     func start(upstream: String, apiKey: String) throws {
+         try engine.initialize()
+         try engine.startProxy(
+             port: 0,
+             upstreamURL: upstream,
+             apiKey: apiKey
+         )
+         proxyURL = engine.proxyBaseURL
+         isProtected = true
+     }
 
-    func stop() {
-        engine.stopProxy()
-        engine.shutdown()
-        isProtected = false
-        proxyURL = nil
-    }
+     func stop() {
+         engine.stopProxy()
+         engine.shutdown()
+         isProtected = false
+         proxyURL = nil
+     }
 
-    /// Check a tool call manually (for apps that don't use the proxy).
-    func check(tool: String, args: [String: Any]) -> EvaluationResult {
-        engine.evaluate(toolName: tool, arguments: args)
-    }
-}
+     /// Check a tool call manually (for apps that don't use the proxy).
+     func check(tool: String, args: [String: Any]) -> EvaluationResult {
+         engine.evaluate(toolName: tool, arguments: args)
+     }
+ }
 
-struct ContentView: View {
-    @State private var manager = AIManager()
+ struct ContentView: View {
+     @State private var manager = AIManager()
 
-    var body: some View {
-        VStack {
-            if manager.isProtected {
-                Label("Protected", systemImage: "shield.checkmark.fill")
-                Text(manager.proxyURL?.absoluteString ?? "")
-                    .font(.caption)
-            } else {
-                Button("Enable Protection") {
-                    try? manager.start(
-                        upstream: "https://api.anthropic.com",
-                        apiKey: ""
-                    )
-                }
-            }
-        }
-    }
-}
-*/
+     var body: some View {
+         VStack {
+             if manager.isProtected {
+                 Label("Protected", systemImage: "shield.checkmark.fill")
+                 Text(manager.proxyURL?.absoluteString ?? "")
+                     .font(.caption)
+             } else {
+                 Button("Enable Protection") {
+                     try? manager.start(
+                         upstream: "https://api.anthropic.com",
+                         apiKey: ""
+                     )
+                 }
+             }
+         }
+     }
+ }
+ */
 
 // MARK: - CrustURLProtocol (Zero-Config Alternative)
 
@@ -196,6 +196,7 @@ func asyncExample() async throws {
 }
 
 // MARK: - Choosing Between Proxy and URLProtocol
+
 //
 // Use the local proxy (startProxy) when:
 //   - Your AI SDK doesn't use URLSession (e.g. uses NWConnection, gRPC, etc.)
@@ -260,6 +261,7 @@ func urlValidationExample() throws {
 }
 
 // MARK: - Network Extension (Alternative)
+
 //
 // If you need to intercept traffic from apps you don't control
 // (e.g. an enterprise MDM scenario), you can still use the proxy

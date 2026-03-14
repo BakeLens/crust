@@ -308,7 +308,7 @@ A security tool must protect itself first. Crust is built to resist tampering �
 | **Logs are encrypted** | Activity logs are stored in an encrypted database; the key never appears in command history |
 | **Oversized requests are rejected** | Abnormally large inputs are dropped before processing to prevent abuse |
 | **Connections are encrypted** | All traffic to LLM providers uses modern encryption (TLS 1.2+) |
-| **Every code change is scanned** | 14 automated security checks run on every commit — vulnerability scanning, secret detection, race condition testing |
+| **Every code change is scanned** | 16 automated security checks run on every commit — vulnerability scanning, secret detection, race condition testing |
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 

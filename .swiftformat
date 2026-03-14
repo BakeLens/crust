@@ -1,0 +1,9 @@
+# SwiftFormat configuration for CrustKit
+--swiftversion 5.9
+--exclude ios/CrustKit/.build
+--indent 4
+--maxwidth 140
+--wraparguments before-first
+--wrapcollections before-first
+--self remove
+--stripunusedargs closure-only

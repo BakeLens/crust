@@ -1,0 +1,32 @@
+# SwiftLint configuration for CrustKit
+included:
+  - ios/CrustKit
+
+excluded:
+  - ios/CrustKit/.build
+
+# Relax defaults for security library patterns
+file_length:
+  warning: 600
+  error: 1000
+
+type_body_length:
+  warning: 400
+  error: 600
+
+function_body_length:
+  warning: 80
+  error: 120
+
+line_length:
+  warning: 140
+  error: 200
+
+identifier_name:
+  min_length: 1
+
+disabled_rules:
+  - trailing_comma
+  - force_cast
+  - static_over_final_class
+  - opening_brace
