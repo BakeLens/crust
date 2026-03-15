@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -435,9 +436,29 @@ func (c *dnsLRU) put(host string, ips []netip.Addr) {
 // dnsLookupTimeout is the maximum time for a single DNS lookup.
 const dnsLookupTimeout = 2 * time.Second
 
+// dnsEnabled controls whether DNS resolution is active.
+// Automatically set to false during fuzz runs (-test.fuzz flag) to avoid
+// 2s-per-lookup timeouts on random hostnames that accumulate and cause CI failures.
+var dnsEnabled = true
+
+var dnsInitOnce sync.Once
+
+func initDNSEnabled() {
+	dnsInitOnce.Do(func() {
+		for _, arg := range os.Args {
+			if strings.HasPrefix(arg, "-test.fuzz=") || strings.HasPrefix(arg, "--test.fuzz=") {
+				dnsEnabled = false
+				return
+			}
+		}
+	})
+}
+
 // resolveHost resolves a hostname to IP addresses using DNS, with caching.
 // Returns nil for IP literals (already handled by normalizeIPHost) or on error.
+// Returns nil immediately if dnsEnabled is false (fuzz/test mode).
 func resolveHost(host string) []netip.Addr {
+	initDNSEnabled()
 	if host == "" {
 		return nil
 	}
@@ -447,6 +468,10 @@ func resolveHost(host string) []netip.Addr {
 		if addr.Unmap() == netip.MustParseAddr("::1") || loopbackPrefix.Contains(addr.Unmap()) {
 			return []netip.Addr{addr.Unmap()}
 		}
+		return nil
+	}
+	// Skip DNS resolution when disabled (fuzz/test mode)
+	if !dnsEnabled {
 		return nil
 	}
 	// Skip non-hostname strings — but don't require a dot (covers "localhost"

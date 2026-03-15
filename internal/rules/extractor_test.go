@@ -749,36 +749,40 @@ func TestExpandRebindingHosts(t *testing.T) {
 
 func TestResolvesToLoopback(t *testing.T) {
 	tests := []struct {
-		host string
-		want bool
-		desc string
+		host    string
+		want    bool
+		desc    string
+		needDNS bool // requires actual DNS resolution (skipped in fuzz mode)
 	}{
 		// IPv4 loopback range
-		{"127.0.0.1", true, "standard loopback"},
-		{"127.255.255.255", true, "end of 127.0.0.0/8"},
-		{"127.0.0.2", true, "alternate loopback"},
+		{"127.0.0.1", true, "standard loopback", false},
+		{"127.255.255.255", true, "end of 127.0.0.0/8", false},
+		{"127.0.0.2", true, "alternate loopback", false},
 
 		// IPv6 loopback
-		{"::1", true, "IPv6 loopback"},
-		{"::ffff:127.0.0.1", true, "IPv6-mapped IPv4 loopback"},
+		{"::1", true, "IPv6 loopback", false},
+		{"::ffff:127.0.0.1", true, "IPv6-mapped IPv4 loopback", false},
 
 		// Non-loopback IPs
-		{"10.0.0.1", false, "private IP"},
-		{"8.8.8.8", false, "public IP"},
-		{"192.168.1.1", false, "private IP"},
-		{"0.0.0.0", false, "unspecified address"},
+		{"10.0.0.1", false, "private IP", false},
+		{"8.8.8.8", false, "public IP", false},
+		{"192.168.1.1", false, "private IP", false},
+		{"0.0.0.0", false, "unspecified address", false},
 
 		// Hostname resolution
-		{"localhost", true, "resolves to 127.0.0.1 via /etc/hosts"},
+		{"localhost", true, "resolves to 127.0.0.1 via /etc/hosts", true},
 
 		// Non-existent / invalid
-		{"this-domain-definitely-does-not-exist.invalid", false, "NXDOMAIN"},
-		{"", false, "empty string"},
-		{"not a host", false, "contains spaces"},
-		{"../etc/passwd", false, "path traversal"},
+		{"this-domain-definitely-does-not-exist.invalid", false, "NXDOMAIN", true},
+		{"", false, "empty string", false},
+		{"not a host", false, "contains spaces", false},
+		{"../etc/passwd", false, "path traversal", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
+			if tt.needDNS && !dnsEnabled {
+				t.Skip("DNS disabled (fuzz mode)")
+			}
 			if got := ResolvesToLoopback(tt.host); got != tt.want {
 				t.Errorf("ResolvesToLoopback(%q) = %v, want %v", tt.host, got, tt.want)
 			}
@@ -869,20 +873,24 @@ func TestHostResolvesToLoopbackWithCrust(t *testing.T) {
 		hosts   []string
 		rawJSON string
 		want    bool
+		needDNS bool
 	}{
-		{"localhost+crust", []string{"localhost"}, `{"url":"http://localhost:9090/crust/api"}`, true},
-		{"127.0.0.1+crust", []string{"127.0.0.1"}, `{"url":"http://127.0.0.1:9090/crust/api"}`, true},
-		{"::1+crust", []string{"::1"}, `{"url":"http://[::1]:9090/crust/api"}`, true},
-		{"case-insensitive", []string{"localhost"}, `{"url":"http://localhost:9090/CRUST/API"}`, true},
-		{"localhost-no-crust", []string{"localhost"}, `{"url":"http://localhost:9090/other"}`, false},
-		{"non-loopback+crust", []string{"example.com"}, `{"url":"http://example.com/crust"}`, false},
-		{"nil-hosts", nil, `{"url":"http://localhost/crust"}`, false},
-		{"empty-hosts", []string{}, `{"url":"http://localhost/crust"}`, false},
-		{"empty-json", []string{"localhost"}, "", false},
-		{"multiple-hosts-one-loopback", []string{"example.com", "localhost"}, `{"crust":true}`, true},
+		{"localhost+crust", []string{"localhost"}, `{"url":"http://localhost:9090/crust/api"}`, true, true},
+		{"127.0.0.1+crust", []string{"127.0.0.1"}, `{"url":"http://127.0.0.1:9090/crust/api"}`, true, false},
+		{"::1+crust", []string{"::1"}, `{"url":"http://[::1]:9090/crust/api"}`, true, false},
+		{"case-insensitive", []string{"localhost"}, `{"url":"http://localhost:9090/CRUST/API"}`, true, true},
+		{"localhost-no-crust", []string{"localhost"}, `{"url":"http://localhost:9090/other"}`, false, true},
+		{"non-loopback+crust", []string{"example.com"}, `{"url":"http://example.com/crust"}`, false, true},
+		{"nil-hosts", nil, `{"url":"http://localhost/crust"}`, false, false},
+		{"empty-hosts", []string{}, `{"url":"http://localhost/crust"}`, false, false},
+		{"empty-json", []string{"localhost"}, "", false, false},
+		{"multiple-hosts-one-loopback", []string{"example.com", "localhost"}, `{"crust":true}`, true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.needDNS && !dnsEnabled {
+				t.Skip("DNS disabled (fuzz mode)")
+			}
 			if got := hostResolvesToLoopbackWithCrust(tt.hosts, tt.rawJSON); got != tt.want {
 				t.Errorf("hostResolvesToLoopbackWithCrust(%v, %q) = %v, want %v", tt.hosts, tt.rawJSON, got, tt.want)
 			}
@@ -891,6 +899,9 @@ func TestHostResolvesToLoopbackWithCrust(t *testing.T) {
 }
 
 func TestResolveAndExpandHosts(t *testing.T) {
+	if !dnsEnabled {
+		t.Skip("DNS disabled (fuzz mode)")
+	}
 	// localhost should get 127.0.0.1 added
 	hosts := ResolveAndExpandHosts([]string{"localhost"})
 	hasLoopback := false
