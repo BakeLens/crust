@@ -15,6 +15,9 @@ class CrustEngineTestCase: XCTestCase {
     override func tearDown() {
         engine.shutdown()
         engine = nil
+        // Reset static state modified by tests
+        CrustURLProtocol.engine = nil
+        CrustURLProtocol.interceptedHosts = ["api.anthropic.com", "api.openai.com"]
         super.tearDown()
     }
 }
