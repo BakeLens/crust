@@ -40,3 +40,4 @@ cover*.out
 cover.html
 e2e_stderr.log
 test_e2e_acp.sh
+ios/CrustKit/.build/
