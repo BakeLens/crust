@@ -20,6 +20,8 @@ package eventlog
 
 import (
 	"encoding/json"
+	"errors"
+	"sync"
 	"sync/atomic"
 
 	"github.com/BakeLens/crust/internal/logger"
@@ -135,6 +137,58 @@ var globalSink atomic.Value // stores Sink
 // SetSink sets the global event sink (called once during init by security.Manager).
 func SetSink(s Sink) { globalSink.Store(s) }
 
+// --- Live event subscriptions (for SSE streaming) ---
+
+// MaxSubscribers limits concurrent event stream connections to prevent resource exhaustion.
+const MaxSubscribers = 16
+
+// ErrTooManySubscribers is returned when the subscriber limit is reached.
+var ErrTooManySubscribers = errors.New("too many event subscribers")
+
+var (
+	subscribers  sync.Map     // map[uint64]chan Event
+	nextSubID    atomic.Uint64
+	subCount     atomic.Int32
+)
+
+// Subscribe registers a live event listener. Events are delivered on the returned
+// channel with best-effort semantics: if the subscriber is slow, events are dropped
+// (non-blocking send). The channel is closed when Unsubscribe is called.
+//
+// bufSize controls the channel buffer (recommended: 64).
+// Returns ErrTooManySubscribers if MaxSubscribers is reached.
+func Subscribe(bufSize int) (id uint64, ch <-chan Event, err error) {
+	if subCount.Load() >= int32(MaxSubscribers) {
+		return 0, nil, ErrTooManySubscribers
+	}
+	c := make(chan Event, bufSize)
+	id = nextSubID.Add(1)
+	subscribers.Store(id, c)
+	subCount.Add(1)
+	return id, c, nil
+}
+
+// Unsubscribe removes a subscriber. The channel is NOT closed to avoid
+// send-on-closed-channel races with broadcast(). Callers should use context
+// cancellation to signal the subscriber goroutine to stop reading.
+func Unsubscribe(id uint64) {
+	if _, ok := subscribers.LoadAndDelete(id); ok {
+		subCount.Add(-1)
+	}
+}
+
+// broadcast sends an event to all subscribers. Slow subscribers are skipped
+// (non-blocking send) to prevent Record() from blocking.
+func broadcast(event Event) {
+	subscribers.Range(func(_, v any) bool {
+		select {
+		case v.(chan Event) <- event:
+		default: // drop if subscriber is slow
+		}
+		return true
+	})
+}
+
 // Record logs a security event to in-memory metrics and the configured sink.
 // This is the single entry point for recording security events across all layers.
 func Record(event Event) {
@@ -191,4 +245,7 @@ func Record(event Event) {
 	if s, ok := globalSink.Load().(Sink); ok && s != nil {
 		s.LogEvent(event)
 	}
+
+	// Broadcast to live subscribers (SSE streams).
+	broadcast(event)
 }

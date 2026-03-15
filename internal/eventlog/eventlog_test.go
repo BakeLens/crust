@@ -26,6 +26,12 @@ func (m *mockSink) last() Event {
 func resetAll() {
 	GetMetrics().Reset()
 	globalSink = globalSinkZero // clear sink
+	// Clear all subscribers
+	subscribers.Range(func(key, _ any) bool {
+		subscribers.Delete(key)
+		return true
+	})
+	subCount.Store(0)
 }
 
 // globalSinkZero is the zero value used to clear the atomic.Value.
@@ -356,6 +362,163 @@ func TestMetrics_Reset(t *testing.T) {
 			t.Errorf("after Reset, stats[%q] = %d, want 0", k, v)
 		}
 	}
+}
+
+// --- Subscription tests ---
+
+func TestSubscribeReceivesEvents(t *testing.T) {
+	resetAll()
+	id, ch, err := Subscribe(8)
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+	defer Unsubscribe(id)
+
+	Record(Event{Layer: LayerProxyResponse, ToolName: "bash", WasBlocked: true, RuleName: "test-rule"})
+
+	select {
+	case ev := <-ch:
+		if ev.ToolName != "bash" {
+			t.Errorf("ToolName = %q, want %q", ev.ToolName, "bash")
+		}
+		if !ev.WasBlocked {
+			t.Error("WasBlocked = false, want true")
+		}
+	default:
+		t.Fatal("expected event on channel, got none")
+	}
+}
+
+func TestUnsubscribeStopsBroadcast(t *testing.T) {
+	resetAll()
+	id, ch, err := Subscribe(8)
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	Unsubscribe(id)
+
+	// After unsubscribe, new events should NOT arrive on the channel
+	Record(Event{Layer: LayerProxyResponse, ToolName: "after-unsub", WasBlocked: false})
+
+	select {
+	case <-ch:
+		t.Error("received event after Unsubscribe")
+	default:
+		// expected: no event
+	}
+
+	// Double unsubscribe should not panic
+	Unsubscribe(id)
+}
+
+func TestSlowSubscriberDropsEvents(t *testing.T) {
+	resetAll()
+	id, ch, err := Subscribe(1) // buffer of 1
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+	defer Unsubscribe(id)
+
+	// Record more events than buffer can hold — must not block
+	for i := 0; i < 100; i++ {
+		Record(Event{Layer: LayerProxyResponse, ToolName: "test", WasBlocked: false})
+	}
+
+	// Drain whatever is in the channel
+	count := 0
+	for {
+		select {
+		case <-ch:
+			count++
+		default:
+			goto done
+		}
+	}
+done:
+	if count == 0 {
+		t.Error("expected at least 1 event, got 0")
+	}
+	if count > 2 { // buffer=1 + possibly 1 in-flight
+		t.Errorf("expected at most 2 events with buffer=1, got %d", count)
+	}
+}
+
+func TestMultipleSubscribers(t *testing.T) {
+	resetAll()
+	ids := make([]uint64, 3)
+	chs := make([]<-chan Event, 3)
+	for i := range 3 {
+		var err error
+		ids[i], chs[i], err = Subscribe(8)
+		if err != nil {
+			t.Fatalf("Subscribe %d failed: %v", i, err)
+		}
+		defer Unsubscribe(ids[i])
+	}
+
+	Record(Event{Layer: LayerProxyResponse, ToolName: "multi", WasBlocked: true})
+
+	for i, ch := range chs {
+		select {
+		case ev := <-ch:
+			if ev.ToolName != "multi" {
+				t.Errorf("subscriber %d: ToolName = %q, want %q", i, ev.ToolName, "multi")
+			}
+		default:
+			t.Errorf("subscriber %d: no event received", i)
+		}
+	}
+}
+
+func TestMaxSubscribersLimit(t *testing.T) {
+	resetAll()
+	ids := make([]uint64, MaxSubscribers)
+	for i := range MaxSubscribers {
+		var err error
+		ids[i], _, err = Subscribe(1)
+		if err != nil {
+			t.Fatalf("Subscribe %d failed: %v", i, err)
+		}
+	}
+	// Next subscribe should fail
+	_, _, err := Subscribe(1)
+	if err != ErrTooManySubscribers {
+		t.Errorf("expected ErrTooManySubscribers, got %v", err)
+	}
+	// Unsubscribe one, then subscribe again should work
+	Unsubscribe(ids[0])
+	_, _, err = Subscribe(1)
+	if err != nil {
+		t.Errorf("Subscribe after Unsubscribe failed: %v", err)
+	}
+	// Clean up
+	for _, id := range ids[1:] {
+		Unsubscribe(id)
+	}
+}
+
+func TestSubscribeUnsubscribeRace(t *testing.T) {
+	resetAll()
+	var wg sync.WaitGroup
+
+	// Concurrent subscribe/unsubscribe/record
+	for i := range 50 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			id, _, err := Subscribe(4)
+			if err != nil {
+				return // limit reached, that's fine
+			}
+			// Record some events
+			for j := range 10 {
+				Record(Event{Layer: LayerProxyResponse, ToolName: "race", WasBlocked: j%2 == 0})
+			}
+			Unsubscribe(id)
+		}(i)
+	}
+	wg.Wait()
 }
 
 func TestMetrics_ProxyResponseBlockRate(t *testing.T) {

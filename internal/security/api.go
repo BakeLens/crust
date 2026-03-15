@@ -3,6 +3,7 @@
 package security
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/BakeLens/crust/internal/api"
 	"github.com/BakeLens/crust/internal/eventlog"
+	"github.com/BakeLens/crust/internal/mcpgateway"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
 )
@@ -76,6 +78,7 @@ func (s *APIServer) registerRoutes() {
 			security.GET("/logs", s.handleLogs)
 			security.GET("/stats", s.handleStats)
 			security.GET("/status", s.handleStatus)
+			security.GET("/events/stream", s.handleEventsStream)
 		}
 
 		// Telemetry routes
@@ -184,6 +187,69 @@ func (s *APIServer) handleStatus(c *gin.Context) {
 		"locked_rules_count": lockedCount,
 		"timestamp":          time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+// handleEventsStream handles GET /api/security/events/stream.
+// Opens an SSE connection that pushes security events in real time.
+// Events are delivered best-effort: slow clients may miss events.
+// The connection closes when the client disconnects or the server shuts down.
+//
+// SSE frame format:
+//
+//	event: security-event
+//	data: {"tool_name":"bash","was_blocked":true,"blocked_by_rule":"...","layer":"..."}
+//
+// Returns 503 if the maximum number of concurrent subscribers is reached.
+func (s *APIServer) handleEventsStream(c *gin.Context) {
+	id, ch, err := eventlog.Subscribe(64)
+	if err != nil {
+		c.String(http.StatusServiceUnavailable, "too many event stream connections")
+		return
+	}
+	defer eventlog.Unsubscribe(id)
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.WriteHeader(http.StatusOK)
+	if f, ok := c.Writer.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	ctx := c.Request.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-ch:
+			if !ok {
+				return
+			}
+			// Reuse the same field mapping as record.go → telemetry.ToolCallLog,
+			// but strip Arguments for security (same as SanitizeToolCallLogs).
+			data, _ := json.Marshal(gin.H{
+				"tool_name":       event.ToolName,
+				"was_blocked":     event.WasBlocked,
+				"blocked_by_rule": event.RuleName,
+				"layer":           event.Layer,
+				"protocol":        event.Protocol,
+				"direction":       event.Direction,
+				"method":          event.Method,
+				"block_type":      event.BlockType,
+				"api_type":        event.APIType.String(),
+				"model":           event.Model,
+				"trace_id":        string(event.TraceID),
+				"session_id":      string(event.SessionID),
+				"timestamp":       time.Now().UTC().Format(time.RFC3339),
+			})
+			if err := mcpgateway.WriteSSEEvent(c.Writer, mcpgateway.SSEEvent{
+				Type: "security-event",
+				Data: string(data),
+			}); err != nil {
+				return
+			}
+		}
+	}
 }
 
 // handleHealth handles GET /health
