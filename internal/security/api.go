@@ -79,6 +79,7 @@ func (s *APIServer) registerRoutes() {
 			security.GET("/stats", s.handleStats)
 			security.GET("/status", s.handleStatus)
 			security.GET("/events/stream", s.handleEventsStream)
+			security.GET("/plugins", s.handlePlugins)
 		}
 
 		// Telemetry routes
@@ -264,6 +265,23 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 			}
 		}
 	}
+}
+
+// handlePlugins handles GET /api/security/plugins.
+// Returns health stats for all registered plugins (e.g., sandbox).
+func (s *APIServer) handlePlugins(c *gin.Context) {
+	manager := GetGlobalManager()
+	if manager == nil {
+		api.Success(c, []gin.H{})
+		return
+	}
+	registry := manager.GetRegistry()
+	if registry == nil {
+		api.Success(c, []gin.H{})
+		return
+	}
+	stats := registry.Stats()
+	api.Success(c, stats)
 }
 
 // handleHealth handles GET /health
