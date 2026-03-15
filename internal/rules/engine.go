@@ -386,7 +386,7 @@ func (e *Engine) AddRulesFromFile(path string) (string, error) {
 	return destPath, nil
 }
 
-// Evaluate evaluates a tool call through a 15-step pipeline (steps 0-14).
+// Evaluate evaluates a tool call through a 14-step pipeline (steps 1-14).
 // Returns MatchResult indicating whether the call is allowed, blocked, or logged.
 func (e *Engine) Evaluate(call ToolCall) MatchResult {
 	// Step 1: Pre-checker (self-protection regex on raw JSON).
