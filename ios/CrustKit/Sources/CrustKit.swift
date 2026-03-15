@@ -564,6 +564,7 @@ public final class CrustURLProtocol: URLProtocol {
 
     // MARK: - Helpers
 
+    /// NOTE: Keep in sync with detectAPITypeFromPath() in pkg/libcrust/proxy.go.
     private static func detectAPIType(from url: URL?) -> APIType {
         guard let path = url?.path else { return .openai }
         if path.contains("/v1/messages") || path.contains("/anthropic") {

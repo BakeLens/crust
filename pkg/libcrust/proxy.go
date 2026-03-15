@@ -277,6 +277,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // detectAPITypeFromPath guesses API type from the request path.
+// NOTE: Keep in sync with CrustURLProtocol.detectAPIType(from:) in CrustKit.swift.
 func detectAPITypeFromPath(path string) types.APIType {
 	if strings.Contains(path, "/v1/messages") {
 		return types.APITypeAnthropic

@@ -3,25 +3,10 @@ import XCTest
 
 // MARK: - Extended tests for OpenAI formats, DLP, error paths, thread safety
 
-final class CrustKitExtendedTests: XCTestCase {
-    var engine: CrustEngine!
-
-    override func setUp() {
-        super.setUp()
-        engine = CrustEngine()
-    }
-
-    override func tearDown() {
-        engine.shutdown()
-        engine = nil
-        super.tearDown()
-    }
-
+final class CrustKitExtendedTests: CrustEngineTestCase {
     // MARK: - OpenAI Response Interception
 
     func testInterceptResponseOpenAI() throws {
-        try engine.initialize()
-
         let args = #"{\"file_path\":\"/etc/crontab\",\"content\":\"evil\"}"#
         let body = """
         {"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"c1",\
@@ -36,8 +21,6 @@ final class CrustKitExtendedTests: XCTestCase {
     }
 
     func testInterceptResponseOpenAIAllowed() throws {
-        try engine.initialize()
-
         let args = #"{\"path\":\"/tmp/test.txt\"}"#
         let body = """
         {"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"c1",\
@@ -53,8 +36,6 @@ final class CrustKitExtendedTests: XCTestCase {
     }
 
     func testInterceptResponseOpenAIResponses() throws {
-        try engine.initialize()
-
         let args = #"{\"file_path\":\"/etc/crontab\",\"content\":\"evil\"}"#
         let body = """
         {"output":[{"type":"function_call","id":"fc1",\
@@ -71,8 +52,6 @@ final class CrustKitExtendedTests: XCTestCase {
     // MARK: - DLP in Text Responses
 
     func testInterceptResponseDLPInTextBlock() throws {
-        try engine.initialize()
-
         let token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12"
         let body = """
         {"content":[{"type":"text","text":"Here is your token: \(token)"}]}
@@ -85,8 +64,6 @@ final class CrustKitExtendedTests: XCTestCase {
     }
 
     func testInterceptResponseCleanTextBlock() throws {
-        try engine.initialize()
-
         let body = """
         {"content":[{"type":"text","text":"Hello, how can I help you today?"}]}
         """
@@ -103,8 +80,6 @@ final class CrustKitExtendedTests: XCTestCase {
     // MARK: - BlockMode.replace
 
     func testInterceptResponseReplaceMode() throws {
-        try engine.initialize()
-
         let body = """
         {"content":[{"type":"tool_use","id":"t1","name":"write_file",\
         "input":{"file_path":"/etc/crontab","content":"evil"}}]}
@@ -123,6 +98,7 @@ final class CrustKitExtendedTests: XCTestCase {
     // MARK: - Error Paths
 
     func testEvaluateBeforeInitialize() {
+        engine.shutdown() // reset to uninitialized state
         let result = engine.evaluate(
             toolName: "write_file",
             arguments: ["file_path": "/etc/crontab", "content": "evil"]
@@ -131,6 +107,7 @@ final class CrustKitExtendedTests: XCTestCase {
     }
 
     func testInterceptResponseBeforeInitialize() {
+        engine.shutdown()
         let body = """
         {"content":[{"type":"tool_use","id":"t1","name":"write_file",\
         "input":{"file_path":"/etc/crontab","content":"evil"}}]}
@@ -139,60 +116,50 @@ final class CrustKitExtendedTests: XCTestCase {
     }
 
     func testScanContentBeforeInitialize() {
+        engine.shutdown()
         let result = engine.scanContent("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12")
         XCTAssertNotNil(result)
     }
 
     func testValidateURLBeforeInitialize() {
+        engine.shutdown()
         let result = engine.validateURL("tel:+1234567890")
         XCTAssertNotNil(result)
     }
 
-    func testInterceptResponseMalformedJSON() throws {
-        try engine.initialize()
-
+    func testInterceptResponseMalformedJSON() {
         let result = engine.interceptResponse(body: "not json at all")
         if let result {
             XCTAssertTrue(result.blocked.isEmpty, "malformed JSON should not produce blocked calls")
         }
     }
 
-    func testEvaluateEmptyToolName() throws {
-        try engine.initialize()
-
+    func testEvaluateEmptyToolName() {
         let result = engine.evaluate(toolName: "", arguments: [:])
         XCTAssertFalse(result.matched, "empty tool name should not match")
     }
 
     // MARK: - Async Variants
 
-    func testScanOutboundAsync() async throws {
-        try engine.initialize()
-
+    func testScanOutboundAsync() async {
         let result = await engine.scanOutboundAsync(
             "My secret key: ghp_TestSecretTokenForDLP00000000000000scan"
         )
         XCTAssertTrue(result.matched, "API key should be detected in async outbound scan")
     }
 
-    func testValidateURLAsyncAllowed() async throws {
-        try engine.initialize()
-
+    func testValidateURLAsyncAllowed() async {
         let result = await engine.validateURLAsync("https://example.com")
         XCTAssertFalse(result.blocked, "https URL should be allowed async")
         XCTAssertEqual(result.scheme, "https")
     }
 
-    func testValidateURLAsyncMalformed() async throws {
-        try engine.initialize()
-
+    func testValidateURLAsyncMalformed() async {
         let result = await engine.validateURLAsync("not-a-url")
         XCTAssertNotNil(result)
     }
 
-    func testValidateURLAsyncEmpty() async throws {
-        try engine.initialize()
-
+    func testValidateURLAsyncEmpty() async {
         let result = await engine.validateURLAsync("")
         XCTAssertNotNil(result)
     }
@@ -258,38 +225,28 @@ final class CrustKitExtendedTests: XCTestCase {
 
     // MARK: - Additional URL Scheme Tests
 
-    func testValidateURLFacetimeBlocked() throws {
-        try engine.initialize()
-
+    func testValidateURLFacetimeBlocked() {
         let result = engine.validateURL("facetime:+1234567890")
         XCTAssertTrue(result.blocked, "facetime: URL should be blocked")
         XCTAssertEqual(result.scheme, "facetime")
     }
 
-    func testValidateURLFacetimeAudioBlocked() throws {
-        try engine.initialize()
-
+    func testValidateURLFacetimeAudioBlocked() {
         let result = engine.validateURL("facetime-audio:+1234567890")
         XCTAssertTrue(result.blocked, "facetime-audio: URL should be blocked")
     }
 
-    func testValidateURLItmsServicesBlocked() throws {
-        try engine.initialize()
-
+    func testValidateURLItmsServicesBlocked() {
         let result = engine.validateURL("itms-services://?action=download-manifest")
         XCTAssertTrue(result.blocked, "itms-services: URL should be blocked")
     }
 
-    func testValidateURLAppSettingsBlocked() throws {
-        try engine.initialize()
-
+    func testValidateURLAppSettingsBlocked() {
         let result = engine.validateURL("app-settings://")
         XCTAssertTrue(result.blocked, "app-settings: URL should be blocked")
     }
 
-    func testValidateURLHttpAllowed() throws {
-        try engine.initialize()
-
+    func testValidateURLHttpAllowed() {
         let result = engine.validateURL("http://example.com")
         XCTAssertFalse(result.blocked, "http: URL should be allowed")
         XCTAssertEqual(result.scheme, "http")
@@ -297,25 +254,19 @@ final class CrustKitExtendedTests: XCTestCase {
 
     // MARK: - Content Scanning Edge Cases
 
-    func testScanContentEmpty() throws {
-        try engine.initialize()
-
+    func testScanContentEmpty() {
         let result = engine.scanContent("")
         XCTAssertFalse(result.matched, "empty content should not match")
     }
 
-    func testScanContentBIP39Mnemonic() throws {
-        try engine.initialize()
-
+    func testScanContentBIP39Mnemonic() {
         let mnemonic = "abandon abandon abandon abandon abandon abandon " +
             "abandon abandon abandon abandon abandon about"
         let result = engine.scanContent(mnemonic)
         XCTAssertTrue(result.matched, "BIP39 mnemonic should be detected")
     }
 
-    func testScanContentPrivateKey() throws {
-        try engine.initialize()
-
+    func testScanContentPrivateKey() {
         let xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy" +
             "6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi"
         let result = engine.scanContent(xprv)
@@ -324,9 +275,7 @@ final class CrustKitExtendedTests: XCTestCase {
 
     // MARK: - Multiple Tool Calls Interception
 
-    func testInterceptResponseMixedToolCalls() throws {
-        try engine.initialize()
-
+    func testInterceptResponseMixedToolCalls() {
         let body = """
         {"content":[\
         {"type":"tool_use","id":"t1","name":"read_file",\
@@ -344,8 +293,6 @@ final class CrustKitExtendedTests: XCTestCase {
     }
 
     func testInterceptResponseAllToolsBlocked() throws {
-        try engine.initialize()
-
         let body = """
         {"content":[\
         {"type":"tool_use","id":"t1","name":"write_file",\
@@ -376,7 +323,6 @@ final class CrustKitExtendedTests: XCTestCase {
     /// FIXED: Google AI (generativelanguage.googleapis.com) removed from default
     /// interceptedHosts since we can't parse its response format yet.
     func testFixGoogleAINotInDefaultHosts() {
-        // Reset to defaults by reading the current interceptedHosts.
         let defaultHosts = CrustURLProtocol.interceptedHosts
         XCTAssertFalse(
             defaultHosts.contains("generativelanguage.googleapis.com"),
