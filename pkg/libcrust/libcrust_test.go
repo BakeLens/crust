@@ -13,11 +13,35 @@ import (
 	"time"
 )
 
-func TestInitAndEvaluate(t *testing.T) {
+func mustInit(t *testing.T) {
+	t.Helper()
 	if err := Init(""); err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
-	defer Shutdown()
+	t.Cleanup(Shutdown)
+}
+
+func mustStartProxy(t *testing.T, upstreamURL, apiKey, apiType string) {
+	t.Helper()
+	if err := StartProxy(0, upstreamURL, apiKey, apiType); err != nil {
+		t.Fatalf("StartProxy failed: %v", err)
+	}
+	t.Cleanup(StopProxy)
+}
+
+// fakeUpstream creates a test HTTP server that returns a fixed JSON body.
+func fakeUpstream(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestInitAndEvaluate(t *testing.T) {
+	mustInit(t)
 
 	if n := RuleCount(); n == 0 {
 		t.Fatal("expected builtin rules to be loaded")
@@ -72,10 +96,7 @@ rules:
 }
 
 func TestInterceptResponse(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	// Simple Anthropic response with a benign tool call
 	body := `{"content":[{"type":"tool_use","id":"t1","name":"read_file","input":{"path":"/tmp/test.txt"}}]}`
@@ -94,10 +115,7 @@ func TestEvaluateBeforeInit(t *testing.T) {
 }
 
 func TestValidateYAML(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	// Valid YAML
 	valid := `
@@ -143,10 +161,7 @@ func TestDoubleInitClosesOldEngine(t *testing.T) {
 }
 
 func TestEvaluateMalformedJSON(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	// Should not panic on invalid JSON.
 	result := Evaluate("read_file", "not{json")
@@ -202,16 +217,8 @@ func TestConcurrentEvaluateAndShutdown(t *testing.T) {
 }
 
 func TestStartStopProxy(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
-
-	// Start proxy on a random port.
-	if err := StartProxy(0, "https://api.anthropic.com", "", "anthropic"); err != nil {
-		t.Fatalf("StartProxy failed: %v", err)
-	}
-	defer StopProxy()
+	mustInit(t)
+	mustStartProxy(t, "https://api.anthropic.com", "", "anthropic")
 
 	addr := ProxyAddress()
 	if addr == "" {
@@ -228,15 +235,9 @@ func TestStartStopProxy(t *testing.T) {
 }
 
 func TestStartProxyDoubleStart(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
-	if err := StartProxy(0, "https://api.anthropic.com", "", "anthropic"); err != nil {
-		t.Fatalf("StartProxy failed: %v", err)
-	}
-	defer StopProxy()
+	mustStartProxy(t, "https://api.anthropic.com", "", "anthropic")
 
 	// Second start should fail.
 	if err := StartProxy(0, "https://api.openai.com", "", "openai"); err == nil {
@@ -257,10 +258,7 @@ func TestProxyAddressWhenNotRunning(t *testing.T) {
 }
 
 func TestStartProxyInvalidURL(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	if err := StartProxy(0, "not-a-url", "", ""); err == nil {
 		t.Error("expected error for invalid upstream URL")
@@ -306,10 +304,7 @@ func TestForceNonStreaming_InvalidJSON(t *testing.T) {
 }
 
 func TestProxyInterceptsStreamingRequest(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	// Fake upstream: verify it receives stream=false, return blocked tool call.
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -331,10 +326,7 @@ func TestProxyInterceptsStreamingRequest(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	if err := StartProxy(0, upstream.URL, "", "anthropic"); err != nil {
-		t.Fatalf("StartProxy failed: %v", err)
-	}
-	defer StopProxy()
+	mustStartProxy(t, upstream.URL, "", "anthropic")
 
 	// Send a streaming request.
 	reqBody := `{"model":"claude-3","stream":true,"messages":[{"role":"user","content":"test"}]}`
@@ -357,26 +349,11 @@ func TestProxyInterceptsStreamingRequest(t *testing.T) {
 }
 
 func TestProxyInterceptsBlockedToolCall(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
-	// Start a fake upstream that returns a response with a malicious tool call.
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		// Anthropic response with a tool call that writes to /etc/crontab.
-		resp := `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"write_file","input":{"file_path":"/etc/crontab","content":"* * * * * evil"}}]}`
-		w.Write([]byte(resp))
-	}))
-	defer upstream.Close()
+	upstream := fakeUpstream(t, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"write_file","input":{"file_path":"/etc/crontab","content":"* * * * * evil"}}]}`)
+	mustStartProxy(t, upstream.URL, "", "anthropic")
 
-	if err := StartProxy(0, upstream.URL, "", "anthropic"); err != nil {
-		t.Fatalf("StartProxy failed: %v", err)
-	}
-	defer StopProxy()
-
-	// Send a request through the proxy.
 	reqBody := `{"model":"claude-3","messages":[{"role":"user","content":"test"}]}`
 	resp, err := http.Post(
 		"http://"+ProxyAddress()+"/v1/messages",
@@ -397,23 +374,10 @@ func TestProxyInterceptsBlockedToolCall(t *testing.T) {
 }
 
 func TestProxyPassesThroughAllowedToolCall(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
-	// Fake upstream returning a benign tool call.
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		resp := `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"read_file","input":{"path":"/tmp/test.txt"}}]}`
-		w.Write([]byte(resp))
-	}))
-	defer upstream.Close()
-
-	if err := StartProxy(0, upstream.URL, "", "anthropic"); err != nil {
-		t.Fatalf("StartProxy failed: %v", err)
-	}
-	defer StopProxy()
+	upstream := fakeUpstream(t, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"read_file","input":{"path":"/tmp/test.txt"}}]}`)
+	mustStartProxy(t, upstream.URL, "", "anthropic")
 
 	reqBody := `{"model":"claude-3","messages":[{"role":"user","content":"test"}]}`
 	resp, err := http.Post(
@@ -514,10 +478,7 @@ rules:
 }
 
 func TestScanContent_Clean(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	result := ScanContent("Hello, this is a normal message with no secrets.")
 	if strings.Contains(result, `"matched":true`) {
@@ -526,10 +487,7 @@ func TestScanContent_Clean(t *testing.T) {
 }
 
 func TestScanContent_GitHubToken(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	result := ScanContent("Here is a token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12")
 	if !strings.Contains(result, `"matched":true`) {
@@ -538,10 +496,7 @@ func TestScanContent_GitHubToken(t *testing.T) {
 }
 
 func TestScanContent_VCard(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	result := ScanContent("BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD")
 	if !strings.Contains(result, `"matched":true`) {
@@ -550,10 +505,7 @@ func TestScanContent_VCard(t *testing.T) {
 }
 
 func TestScanContent_BIP39(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 	result := ScanContent(mnemonic)
@@ -571,10 +523,7 @@ func TestScanContent_BeforeInit(t *testing.T) {
 }
 
 func TestValidateURL_Tel(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	result := ValidateURL("tel:+1234567890")
 	if !strings.Contains(result, `"blocked":true`) {
@@ -586,10 +535,7 @@ func TestValidateURL_Tel(t *testing.T) {
 }
 
 func TestValidateURL_Https(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	result := ValidateURL("https://example.com")
 	if strings.Contains(result, `"blocked":true`) {
@@ -598,10 +544,7 @@ func TestValidateURL_Https(t *testing.T) {
 }
 
 func TestValidateURL_SMS(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	result := ValidateURL("sms:+1234567890")
 	if !strings.Contains(result, `"blocked":true`) {
@@ -617,10 +560,7 @@ func TestValidateURL_SMS(t *testing.T) {
 // proxy.upstream/apiKey/apiType without holding proxy.mu, creating a data
 // race when StopProxy is called concurrently.
 func TestBug_ProxyFieldsRaceCondition(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -671,10 +611,7 @@ func TestBug_ProxyFieldsRaceCondition(t *testing.T) {
 // TestBug_ProxyResponseHopByHop verifies that hop-by-hop headers from the
 // upstream response are forwarded to the client (they shouldn't be).
 func TestBug_ProxyResponseHopByHop(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Upstream sends hop-by-hop headers that should be stripped.
@@ -685,10 +622,7 @@ func TestBug_ProxyResponseHopByHop(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	if err := StartProxy(0, upstream.URL, "", "anthropic"); err != nil {
-		t.Fatalf("StartProxy failed: %v", err)
-	}
-	defer StopProxy()
+	mustStartProxy(t, upstream.URL, "", "anthropic")
 
 	resp, err := http.Post(
 		"http://"+ProxyAddress()+"/v1/messages",
@@ -713,10 +647,7 @@ func TestBug_ProxyResponseHopByHop(t *testing.T) {
 // TestBug_ProxyStreamingDoubleRequest verifies that streaming requests
 // are rewritten to non-streaming upfront (single request, no retry).
 func TestBug_ProxyStreamingDoubleRequest(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	var requestCount int
 	var mu sync.Mutex
@@ -730,10 +661,7 @@ func TestBug_ProxyStreamingDoubleRequest(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	if err := StartProxy(0, upstream.URL, "", "anthropic"); err != nil {
-		t.Fatalf("StartProxy failed: %v", err)
-	}
-	defer StopProxy()
+	mustStartProxy(t, upstream.URL, "", "anthropic")
 
 	resp, err := http.Post(
 		"http://"+ProxyAddress()+"/v1/messages",
@@ -769,10 +697,7 @@ func TestBug_ProxyMaxResponseBodyNotEnforced(t *testing.T) {
 // TestBug_ProxyPerRequestClient verifies that the shared HTTP client
 // enables connection reuse across requests.
 func TestBug_ProxyPerRequestClient(t *testing.T) {
-	if err := Init(""); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer Shutdown()
+	mustInit(t)
 
 	var connCount int
 	var mu sync.Mutex
@@ -785,10 +710,7 @@ func TestBug_ProxyPerRequestClient(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	if err := StartProxy(0, upstream.URL, "", "anthropic"); err != nil {
-		t.Fatalf("StartProxy failed: %v", err)
-	}
-	defer StopProxy()
+	mustStartProxy(t, upstream.URL, "", "anthropic")
 
 	// Send 5 sequential requests — with connection reuse, the upstream
 	// should see reused connections (fewer TLS handshakes).

@@ -20,7 +20,7 @@ func (i *Interceptor) InterceptOpenAIResponse(responseBody []byte, ctx Intercept
 			choice := &resp.Choices[choiceIdx]
 			if choice.Message.Content != "" {
 				if dlpResult := i.engine.ScanDLP(choice.Message.Content); dlpResult != nil {
-					choice.Message.Content = "[REDACTED by Crust: " + dlpResult.Message + "]"
+					choice.Message.Content = dlpRedact(dlpResult.Message)
 					modified = true
 				}
 			}
@@ -94,7 +94,7 @@ func (i *Interceptor) InterceptOpenAIResponsesResponse(responseBody []byte, ctx 
 			for cIdx, c := range item.Content {
 				if c.Type == "output_text" && c.Text != "" {
 					if dlpResult := i.engine.ScanDLP(c.Text); dlpResult != nil {
-						allowed[idx].Content[cIdx].Text = "[REDACTED by Crust: " + dlpResult.Message + "]"
+						allowed[idx].Content[cIdx].Text = dlpRedact(dlpResult.Message)
 						modified = true
 					}
 				}

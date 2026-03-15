@@ -33,6 +33,20 @@ var (
 	interceptor *security.Interceptor
 )
 
+const errNotInitialized = "engine not initialized"
+
+func getEngine() *rules.Engine {
+	mu.RLock()
+	defer mu.RUnlock()
+	return engine
+}
+
+func getInterceptor() *security.Interceptor {
+	mu.RLock()
+	defer mu.RUnlock()
+	return interceptor
+}
+
 // Init initializes the rule engine with builtin rules.
 // Call this once at app startup. Optional userRulesDir can be empty.
 // Safe to call multiple times — the previous engine is closed first.
@@ -80,7 +94,7 @@ func AddRulesYAML(yamlRules string) error {
 	defer mu.Unlock()
 
 	if engine == nil {
-		return fmt.Errorf("engine not initialized; call Init first")
+		return fmt.Errorf("%s; call Init first", errNotInitialized)
 	}
 	return engine.AddRulesFromYAML([]byte(yamlRules))
 }
@@ -92,12 +106,9 @@ func AddRulesYAML(yamlRules string) error {
 //
 // or {"matched":false} if the tool call is allowed.
 func Evaluate(toolName string, argsJSON string) string {
-	mu.RLock()
-	e := engine
-	mu.RUnlock()
-
+	e := getEngine()
 	if e == nil {
-		return `{"matched":false,"error":"engine not initialized"}`
+		return `{"matched":false,"error":"` + errNotInitialized + `"}`
 	}
 
 	result := e.Evaluate(rules.ToolCall{
@@ -119,10 +130,7 @@ func Evaluate(toolName string, argsJSON string) string {
 //
 //	{"modified_response":"...","blocked":[],"allowed":[]}
 func InterceptResponse(responseBody string, apiType string, blockMode string) string {
-	mu.RLock()
-	i := interceptor
-	mu.RUnlock()
-
+	i := getInterceptor()
 	if i == nil {
 		return responseBody
 	}
@@ -176,9 +184,7 @@ func InterceptResponse(responseBody string, apiType string, blockMode string) st
 
 // RuleCount returns the number of loaded rules.
 func RuleCount() int {
-	mu.RLock()
-	e := engine
-	mu.RUnlock()
+	e := getEngine()
 	if e == nil {
 		return 0
 	}
@@ -188,11 +194,9 @@ func RuleCount() int {
 // ValidateYAML checks whether a YAML rule string is valid.
 // Returns empty string on success, or an error message.
 func ValidateYAML(yamlRules string) string {
-	mu.RLock()
-	e := engine
-	mu.RUnlock()
+	e := getEngine()
 	if e == nil {
-		return "engine not initialized"
+		return errNotInitialized
 	}
 	_, err := e.ValidateYAMLFull([]byte(yamlRules))
 	if err != nil {
@@ -213,12 +217,9 @@ func GetVersion() string {
 //
 // or {"matched":false} if the content is clean.
 func ScanContent(content string) string {
-	mu.RLock()
-	e := engine
-	mu.RUnlock()
-
+	e := getEngine()
 	if e == nil {
-		return `{"matched":false,"error":"engine not initialized"}`
+		return `{"matched":false,"error":"` + errNotInitialized + `"}`
 	}
 
 	result := e.ScanDLP(content)
@@ -245,12 +246,9 @@ func ScanContent(content string) string {
 //
 // or {"scheme":"https","blocked":false} if the URL is allowed.
 func ValidateURL(rawURL string) string {
-	mu.RLock()
-	e := engine
-	mu.RUnlock()
-
+	e := getEngine()
 	if e == nil {
-		return `{"scheme":"","blocked":false,"error":"engine not initialized"}`
+		return `{"scheme":"","blocked":false,"error":"` + errNotInitialized + `"}`
 	}
 
 	scheme := rules.ExtractURLScheme(rawURL)

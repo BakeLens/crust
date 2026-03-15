@@ -244,10 +244,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Intercept tool calls in successful, non-oversized responses.
 	if !oversized && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		mu.RLock()
-		i := interceptor
-		mu.RUnlock()
-
+		i := getInterceptor()
 		if i != nil {
 			result, err := i.InterceptToolCalls(inspectBody, security.InterceptionContext{
 				APIType:   at,

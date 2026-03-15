@@ -15,9 +15,13 @@ import (
 
 // API-specific protocol constants for content block types.
 const (
+	contentTypeText         = "text"          // Anthropic + OpenAI
 	contentTypeToolUse      = "tool_use"      // Anthropic
 	contentTypeFunctionCall = "function_call" // OpenAI Responses
 )
+
+// dlpRedactPrefix is the standard redaction format for DLP-detected secrets.
+func dlpRedact(msg string) string { return "[REDACTED by Crust: " + msg + "]" }
 
 // Interceptor handles tool call interception and response modification
 type Interceptor struct {
