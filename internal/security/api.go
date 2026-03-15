@@ -213,6 +213,8 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 	c.Writer.Header().Set("Connection", "keep-alive")
 	c.Writer.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
 	c.Writer.WriteHeader(http.StatusOK)
+	// Send initial comment so clients can confirm connection is live.
+	_, _ = c.Writer.Write([]byte(":connected\n\n"))
 	if f, ok := c.Writer.(http.Flusher); ok {
 		f.Flush()
 	}

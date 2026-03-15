@@ -5,15 +5,27 @@
 //
 // All functions that return *C.char allocate memory via C.malloc.
 // The caller MUST free the returned pointer with LibcrustFree() or C.free().
+//
+// All exported functions include panic recovery to prevent Go panics from
+// crashing the host process across the FFI boundary.
 package main
 
 // #include <stdlib.h>
 import "C"
 import (
+	"fmt"
 	"unsafe"
 
 	"github.com/BakeLens/crust/pkg/libcrust"
 )
+
+// recoverErr catches panics and returns an error C string.
+// Usage: defer func() { recoverErr(&result) }()
+func recoverErr(result **C.char) {
+	if r := recover(); r != nil {
+		*result = C.CString(fmt.Sprintf("panic: %v", r))
+	}
+}
 
 // LibcrustFree frees a C string previously returned by any Libcrust* function.
 // The caller must call this for every non-nil *C.char return value to avoid memory leaks.
@@ -28,7 +40,8 @@ func LibcrustFree(p *C.char) {
 // Returns nil on success, or an error string that must be freed with LibcrustFree.
 //
 //export LibcrustInit
-func LibcrustInit(userRulesDir *C.char) *C.char {
+func LibcrustInit(userRulesDir *C.char) (result *C.char) {
+	defer recoverErr(&result)
 	err := libcrust.Init(C.GoString(userRulesDir))
 	if err != nil {
 		return C.CString(err.Error())
@@ -40,7 +53,8 @@ func LibcrustInit(userRulesDir *C.char) *C.char {
 // Returns nil on success, or an error string that must be freed with LibcrustFree.
 //
 //export LibcrustInitWithYAML
-func LibcrustInitWithYAML(yamlRules *C.char) *C.char {
+func LibcrustInitWithYAML(yamlRules *C.char) (result *C.char) {
+	defer recoverErr(&result)
 	err := libcrust.InitWithYAML(C.GoString(yamlRules))
 	if err != nil {
 		return C.CString(err.Error())
@@ -52,15 +66,21 @@ func LibcrustInitWithYAML(yamlRules *C.char) *C.char {
 // Returns a JSON string that must be freed with LibcrustFree.
 //
 //export LibcrustEvaluate
-func LibcrustEvaluate(toolName *C.char, argsJSON *C.char) *C.char {
-	result := libcrust.Evaluate(C.GoString(toolName), C.GoString(argsJSON))
-	return C.CString(result)
+func LibcrustEvaluate(toolName *C.char, argsJSON *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	r := libcrust.Evaluate(C.GoString(toolName), C.GoString(argsJSON))
+	return C.CString(r)
 }
 
-// LibcrustRuleCount returns the number of loaded rules.
+// LibcrustRuleCount returns the number of loaded rules. Returns 0 on panic.
 //
 //export LibcrustRuleCount
-func LibcrustRuleCount() C.int {
+func LibcrustRuleCount() (count C.int) {
+	defer func() {
+		if r := recover(); r != nil {
+			count = 0
+		}
+	}()
 	return C.int(libcrust.RuleCount())
 }
 
@@ -68,19 +88,21 @@ func LibcrustRuleCount() C.int {
 // Returns nil if valid, or an error string that must be freed with LibcrustFree.
 //
 //export LibcrustValidateYAML
-func LibcrustValidateYAML(yamlRules *C.char) *C.char {
-	result := libcrust.ValidateYAML(C.GoString(yamlRules))
-	if result == "" {
+func LibcrustValidateYAML(yamlRules *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	r := libcrust.ValidateYAML(C.GoString(yamlRules))
+	if r == "" {
 		return nil
 	}
-	return C.CString(result)
+	return C.CString(r)
 }
 
 // LibcrustGetVersion returns the library version string.
 // The caller must free the result with LibcrustFree.
 //
 //export LibcrustGetVersion
-func LibcrustGetVersion() *C.char {
+func LibcrustGetVersion() (result *C.char) {
+	defer recoverErr(&result)
 	return C.CString(libcrust.GetVersion())
 }
 
@@ -88,6 +110,7 @@ func LibcrustGetVersion() *C.char {
 //
 //export LibcrustShutdown
 func LibcrustShutdown() {
+	defer func() { recover() }() //nolint:errcheck // intentional silent recovery
 	libcrust.Shutdown()
 }
 
@@ -95,9 +118,10 @@ func LibcrustShutdown() {
 // Returns a JSON string that must be freed with LibcrustFree.
 //
 //export LibcrustInterceptResponse
-func LibcrustInterceptResponse(responseBody *C.char, apiType *C.char, blockMode *C.char) *C.char {
-	result := libcrust.InterceptResponse(C.GoString(responseBody), C.GoString(apiType), C.GoString(blockMode))
-	return C.CString(result)
+func LibcrustInterceptResponse(responseBody *C.char, apiType *C.char, blockMode *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	r := libcrust.InterceptResponse(C.GoString(responseBody), C.GoString(apiType), C.GoString(blockMode))
+	return C.CString(r)
 }
 
 func main() {}

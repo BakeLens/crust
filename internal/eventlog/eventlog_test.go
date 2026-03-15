@@ -385,6 +385,9 @@ func TestSubscribeReceivesEvents(t *testing.T) {
 		if !ev.WasBlocked {
 			t.Error("WasBlocked = false, want true")
 		}
+		if ev.RecordedAt.IsZero() {
+			t.Error("RecordedAt should be set by Record()")
+		}
 	default:
 		t.Fatal("expected event on channel, got none")
 	}
