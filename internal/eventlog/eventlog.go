@@ -146,9 +146,9 @@ const MaxSubscribers = 16
 var ErrTooManySubscribers = errors.New("too many event subscribers")
 
 var (
-	subscribers  sync.Map     // map[uint64]chan Event
-	nextSubID    atomic.Uint64
-	subCount     atomic.Int32
+	subscribers sync.Map // map[uint64]chan Event
+	nextSubID   atomic.Uint64
+	subCount    atomic.Int32
 )
 
 // Subscribe registers a live event listener. Events are delivered on the returned

@@ -227,7 +227,7 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 			}
 			// Reuse the same field mapping as record.go → telemetry.ToolCallLog,
 			// but strip Arguments for security (same as SanitizeToolCallLogs).
-			data, _ := json.Marshal(gin.H{
+			data, err := json.Marshal(gin.H{
 				"tool_name":       event.ToolName,
 				"was_blocked":     event.WasBlocked,
 				"blocked_by_rule": event.RuleName,
@@ -242,6 +242,9 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 				"session_id":      string(event.SessionID),
 				"timestamp":       time.Now().UTC().Format(time.RFC3339),
 			})
+			if err != nil {
+				continue
+			}
 			if err := mcpgateway.WriteSSEEvent(c.Writer, mcpgateway.SSEEvent{
 				Type: "security-event",
 				Data: string(data),

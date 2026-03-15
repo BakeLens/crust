@@ -1,6 +1,7 @@
 package eventlog
 
 import (
+	"errors"
 	"sync"
 	"testing"
 )
@@ -421,7 +422,7 @@ func TestSlowSubscriberDropsEvents(t *testing.T) {
 	defer Unsubscribe(id)
 
 	// Record more events than buffer can hold — must not block
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		Record(Event{Layer: LayerProxyResponse, ToolName: "test", WasBlocked: false})
 	}
 
@@ -483,7 +484,7 @@ func TestMaxSubscribersLimit(t *testing.T) {
 	}
 	// Next subscribe should fail
 	_, _, err := Subscribe(1)
-	if err != ErrTooManySubscribers {
+	if !errors.Is(err, ErrTooManySubscribers) {
 		t.Errorf("expected ErrTooManySubscribers, got %v", err)
 	}
 	// Unsubscribe one, then subscribe again should work
@@ -503,9 +504,9 @@ func TestSubscribeUnsubscribeRace(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Concurrent subscribe/unsubscribe/record
-	for i := range 50 {
+	for range 50 {
 		wg.Add(1)
-		go func(i int) {
+		go func() {
 			defer wg.Done()
 			id, _, err := Subscribe(4)
 			if err != nil {
@@ -516,7 +517,7 @@ func TestSubscribeUnsubscribeRace(t *testing.T) {
 				Record(Event{Layer: LayerProxyResponse, ToolName: "race", WasBlocked: j%2 == 0})
 			}
 			Unsubscribe(id)
-		}(i)
+		}()
 	}
 	wg.Wait()
 }
