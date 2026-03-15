@@ -748,39 +748,41 @@ func TestExpandRebindingHosts(t *testing.T) {
 }
 
 func TestResolvesToLoopback(t *testing.T) {
-	// IP literals — loopback IPs should return true, non-loopback false
-	if !ResolvesToLoopback("127.0.0.1") {
-		t.Error("127.0.0.1 should be detected as loopback")
-	}
-	if !ResolvesToLoopback("127.255.255.255") {
-		t.Error("127.255.255.255 should be detected as loopback (127.0.0.0/8)")
-	}
-	if !ResolvesToLoopback("::1") {
-		t.Error("::1 should be detected as loopback")
-	}
-	if ResolvesToLoopback("10.0.0.1") {
-		t.Error("non-loopback IP should return false")
-	}
-	if ResolvesToLoopback("8.8.8.8") {
-		t.Error("public IP should return false")
-	}
+	tests := []struct {
+		host string
+		want bool
+		desc string
+	}{
+		// IPv4 loopback range
+		{"127.0.0.1", true, "standard loopback"},
+		{"127.255.255.255", true, "end of 127.0.0.0/8"},
+		{"127.0.0.2", true, "alternate loopback"},
 
-	// localhost always resolves to loopback
-	if !ResolvesToLoopback("localhost") {
-		t.Error("localhost should resolve to loopback")
-	}
+		// IPv6 loopback
+		{"::1", true, "IPv6 loopback"},
+		{"::ffff:127.0.0.1", true, "IPv6-mapped IPv4 loopback"},
 
-	// Non-existent domain
-	if ResolvesToLoopback("this-domain-definitely-does-not-exist.invalid") {
-		t.Error("non-existent domain should return false")
-	}
+		// Non-loopback IPs
+		{"10.0.0.1", false, "private IP"},
+		{"8.8.8.8", false, "public IP"},
+		{"192.168.1.1", false, "private IP"},
+		{"0.0.0.0", false, "unspecified address"},
 
-	// Empty / garbage
-	if ResolvesToLoopback("") {
-		t.Error("empty string should return false")
+		// Hostname resolution
+		{"localhost", true, "resolves to 127.0.0.1 via /etc/hosts"},
+
+		// Non-existent / invalid
+		{"this-domain-definitely-does-not-exist.invalid", false, "NXDOMAIN"},
+		{"", false, "empty string"},
+		{"not a host", false, "contains spaces"},
+		{"../etc/passwd", false, "path traversal"},
 	}
-	if ResolvesToLoopback("not a host") {
-		t.Error("non-host string should return false")
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if got := ResolvesToLoopback(tt.host); got != tt.want {
+				t.Errorf("ResolvesToLoopback(%q) = %v, want %v", tt.host, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -808,25 +810,83 @@ func TestDNSCacheTTLExpiry(t *testing.T) {
 	}
 }
 
+func TestDNSCacheHit(t *testing.T) {
+	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10}
+	addr := netip.MustParseAddr("93.184.216.34")
+	cache.put("example.com", []netip.Addr{addr})
+
+	ips, ok := cache.get("example.com")
+	if !ok {
+		t.Fatal("cache hit expected")
+	}
+	if len(ips) != 1 || ips[0] != addr {
+		t.Errorf("got %v, want [%v]", ips, addr)
+	}
+}
+
+func TestDNSCacheNegative(t *testing.T) {
+	// Negative cache: lookup failure stores nil, prevents repeated DNS queries
+	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10}
+	cache.put("nxdomain.invalid", nil)
+
+	ips, ok := cache.get("nxdomain.invalid")
+	if !ok {
+		t.Fatal("negative cache entry should be returned")
+	}
+	if ips != nil {
+		t.Errorf("negative cache should return nil IPs, got %v", ips)
+	}
+}
+
+func TestIsResolvableHostname(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"localhost", true},
+		{"example.com", true},
+		{"my-host", true},
+		{"api.example.com", true},
+		{"", false},
+		{"123", false},       // all digits, no letters
+		{"127.0.0.1", false}, // looks like IP, no letters
+		{"hello world", false},
+		{"path/traversal", false},
+		{"..", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := isResolvableHostname(tt.input); got != tt.want {
+				t.Errorf("isResolvableHostname(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHostResolvesToLoopbackWithCrust(t *testing.T) {
-	// localhost + crust in JSON → should trigger
-	if !hostResolvesToLoopbackWithCrust([]string{"localhost"}, `{"url":"http://localhost:9090/crust/api"}`) {
-		t.Error("localhost with crust in JSON should return true")
+	tests := []struct {
+		name    string
+		hosts   []string
+		rawJSON string
+		want    bool
+	}{
+		{"localhost+crust", []string{"localhost"}, `{"url":"http://localhost:9090/crust/api"}`, true},
+		{"127.0.0.1+crust", []string{"127.0.0.1"}, `{"url":"http://127.0.0.1:9090/crust/api"}`, true},
+		{"::1+crust", []string{"::1"}, `{"url":"http://[::1]:9090/crust/api"}`, true},
+		{"case-insensitive", []string{"localhost"}, `{"url":"http://localhost:9090/CRUST/API"}`, true},
+		{"localhost-no-crust", []string{"localhost"}, `{"url":"http://localhost:9090/other"}`, false},
+		{"non-loopback+crust", []string{"example.com"}, `{"url":"http://example.com/crust"}`, false},
+		{"nil-hosts", nil, `{"url":"http://localhost/crust"}`, false},
+		{"empty-hosts", []string{}, `{"url":"http://localhost/crust"}`, false},
+		{"empty-json", []string{"localhost"}, "", false},
+		{"multiple-hosts-one-loopback", []string{"example.com", "localhost"}, `{"crust":true}`, true},
 	}
-
-	// localhost without crust → should not trigger
-	if hostResolvesToLoopbackWithCrust([]string{"localhost"}, `{"url":"http://localhost:9090/other"}`) {
-		t.Error("localhost without crust in JSON should return false")
-	}
-
-	// Non-loopback host + crust → should not trigger
-	if hostResolvesToLoopbackWithCrust([]string{"example.com"}, `{"url":"http://example.com/crust"}`) {
-		t.Error("non-loopback host should return false even with crust in JSON")
-	}
-
-	// Empty hosts → should not trigger
-	if hostResolvesToLoopbackWithCrust(nil, `{"url":"http://localhost/crust"}`) {
-		t.Error("nil hosts should return false")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hostResolvesToLoopbackWithCrust(tt.hosts, tt.rawJSON); got != tt.want {
+				t.Errorf("hostResolvesToLoopbackWithCrust(%v, %q) = %v, want %v", tt.hosts, tt.rawJSON, got, tt.want)
+			}
+		})
 	}
 }
 

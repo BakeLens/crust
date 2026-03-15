@@ -20,19 +20,20 @@ Agent Request ──▶ [Layer 0: History Scan] ──▶ LLM ──▶ [Layer 1
                              tool arguments, URL params
 
 Rule Evaluation:
-  1.  Self-protection pre-checker → blocks management API/socket access
+  1.  Self-protection pre-checker → regex on raw JSON (loopback + crust)
   2.  Sanitize tool name → strip null bytes, control chars
-  3.  Extract paths, commands, content from tool arguments
-  4.  Normalize Unicode → NFKC, strip invisible chars and confusables
-  5.  Block null bytes in write content
-  6.  Block evasive commands (fork bombs, unparseable shell)
-  7.  Detect encoding obfuscation (base64, hex)
-  8.  DLP Secret Detection → API keys/tokens + crypto keys (BIP39, xprv, WIF)
-  9.  Prepare paths → filter shell globs, normalize, expand filesystem globs
-  10. Resolve symlinks → match both original and resolved
-  11. Hardcoded path guards → /proc, crypto wallets (after symlink resolution)
-  12. Operation-based rules → path/command/host matching
-  13. Fallback rules (content-only) → raw JSON matching for ANY tool
+  3.  Extract paths, hosts, commands, content from tool arguments
+  4.  DNS loopback detection → resolve hosts, block if loopback + crust
+  5.  Normalize Unicode → NFKC, strip invisible chars and confusables
+  6.  Block null bytes in write content
+  7.  Block evasive commands (fork bombs, unparseable shell)
+  8.  Detect encoding obfuscation (base64, hex)
+  9.  DLP Secret Detection → API keys/tokens + crypto keys (BIP39, xprv, WIF)
+  10. Prepare paths → filter shell globs, normalize, expand filesystem globs
+  11. Resolve symlinks → match both original and resolved
+  12. Hardcoded path guards → /proc, crypto wallets (after symlink resolution)
+  13. Operation-based rules → path/command/host matching
+  14. Fallback rules (content-only) → raw JSON matching for ANY tool
 ```
 
 **Layer 0 (Request History):** Scans tool_calls in conversation history. Catches "bad agent" patterns where malicious actions already occurred in past turns.
@@ -153,6 +154,7 @@ Cross-OS app paths can all be listed under `$HOME` — wrong-OS patterns compile
 | Secret in Responses output_text | - | ✅ Redacted (text DLP) | - | - | - |
 | User pastes API key into AI chat | - | ✅ Blocked (outbound DLP) | - | - | - |
 | Phishing URL in AI text (tel:, sms:) | - | ✅ Blocked (URL validation) | - | - | - |
+| Custom DNS → 127.0.0.1 targeting crust API | - | ✅ Blocked (DNS resolve) | - | - | - |
 | LLM messages in API response | - | - | ✅ Stripped | - | - |
 | Tool arguments in API response | - | - | ✅ Stripped | - | - |
 | API keys in target URL params | - | - | ✅ Stripped | - | - |
