@@ -52,6 +52,7 @@ final class CrustKitExtendedTests: CrustEngineTestCase {
     // MARK: - DLP in Text Responses
 
     func testInterceptResponseDLPInTextBlock() throws {
+        // nosemgrep: generic.secrets.security.detected-github-token.detected-github-token -- fake token for DLP test
         let token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12"
         let body = """
         {"content":[{"type":"text","text":"Here is your token: \(token)"}]}
@@ -117,6 +118,7 @@ final class CrustKitExtendedTests: CrustEngineTestCase {
 
     func testScanContentBeforeInitialize() {
         engine.shutdown()
+        // nosemgrep: generic.secrets.security.detected-github-token.detected-github-token -- fake token for DLP test
         let result = engine.scanContent("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12")
         XCTAssertNotNil(result)
     }
@@ -142,6 +144,7 @@ final class CrustKitExtendedTests: CrustEngineTestCase {
     // MARK: - Async Variants
 
     func testScanOutboundAsync() async {
+        // nosemgrep: generic.secrets.security.detected-github-token.detected-github-token -- fake token for DLP test
         let result = await engine.scanOutboundAsync(
             "My secret key: ghp_TestSecretTokenForDLP00000000000000scan"
         )

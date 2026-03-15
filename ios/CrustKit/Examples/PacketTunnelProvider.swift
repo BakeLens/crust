@@ -218,6 +218,7 @@ func contentScanningExample() throws {
     try engine.initialize()
 
     // Scan an AI text response for leaked secrets.
+    // nosemgrep: generic.secrets.security.detected-github-token.detected-github-token -- fake token for DLP test
     let aiResponse = "Here's your config: API_KEY=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12"
     let scanResult = engine.scanContent(aiResponse)
     if scanResult.matched {

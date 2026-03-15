@@ -339,6 +339,7 @@ final class CrustKitTests: CrustEngineTestCase {
     }
 
     func testScanContentSecret() {
+        // nosemgrep: generic.secrets.security.detected-github-token.detected-github-token -- fake token for DLP test
         let result = engine.scanContent("Here is a token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12")
         XCTAssertTrue(result.matched, "GitHub token should be detected")
         XCTAssertNotNil(result.patternName)
@@ -351,6 +352,7 @@ final class CrustKitTests: CrustEngineTestCase {
     }
 
     func testScanContentAsync() async {
+        // nosemgrep: generic.secrets.security.detected-github-token.detected-github-token -- fake token for DLP test
         let result = await engine.scanContentAsync("Here is a token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij12")
         XCTAssertTrue(result.matched, "GitHub token should be detected async")
     }
