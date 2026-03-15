@@ -126,16 +126,17 @@ func FuzzParseSSEEventData(f *testing.F) {
 		// Must not panic
 		eventType, data := parseSSEEventData(event)
 
-		// INVARIANT 1: If any line starts with "event:" (per SSE spec), eventType must be non-empty.
+		// INVARIANT 1: If the last "event:" line (per SSE spec, last value wins)
+		// has a non-empty value, eventType must be non-empty.
+		var lastEventValue []byte
 		for line := range bytes.SplitSeq(event, []byte("\n")) {
 			line = bytes.TrimSuffix(line, []byte("\r"))
 			if bytes.HasPrefix(line, []byte("event:")) {
-				value := bytes.TrimPrefix(line[len("event:"):], []byte(" "))
-				if len(bytes.TrimSpace(value)) > 0 && eventType == "" {
-					t.Errorf("input has 'event:' line with value %q but eventType is empty", value)
-				}
-				break // only check first event: line
+				lastEventValue = bytes.TrimSpace(bytes.TrimPrefix(line[len("event:"):], []byte(" ")))
 			}
+		}
+		if len(lastEventValue) > 0 && eventType == "" {
+			t.Errorf("last 'event:' line has value %q but eventType is empty", lastEventValue)
 		}
 
 		// INVARIANT 2: If any line starts with "data:", data must be non-nil.
