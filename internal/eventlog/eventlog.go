@@ -23,6 +23,7 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/BakeLens/crust/internal/logger"
 	"github.com/BakeLens/crust/internal/types"
@@ -65,6 +66,10 @@ type Event struct {
 	Direction string // "inbound" (client→server), "outbound" (server→client)
 	Method    string // JSON-RPC method name (e.g., "tools/call")
 	BlockType string // BlockTypeRule, BlockTypeDLP, BlockTypeSelfProtect, BlockTypeMalformed
+
+	// RecordedAt is set by Record() to the time the event was recorded.
+	// Used by SSE streaming to provide accurate event timestamps.
+	RecordedAt time.Time
 }
 
 // Metrics tracks blocking statistics for all layers.
@@ -153,18 +158,27 @@ var (
 
 // Subscribe registers a live event listener. Events are delivered on the returned
 // channel with best-effort semantics: if the subscriber is slow, events are dropped
-// (non-blocking send). The channel is closed when Unsubscribe is called.
+// (non-blocking send). Callers must call Unsubscribe when done.
 //
-// bufSize controls the channel buffer (recommended: 64).
+// bufSize controls the channel buffer (clamped to minimum 1, recommended: 64).
 // Returns ErrTooManySubscribers if MaxSubscribers is reached.
 func Subscribe(bufSize int) (id uint64, ch <-chan Event, err error) {
-	if subCount.Load() >= int32(MaxSubscribers) {
-		return 0, nil, ErrTooManySubscribers
+	// Atomic CAS loop to prevent TOCTOU race on subscriber count.
+	for {
+		cur := subCount.Load()
+		if cur >= int32(MaxSubscribers) {
+			return 0, nil, ErrTooManySubscribers
+		}
+		if subCount.CompareAndSwap(cur, cur+1) {
+			break
+		}
+	}
+	if bufSize < 1 {
+		bufSize = 1
 	}
 	c := make(chan Event, bufSize)
 	id = nextSubID.Add(1)
 	subscribers.Store(id, c)
-	subCount.Add(1)
 	return id, c, nil
 }
 
@@ -192,6 +206,8 @@ func broadcast(event Event) {
 // Record logs a security event to in-memory metrics and the configured sink.
 // This is the single entry point for recording security events across all layers.
 func Record(event Event) {
+	event.RecordedAt = time.Now().UTC()
+
 	// Infer defaults for backward compatibility.
 	if event.Protocol == "" {
 		switch event.Layer {

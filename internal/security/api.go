@@ -211,20 +211,29 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
 	c.Writer.WriteHeader(http.StatusOK)
 	if f, ok := c.Writer.(http.Flusher); ok {
 		f.Flush()
 	}
 
 	ctx := c.Request.Context()
+	keepalive := time.NewTicker(20 * time.Second)
+	defer keepalive.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case event, ok := <-ch:
-			if !ok {
+		case <-keepalive.C:
+			// SSE comment keepalive — prevents idle connection drops by proxies/firewalls.
+			if _, err := c.Writer.Write([]byte(":keepalive\n\n")); err != nil {
 				return
 			}
+			if f, ok := c.Writer.(http.Flusher); ok {
+				f.Flush()
+			}
+		case event := <-ch:
 			// Reuse the same field mapping as record.go → telemetry.ToolCallLog,
 			// but strip Arguments for security (same as SanitizeToolCallLogs).
 			data, err := json.Marshal(gin.H{
@@ -240,7 +249,7 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 				"model":           event.Model,
 				"trace_id":        string(event.TraceID),
 				"session_id":      string(event.SessionID),
-				"timestamp":       time.Now().UTC().Format(time.RFC3339),
+				"timestamp":       event.RecordedAt.Format(time.RFC3339),
 			})
 			if err != nil {
 				continue

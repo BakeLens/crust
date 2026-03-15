@@ -489,11 +489,12 @@ func TestMaxSubscribersLimit(t *testing.T) {
 	}
 	// Unsubscribe one, then subscribe again should work
 	Unsubscribe(ids[0])
-	_, _, err = Subscribe(1)
+	newID, _, err := Subscribe(1)
 	if err != nil {
 		t.Errorf("Subscribe after Unsubscribe failed: %v", err)
 	}
-	// Clean up
+	// Clean up all
+	Unsubscribe(newID)
 	for _, id := range ids[1:] {
 		Unsubscribe(id)
 	}
@@ -505,21 +506,23 @@ func TestSubscribeUnsubscribeRace(t *testing.T) {
 
 	// Concurrent subscribe/unsubscribe/record
 	for range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			id, _, err := Subscribe(4)
 			if err != nil {
 				return // limit reached, that's fine
 			}
-			// Record some events
 			for j := range 10 {
 				Record(Event{Layer: LayerProxyResponse, ToolName: "race", WasBlocked: j%2 == 0})
 			}
 			Unsubscribe(id)
-		}()
+		})
 	}
 	wg.Wait()
+
+	// Verify all subscribers were cleaned up
+	if cnt := subCount.Load(); cnt != 0 {
+		t.Errorf("subCount after race test = %d, want 0", cnt)
+	}
 }
 
 func TestMetrics_ProxyResponseBlockRate(t *testing.T) {
