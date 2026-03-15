@@ -7,6 +7,7 @@
 // The caller MUST free the returned pointer with LibcrustFree() or C.free().
 package main
 
+// #include <stdlib.h>
 import "C"
 import (
 	"unsafe"
