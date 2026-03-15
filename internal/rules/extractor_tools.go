@@ -156,6 +156,10 @@ func (e *Extractor) augmentFromArgShape(info *ExtractedInfo) {
 	// embedded IP alongside the original hostname so IP-based host rules match.
 	info.Hosts = expandRebindingHosts(info.Hosts)
 
+	// SECURITY: Resolve hostnames via DNS and add loopback IPs to the host list.
+	// Catches custom domains pointing to 127.0.0.1 that bypass regex/rebinding checks.
+	info.Hosts = ResolveAndExpandHosts(info.Hosts)
+
 	// Deduplicate
 	info.Paths = deduplicateStrings(info.Paths)
 	info.Hosts = deduplicateStrings(info.Hosts)

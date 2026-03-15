@@ -3,13 +3,16 @@ package rules
 import (
 	"context"
 	"encoding/json"
+	"net/netip"
 	"os"
 	"reflect"
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BakeLens/crust/internal/rules/pwsh"
 )
@@ -741,6 +744,110 @@ func TestExpandRebindingHosts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestResolvesToLoopback(t *testing.T) {
+	// IP literals — loopback IPs should return true, non-loopback false
+	if !ResolvesToLoopback("127.0.0.1") {
+		t.Error("127.0.0.1 should be detected as loopback")
+	}
+	if !ResolvesToLoopback("127.255.255.255") {
+		t.Error("127.255.255.255 should be detected as loopback (127.0.0.0/8)")
+	}
+	if !ResolvesToLoopback("::1") {
+		t.Error("::1 should be detected as loopback")
+	}
+	if ResolvesToLoopback("10.0.0.1") {
+		t.Error("non-loopback IP should return false")
+	}
+	if ResolvesToLoopback("8.8.8.8") {
+		t.Error("public IP should return false")
+	}
+
+	// localhost always resolves to loopback
+	if !ResolvesToLoopback("localhost") {
+		t.Error("localhost should resolve to loopback")
+	}
+
+	// Non-existent domain
+	if ResolvesToLoopback("this-domain-definitely-does-not-exist.invalid") {
+		t.Error("non-existent domain should return false")
+	}
+
+	// Empty / garbage
+	if ResolvesToLoopback("") {
+		t.Error("empty string should return false")
+	}
+	if ResolvesToLoopback("not a host") {
+		t.Error("non-host string should return false")
+	}
+}
+
+func TestDNSCacheBounded(t *testing.T) {
+	// Fill cache beyond maxSize and verify it doesn't grow unbounded
+	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10}
+	for i := range 20 {
+		host := "host" + strconv.Itoa(i) + ".example.com"
+		cache.put(host, nil)
+	}
+	if len(cache.entries) > cache.maxSize {
+		t.Errorf("cache size %d exceeds maxSize %d", len(cache.entries), cache.maxSize)
+	}
+}
+
+func TestDNSCacheTTLExpiry(t *testing.T) {
+	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10}
+	addr := netip.MustParseAddr("127.0.0.1")
+	cache.entries["test.example.com"] = dnsCacheEntry{
+		ips:     []netip.Addr{addr},
+		expires: time.Now().Add(-1 * time.Second), // already expired
+	}
+	if ips, ok := cache.get("test.example.com"); ok {
+		t.Errorf("expired entry should not be returned, got %v", ips)
+	}
+}
+
+func TestHostResolvesToLoopbackWithCrust(t *testing.T) {
+	// localhost + crust in JSON → should trigger
+	if !hostResolvesToLoopbackWithCrust([]string{"localhost"}, `{"url":"http://localhost:9090/crust/api"}`) {
+		t.Error("localhost with crust in JSON should return true")
+	}
+
+	// localhost without crust → should not trigger
+	if hostResolvesToLoopbackWithCrust([]string{"localhost"}, `{"url":"http://localhost:9090/other"}`) {
+		t.Error("localhost without crust in JSON should return false")
+	}
+
+	// Non-loopback host + crust → should not trigger
+	if hostResolvesToLoopbackWithCrust([]string{"example.com"}, `{"url":"http://example.com/crust"}`) {
+		t.Error("non-loopback host should return false even with crust in JSON")
+	}
+
+	// Empty hosts → should not trigger
+	if hostResolvesToLoopbackWithCrust(nil, `{"url":"http://localhost/crust"}`) {
+		t.Error("nil hosts should return false")
+	}
+}
+
+func TestResolveAndExpandHosts(t *testing.T) {
+	// localhost should get 127.0.0.1 added
+	hosts := ResolveAndExpandHosts([]string{"localhost"})
+	hasLoopback := false
+	for _, h := range hosts {
+		if h == "127.0.0.1" || h == "::1" {
+			hasLoopback = true
+			break
+		}
+	}
+	if !hasLoopback {
+		t.Errorf("ResolveAndExpandHosts([localhost]) should include loopback IP, got %v", hosts)
+	}
+
+	// IP literal should pass through unchanged (no expansion)
+	hosts = ResolveAndExpandHosts([]string{"93.184.216.34"})
+	if len(hosts) != 1 || hosts[0] != "93.184.216.34" {
+		t.Errorf("IP literal should not be expanded, got %v", hosts)
 	}
 }
 

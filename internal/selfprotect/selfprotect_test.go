@@ -358,9 +358,9 @@ func TestCheck_DoubleURLEncodingBypass(t *testing.T) {
 func TestVerifyRegexMatchesProduction(t *testing.T) {
 	prodAPI := selfProtectAPIRegex.String()
 
-	// 1. The API regex must use the wide character class [:/.\w~] not the narrow [:/]
-	if !strings.Contains(prodAPI, `[:/.\w~]`) {
-		t.Errorf("selfProtectAPIRegex missing wide char class [:/.\\.w~], got: %s", prodAPI)
+	// 1. The API regex must use the separator class [:/.~] (no \w — causes false positives like localhost8080crust)
+	if !strings.Contains(prodAPI, `[:/.~]`) {
+		t.Errorf("selfProtectAPIRegex missing separator class [:/.~], got: %s", prodAPI)
 	}
 
 	// 2. The bare-0 branch must use [:/.]  not [:/]

@@ -2,10 +2,10 @@
 
 ## Overview
 
-Plugins are **post-engine protection layers** that operate after the built-in 13-step evaluation pipeline decides to allow a tool call. They do not re-evaluate rules — they **enforce** policy at a different layer (e.g., OS-level sandboxing at exec time).
+Plugins are **post-engine protection layers** that operate after the built-in 15-step evaluation pipeline decides to allow a tool call. They do not re-evaluate rules — they **enforce** policy at a different layer (e.g., OS-level sandboxing at exec time).
 
 ```text
-Tool Call ──▶ [Steps 0-12: Engine Pipeline] ──▶ allowed? ──▶ [Exec Time: Plugins] ──▶ Command Runs
+Tool Call ──▶ [Steps 0-14: Engine Pipeline] ──▶ allowed? ──▶ [Exec Time: Plugins] ──▶ Command Runs
                                                     │               │
                                                  ↓ BLOCK      enforce sandbox
                                               (engine)        (OS-level policy)
@@ -77,7 +77,7 @@ or on error:
 
 ### Request
 
-Sent with `method="evaluate"`. Contains everything the engine extracted during steps 0-12, plus a snapshot of all active rules:
+Sent with `method="evaluate"`. Contains everything the engine extracted during steps 0-14, plus a snapshot of all active rules:
 
 ```json
 {
@@ -280,10 +280,10 @@ If a `ProcessPlugin`'s external process crashes or times out during IPC, it is k
 
 ## Integration
 
-The plugin registry is created and managed by the **security manager**. After the engine's 13-step pipeline allows a tool call, plugins enforce additional policy at exec time (e.g., OS-level sandboxing).
+The plugin registry is created and managed by the **security manager**. After the engine's 15-step pipeline allows a tool call, plugins enforce additional policy at exec time (e.g., OS-level sandboxing).
 
 ```text
-Tool Call ──▶ [Steps 0-12: Engine Pipeline] ──▶ allowed? ──▶ [Exec Time] ──▶ Plugin (sandbox)
+Tool Call ──▶ [Steps 0-14: Engine Pipeline] ──▶ allowed? ──▶ [Exec Time] ──▶ Plugin (sandbox)
                                                     │              │
                                                  ↓ BLOCK     wraps command
                                               (engine)    with OS-level policy

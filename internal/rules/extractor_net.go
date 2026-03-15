@@ -1,10 +1,15 @@
 package rules
 
 import (
+	"context"
+	"net"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // networkFileUploadFlags maps network commands to flags that read a local file
@@ -364,4 +369,172 @@ func looksLikeHost(s string) bool {
 		}
 	}
 	return hasLetter
+}
+
+// ---------------------------------------------------------------------------
+// DNS-based loopback detection
+// ---------------------------------------------------------------------------
+//
+// Resolves extracted hostnames and checks if they point to loopback IPs.
+// This catches attacks where a custom domain (e.g., evil.com → 127.0.0.1)
+// bypasses regex-based loopback detection.
+//
+// Results are cached with a bounded LRU to avoid repeated DNS lookups
+// and limit memory usage.
+
+// dnsCache is a bounded cache of hostname → resolved IPs with TTL expiry.
+var dnsCache = &dnsLRU{
+	entries: make(map[string]dnsCacheEntry),
+	maxSize: 256,
+}
+
+type dnsCacheEntry struct {
+	ips     []netip.Addr
+	expires time.Time
+}
+
+type dnsLRU struct {
+	mu      sync.Mutex
+	entries map[string]dnsCacheEntry
+	maxSize int
+}
+
+const dnsCacheTTL = 60 * time.Second
+
+func (c *dnsLRU) get(host string) ([]netip.Addr, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[host]
+	if !ok || time.Now().After(e.expires) {
+		return nil, false
+	}
+	return e.ips, true
+}
+
+func (c *dnsLRU) put(host string, ips []netip.Addr) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Evict oldest entries when at capacity (simple: clear half the cache).
+	if len(c.entries) >= c.maxSize {
+		i := 0
+		half := c.maxSize / 2
+		for k := range c.entries {
+			delete(c.entries, k)
+			i++
+			if i >= half {
+				break
+			}
+		}
+	}
+	c.entries[host] = dnsCacheEntry{
+		ips:     ips,
+		expires: time.Now().Add(dnsCacheTTL),
+	}
+}
+
+// dnsLookupTimeout is the maximum time for a single DNS lookup.
+const dnsLookupTimeout = 2 * time.Second
+
+// resolveHost resolves a hostname to IP addresses using DNS, with caching.
+// Returns nil for IP literals (already handled by normalizeIPHost) or on error.
+func resolveHost(host string) []netip.Addr {
+	if host == "" {
+		return nil
+	}
+	// Skip IP literals — already normalized by normalizeIPHost
+	if addr, err := netip.ParseAddr(host); err == nil {
+		// But return the addr if it's loopback so ResolvesToLoopback works on IPs too
+		if addr.Unmap() == netip.MustParseAddr("::1") || loopbackPrefix.Contains(addr.Unmap()) {
+			return []netip.Addr{addr.Unmap()}
+		}
+		return nil
+	}
+	// Skip non-hostname strings — but don't require a dot (covers "localhost"
+	// and other single-label hostnames that resolve via /etc/hosts or DNS search domains)
+	if !isResolvableHostname(host) {
+		return nil
+	}
+
+	// Check cache
+	if cached, ok := dnsCache.get(host); ok {
+		return cached
+	}
+
+	// Resolve with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), dnsLookupTimeout)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		// Cache negative result to avoid repeated failing lookups
+		dnsCache.put(host, nil)
+		return nil
+	}
+
+	// Unmap IPv6-mapped IPv4 for consistent comparison
+	for i, a := range addrs {
+		addrs[i] = a.Unmap()
+	}
+
+	dnsCache.put(host, addrs)
+	return addrs
+}
+
+// loopbackPrefixes defines the IP ranges considered loopback.
+var loopbackPrefix = netip.MustParsePrefix("127.0.0.0/8")
+
+// isResolvableHostname returns true if s looks like a hostname that could
+// be resolved via DNS. Unlike looksLikeHost, it does NOT require a dot,
+// allowing single-label hostnames like "localhost" that resolve via
+// /etc/hosts or DNS search domains.
+func isResolvableHostname(s string) bool {
+	if s == "" {
+		return false
+	}
+	hasLetter := false
+	for _, c := range s {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			hasLetter = true
+		} else if c != '.' && c != '-' && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return hasLetter
+}
+
+// ResolvesToLoopback returns true if any of the hostname's DNS records
+// point to a loopback address (127.0.0.0/8 or ::1).
+func ResolvesToLoopback(host string) bool {
+	addrs := resolveHost(host)
+	for _, a := range addrs {
+		if a == netip.MustParseAddr("::1") || loopbackPrefix.Contains(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// ResolveAndExpandHosts resolves non-IP hostnames via DNS and adds any
+// loopback IPs to the host list. This enables IP-based rules to catch
+// domains that resolve to loopback (e.g., evil.com → 127.0.0.1).
+func ResolveAndExpandHosts(hosts []string) []string {
+	expanded := hosts
+	for _, h := range hosts {
+		addrs := resolveHost(h)
+		for _, a := range addrs {
+			if a == netip.MustParseAddr("::1") || loopbackPrefix.Contains(a) {
+				expanded = append(expanded, a.String())
+			}
+		}
+	}
+	return expanded
+}
+
+// hostResolvesToLoopbackWithCrust returns true if any host in the list
+// DNS-resolves to a loopback address AND the raw JSON contains "crust"
+// (case-insensitive). Used as a post-extraction self-protection check.
+func hostResolvesToLoopbackWithCrust(hosts []string, rawJSON string) bool {
+	if !strings.Contains(strings.ToLower(rawJSON), "crust") {
+		return false
+	}
+	return slices.ContainsFunc(hosts, ResolvesToLoopback)
 }

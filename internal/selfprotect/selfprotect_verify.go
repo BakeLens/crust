@@ -29,7 +29,7 @@ var selfProtectAPIRegex = regexp.MustCompile(
 		`[a-z0-9.-]*\.(?:nip|sslip|xip)\.io|` +
 		`(?:localtest|lvh|vcap)\.me|` +
 		`lacolhost\.com` +
-		`)[:/.\w~].*crust` +
+		`)[:/.~].*crust` +
 		`|://0[:/.].*crust` +
 		`|crust\w*://(?:` +
 		`localhost|` +
@@ -50,6 +50,8 @@ var selfProtectSocketRegex = regexp.MustCompile(
 		`\bnc\s.*\s-U\s|` +
 		`\bncat\s.*\s-U\s|` +
 		`UNIX-CONNECT:|` +
+		`UNIX-CLIENT:|` +
+		`UNIX-LISTEN:|` +
 		`UNIX:|` +
 		`AF_UNIX|` +
 		`crust-api[-.]\S*\.sock|` +
@@ -206,6 +208,8 @@ var socketMustBlock = []struct {
 
 	// socat
 	{"socat UNIX-CONNECT:", `socat UNIX-CONNECT:/home/user/.crust/crust-api-9090.sock -`},
+	{"socat UNIX-CLIENT:", `socat UNIX-CLIENT:/tmp/crust-api.sock`},
+	{"socat UNIX-LISTEN:", `socat UNIX-LISTEN:/tmp/crust-api.sock,fork`},
 	{"socat UNIX:", `socat UNIX:/tmp/crust.sock -`},
 
 	// Python AF_UNIX

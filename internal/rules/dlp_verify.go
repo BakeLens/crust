@@ -465,7 +465,7 @@ var vectors = []dlpVector{
 		},
 	},
 	{
-		name:  "builtin:dlp-turso-token",
+		name:  "builtin:dlp-jwt-token",
 		regex: `eyJhbGciOi[A-Za-z0-9_\-]{50,}\.[A-Za-z0-9_\-]{50,}\.[A-Za-z0-9_\-]{20,}`,
 		mustHit: []string{
 			"eyJhbGciOi" + strings.Repeat("A", 50) + "." + strings.Repeat("B", 50) + "." + strings.Repeat("C", 20),
@@ -573,7 +573,7 @@ func main() {
 
 	// 3. Verify SHA-512 of dlp.go source.
 	hash := fmt.Sprintf("%x", sha512.Sum512(data))
-	const expectedHash = "129d44e6902af86ed460dfd5af99ba1dd6905855cb1db318e0a71738d4ebb31566fbca793e34ea306c3ee2e51c7fe6589fa7e3ca09435d28c8b16b01b5db3399"
+	const expectedHash = "11cffe66a7e572a237ed6308495ab60d3cd96f49e7903b0ecc8f6d482fefe2d9fdee9bd80a8cd3e188d90b5b16a164ad7967c88ed6792bf0047bf56e7f66c798"
 	if hash != expectedHash {
 		fmt.Fprintf(os.Stderr, "FAIL: dlp.go SHA-512 mismatch\n  got:  %s\n  want: %s\n", hash, expectedHash)
 		failed++
