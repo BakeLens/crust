@@ -60,6 +60,11 @@ func (i *Interceptor) GetStorage() telemetry.Recorder {
 	return i.storage
 }
 
+// SetStorage replaces the storage recorder (e.g. after late initialization).
+func (i *Interceptor) SetStorage(s telemetry.Recorder) {
+	i.storage = s
+}
+
 // InterceptionResult contains the result of intercepting tool calls
 type InterceptionResult struct {
 	ModifiedResponse []byte

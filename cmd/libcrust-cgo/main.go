@@ -124,4 +124,227 @@ func LibcrustInterceptResponse(responseBody *C.char, apiType *C.char, blockMode 
 	return C.CString(r)
 }
 
+// =============================================================================
+// Storage
+// =============================================================================
+
+// LibcrustInitStorage opens the SQLite database for event/trace persistence.
+// dbPath: path to the database file.
+// encryptionKey: optional encryption key (empty to skip encryption).
+// Returns nil on success, or an error string.
+//
+//export LibcrustInitStorage
+func LibcrustInitStorage(dbPath *C.char, encryptionKey *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	err := libcrust.InitStorage(C.GoString(dbPath), C.GoString(encryptionKey))
+	if err != nil {
+		return C.CString(err.Error())
+	}
+	return nil
+}
+
+// LibcrustCloseStorage shuts down the database.
+//
+//export LibcrustCloseStorage
+func LibcrustCloseStorage() {
+	defer func() { recover() }() //nolint:errcheck
+	libcrust.CloseStorage()
+}
+
+// =============================================================================
+// Events
+// =============================================================================
+
+// LibcrustGetEvents returns recent security events as a JSON string.
+//
+//export LibcrustGetEvents
+func LibcrustGetEvents(minutes C.int, limit C.int) (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetEvents(int(minutes), int(limit)))
+}
+
+// LibcrustGetSecurityStats returns in-memory session metrics as a JSON string.
+//
+//export LibcrustGetSecurityStats
+func LibcrustGetSecurityStats() (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetSecurityStats())
+}
+
+// =============================================================================
+// Stats
+// =============================================================================
+
+// LibcrustGetStatsTrend returns daily total/blocked call counts as JSON.
+//
+//export LibcrustGetStatsTrend
+func LibcrustGetStatsTrend(rangeStr *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetStatsTrend(C.GoString(rangeStr)))
+}
+
+// LibcrustGetStatsDistribution returns block counts grouped by rule/tool as JSON.
+//
+//export LibcrustGetStatsDistribution
+func LibcrustGetStatsDistribution(rangeStr *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetStatsDistribution(C.GoString(rangeStr)))
+}
+
+// LibcrustGetCoverage returns detected AI tools with protection stats as JSON.
+//
+//export LibcrustGetCoverage
+func LibcrustGetCoverage(rangeStr *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetCoverage(C.GoString(rangeStr)))
+}
+
+// =============================================================================
+// Traces
+// =============================================================================
+
+// LibcrustGetTraces returns recent traces as JSON.
+//
+//export LibcrustGetTraces
+func LibcrustGetTraces(limit C.int) (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetTraces(int(limit)))
+}
+
+// LibcrustGetTraceDetail returns a single trace with spans as JSON.
+//
+//export LibcrustGetTraceDetail
+func LibcrustGetTraceDetail(traceID *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetTraceDetail(C.GoString(traceID)))
+}
+
+// LibcrustGetTraceStats returns aggregate trace/span statistics as JSON.
+//
+//export LibcrustGetTraceStats
+func LibcrustGetTraceStats() (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetTraceStats())
+}
+
+// =============================================================================
+// Sessions
+// =============================================================================
+
+// LibcrustGetSessions returns recent sessions as JSON.
+//
+//export LibcrustGetSessions
+func LibcrustGetSessions(minutes C.int, limit C.int) (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetSessions(int(minutes), int(limit)))
+}
+
+// LibcrustGetSessionEvents returns events for a specific session as JSON.
+//
+//export LibcrustGetSessionEvents
+func LibcrustGetSessionEvents(sessionID *C.char, limit C.int) (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetSessionEvents(C.GoString(sessionID), int(limit)))
+}
+
+// =============================================================================
+// Rules Management
+// =============================================================================
+
+// LibcrustGetRules returns all active rules as JSON.
+//
+//export LibcrustGetRules
+func LibcrustGetRules() (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetRules())
+}
+
+// LibcrustGetSecurityStatus returns protection status as JSON.
+//
+//export LibcrustGetSecurityStatus
+func LibcrustGetSecurityStatus() (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetSecurityStatus())
+}
+
+// LibcrustReloadRules reloads user rules from disk.
+// Returns nil on success, or an error string.
+//
+//export LibcrustReloadRules
+func LibcrustReloadRules() (result *C.char) {
+	defer recoverErr(&result)
+	err := libcrust.ReloadRules()
+	if err != nil {
+		return C.CString(err.Error())
+	}
+	return nil
+}
+
+// LibcrustGetRuleFiles returns a JSON array of user rule file names.
+//
+//export LibcrustGetRuleFiles
+func LibcrustGetRuleFiles() (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetRuleFiles())
+}
+
+// LibcrustAddRuleFile writes a YAML rule file and reloads rules.
+// Returns nil on success, or an error string.
+//
+//export LibcrustAddRuleFile
+func LibcrustAddRuleFile(filename *C.char, content *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	err := libcrust.AddRuleFile(C.GoString(filename), C.GoString(content))
+	if err != nil {
+		return C.CString(err.Error())
+	}
+	return nil
+}
+
+// LibcrustDeleteRuleFile removes a user rule file and reloads rules.
+// Returns nil on success, or an error string.
+//
+//export LibcrustDeleteRuleFile
+func LibcrustDeleteRuleFile(filename *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	err := libcrust.DeleteRuleFile(C.GoString(filename))
+	if err != nil {
+		return C.CString(err.Error())
+	}
+	return nil
+}
+
+// =============================================================================
+// Proxy
+// =============================================================================
+
+// LibcrustStartProxy starts the local reverse proxy.
+// Returns nil on success, or an error string.
+//
+//export LibcrustStartProxy
+func LibcrustStartProxy(port C.int, upstreamURL *C.char, apiKey *C.char, apiType *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	err := libcrust.StartProxy(int(port), C.GoString(upstreamURL), C.GoString(apiKey), C.GoString(apiType))
+	if err != nil {
+		return C.CString(err.Error())
+	}
+	return nil
+}
+
+// LibcrustStopProxy stops the local reverse proxy.
+//
+//export LibcrustStopProxy
+func LibcrustStopProxy() {
+	defer func() { recover() }() //nolint:errcheck
+	libcrust.StopProxy()
+}
+
+// LibcrustProxyAddress returns the listening address, or empty if not running.
+//
+//export LibcrustProxyAddress
+func LibcrustProxyAddress() (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.ProxyAddress())
+}
+
 func main() {}
