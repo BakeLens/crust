@@ -25,6 +25,7 @@ import (
 	"github.com/BakeLens/crust/internal/completion"
 	"github.com/BakeLens/crust/internal/config"
 	"github.com/BakeLens/crust/internal/daemon"
+	"github.com/BakeLens/crust/internal/daemon/registry"
 	"github.com/BakeLens/crust/internal/fileutil"
 	"github.com/BakeLens/crust/internal/httpproxy"
 	"github.com/BakeLens/crust/internal/logger"
@@ -85,6 +86,9 @@ func main() {
 			return
 		case "status":
 			runStatus(os.Args[2:])
+			return
+		case "agents":
+			runAgents(os.Args[2:])
 			return
 		case "logs":
 			runLogs(os.Args[2:])
@@ -716,6 +720,70 @@ func runVersion(args []string) {
 	fmt.Printf("commit %s  built %s\n", Commit, BuildDate)
 }
 
+// runAgents handles the agents subcommand
+func runAgents(args []string) {
+	agentsFlags := flag.NewFlagSet("agents", flag.ExitOnError)
+	jsonOutput := agentsFlags.Bool("json", false, "Output as JSON")
+	apiAddr := agentsFlags.String("api-addr", "", "Remote daemon address (host:port)")
+	_ = agentsFlags.Parse(args)
+
+	// If daemon is running, query the API (has patch status info)
+	var client *cli.APIClient
+	if *apiAddr != "" {
+		client = cli.NewAPIClient(*apiAddr)
+	} else {
+		running, _ := daemon.IsRunning()
+		if running {
+			client = cli.NewAPIClient()
+		}
+	}
+
+	var agents []registry.DetectedAgent
+	if client != nil {
+		body, err := client.GetAgents()
+		if err == nil {
+			_ = json.Unmarshal(body, &agents)
+		}
+	}
+
+	// If no daemon or API failed, do local scan only
+	if agents == nil {
+		agents = registry.Default.Detect()
+	}
+
+	if *jsonOutput {
+		out, _ := json.MarshalIndent(agents, "", "  ")
+		fmt.Println(string(out))
+		return
+	}
+
+	if len(agents) == 0 {
+		tui.PrintInfo("No AI agents detected")
+		return
+	}
+
+	for _, a := range agents {
+		var status string
+		switch a.Status {
+		case "protected":
+			status = tui.StyleSuccess.Render(tui.IconDot + " protected")
+		case "running":
+			status = tui.StyleWarning.Render(tui.IconDot + " running (unprotected)")
+		case "configured":
+			status = tui.StyleMuted.Render(tui.IconCircle + " configured (not running)")
+		}
+		pids := ""
+		if len(a.PIDs) > 0 {
+			pidStrs := make([]string, len(a.PIDs))
+			for i, p := range a.PIDs {
+				pidStrs[i] = strconv.Itoa(p)
+			}
+			pids = fmt.Sprintf(" [PID %s]", strings.Join(pidStrs, ","))
+		}
+		fmt.Printf("  %s  %s%s\n", status, a.Name, pids)
+	}
+}
+
 // runLogs handles the logs subcommand
 func runLogs(args []string) {
 	tui.WindowTitle("crust logs")
@@ -761,6 +829,7 @@ func printUsage() {
 		{"crust start [flags]", "Start crust (interactive or with flags)"},
 		{"crust stop", "Stop crust"},
 		{"crust status [--json] [--live] [--api-addr]", "Check if crust is running"},
+		{"crust agents [--json] [--api-addr]", "Detect running AI agents and protection status"},
 		{"crust logs [-f] [-n N]", "View logs (-f to follow, -n for line count)"},
 	}, "  ", 2, tui.StyleCommand, tui.StyleMuted))
 	fmt.Println()

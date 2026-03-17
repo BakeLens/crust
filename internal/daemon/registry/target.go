@@ -21,6 +21,12 @@ type Target interface {
 	Restore() error
 }
 
+// ProcessDetectable is optionally implemented by targets that correspond
+// to a running process. Used by Registry.Detect() to find running agents.
+type ProcessDetectable interface {
+	ProcessNames() []string
+}
+
 // HTTPAgent patches a single URL field in a JSON config file to point at the
 // Crust proxy. On Patch the original URL is saved to configPath+".crust-backup";
 // on Restore it is read back and the backup is removed.
@@ -29,11 +35,15 @@ type Target interface {
 type HTTPAgent struct {
 	AgentName  string
 	ConfigPath func() string
-	URLKey     string // JSON key holding the base URL, e.g. "baseUrl"
-	PathSuffix string // appended to proxy URL, e.g. "/v1"; empty for bare URL
+	URLKey     string   // JSON key holding the base URL, e.g. "baseUrl"
+	PathSuffix string   // appended to proxy URL, e.g. "/v1"; empty for bare URL
+	ExeNames   []string // executable names for process detection (optional)
 }
 
 func (a *HTTPAgent) Name() string { return a.AgentName }
+
+// ProcessNames implements ProcessDetectable if ExeNames is set.
+func (a *HTTPAgent) ProcessNames() []string { return a.ExeNames }
 
 func (a *HTTPAgent) Patch(proxyPort int, _ string) error {
 	path := a.ConfigPath()
@@ -56,6 +66,7 @@ func (a *HTTPAgent) Restore() error {
 // Used in builtin.go to wrap MCP clients from the mcpdiscover package.
 type FuncTarget struct {
 	AgentName   string
+	ExeNames    []string // executable names for process detection (optional)
 	PatchFunc   func(proxyPort int, crustBin string) error
 	RestoreFunc func() error
 }
@@ -63,6 +74,9 @@ type FuncTarget struct {
 func (f *FuncTarget) Name() string                  { return f.AgentName }
 func (f *FuncTarget) Patch(p int, bin string) error { return f.PatchFunc(p, bin) }
 func (f *FuncTarget) Restore() error                { return f.RestoreFunc() }
+
+// ProcessNames implements ProcessDetectable if ExeNames is set.
+func (f *FuncTarget) ProcessNames() []string { return f.ExeNames }
 
 // patchJSONField saves the original value of urlKey to a backup file, then
 // overwrites it with proxyURL. Idempotent: skips if already set to proxyURL.

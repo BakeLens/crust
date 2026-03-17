@@ -188,6 +188,63 @@ func TestRegistryPatchRestoreAll(t *testing.T) {
 	}
 }
 
+func TestDetectWithMockProcesses(t *testing.T) {
+	r := &registry.Registry{}
+	r.Register(&registry.FuncTarget{
+		AgentName:   "TestAgent",
+		ExeNames:    []string{"testagent", "TestAgent"},
+		PatchFunc:   func(_ int, _ string) error { return nil },
+		RestoreFunc: func() error { return nil },
+	})
+
+	// Before patching — method shouldn't panic
+	agents := r.Detect()
+	_ = agents
+
+	// After patching
+	r.PatchAll(9090, "")
+	agents = r.Detect()
+	for _, a := range agents {
+		if a.Name == "TestAgent" {
+			// If somehow running, should be "protected"; otherwise "configured"
+			if a.Status != "protected" && a.Status != "configured" {
+				t.Errorf("unexpected status %q for patched agent", a.Status)
+			}
+		}
+	}
+}
+
+func TestIsPatchedTracking(t *testing.T) {
+	r := &registry.Registry{}
+	r.Register(&registry.FuncTarget{
+		AgentName:   "A",
+		PatchFunc:   func(_ int, _ string) error { return nil },
+		RestoreFunc: func() error { return nil },
+	})
+	r.Register(&registry.FuncTarget{
+		AgentName:   "B",
+		PatchFunc:   func(_ int, _ string) error { return errors.New("fail") },
+		RestoreFunc: func() error { return nil },
+	})
+
+	if r.IsPatched("A") {
+		t.Error("A should not be patched before PatchAll")
+	}
+
+	r.PatchAll(9090, "")
+	if !r.IsPatched("A") {
+		t.Error("A should be patched after PatchAll")
+	}
+	if r.IsPatched("B") {
+		t.Error("B should not be patched (patch failed)")
+	}
+
+	r.RestoreAll()
+	if r.IsPatched("A") {
+		t.Error("A should not be patched after RestoreAll")
+	}
+}
+
 // helpers
 
 func writeJSON(t *testing.T, path string, v any) {

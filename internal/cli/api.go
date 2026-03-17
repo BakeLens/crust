@@ -108,6 +108,17 @@ func (c *APIClient) GetRules() ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
+// GetAgents fetches detected agents from the daemon.
+func (c *APIClient) GetAgents() ([]byte, error) {
+	url := c.APIURL() + "/api/security/agents"
+	resp, err := c.Client.Get(url) //nolint:noctx
+	if err != nil || resp == nil {
+		return nil, errors.New("server not running")
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
 // RulesResponse represents the API response for rules listing.
 type RulesResponse struct {
 	Rules []rules.Rule `json:"rules"`
