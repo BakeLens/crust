@@ -742,7 +742,9 @@ func runAgents(args []string) {
 	if client != nil {
 		body, err := client.GetAgents()
 		if err == nil {
-			_ = json.Unmarshal(body, &agents)
+			if err := json.Unmarshal(body, &agents); err != nil {
+				agents = nil
+			}
 		}
 	}
 
@@ -752,7 +754,11 @@ func runAgents(args []string) {
 	}
 
 	if *jsonOutput {
-		out, _ := json.MarshalIndent(agents, "", "  ")
+		out, err := json.MarshalIndent(agents, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "json marshal error: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Println(string(out))
 		return
 	}

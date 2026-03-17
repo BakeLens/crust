@@ -32,7 +32,10 @@ func scanProcesses() ([]processInfo, error) {
 		}
 
 		// Read full path from exe symlink (may fail for permission reasons)
-		fullPath, _ := os.Readlink(filepath.Join("/proc", e.Name(), "exe"))
+		fullPath, err := os.Readlink(filepath.Join("/proc", e.Name(), "exe"))
+		if err != nil {
+			fullPath = ""
+		}
 
 		procs = append(procs, processInfo{PID: pid, Name: name, Path: fullPath})
 	}

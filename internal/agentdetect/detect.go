@@ -1,6 +1,7 @@
 package agentdetect
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/BakeLens/crust/internal/daemon/registry"
@@ -37,18 +38,18 @@ var KnownAgents = []AgentSignature{
 		Name:     "Claude Code",
 		ExeNames: []string{"claude"},
 		PathPatterns: []string{
-			".local/bin/claude",       // Windows + Linux (self-update renames to .old.*)
+			".local/bin/claude",          // Windows + Linux (self-update renames to .old.*)
 			"AppData/Roaming/npm/claude", // Windows npm global install
-			"/usr/local/bin/claude",   // macOS Homebrew
+			"/usr/local/bin/claude",      // macOS Homebrew
 		},
 	},
 	{
 		Name:     "Claude Desktop",
 		ExeNames: []string{"Claude"},
 		PathPatterns: []string{
-			"WindowsApps/Claude",           // Windows MSIX alias
-			"/Applications/Claude.app",     // macOS
-			"Programs/claude/Claude",       // Windows user install (Squirrel)
+			"WindowsApps/Claude",            // Windows MSIX alias
+			"/Applications/Claude.app",      // macOS
+			"Programs/claude/Claude",        // Windows user install (Squirrel)
 			"AppData/Local/AnthropicClaude", // Windows per-user install
 		},
 	},
@@ -123,12 +124,7 @@ func Detect() []DetectedAgent {
 
 			// Priority 2: exe name matching (fallback, case-sensitive)
 			if !matched {
-				for _, exe := range sig.ExeNames {
-					if p.Name == exe {
-						matched = true
-						break
-					}
-				}
+				matched = slices.Contains(sig.ExeNames, p.Name)
 			}
 
 			if matched {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -150,11 +151,8 @@ func TestExeNameMatchingCaseSensitive(t *testing.T) {
 
 	var matched []int
 	for _, p := range procs {
-		for _, exe := range sig.ExeNames {
-			if p.Name == exe {
-				matched = append(matched, p.PID)
-				break
-			}
+		if slices.Contains(sig.ExeNames, p.Name) {
+			matched = append(matched, p.PID)
 		}
 	}
 

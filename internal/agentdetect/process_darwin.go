@@ -3,15 +3,19 @@
 package agentdetect
 
 import (
+	"context"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func scanProcesses() ([]processInfo, error) {
 	// ps -eo pid,args gives PID and full command path + arguments
-	out, err := exec.Command("ps", "-eo", "pid,args").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-eo", "pid,args").Output()
 	if err != nil {
 		return nil, err
 	}
@@ -22,15 +26,15 @@ func scanProcesses() ([]processInfo, error) {
 			continue
 		}
 		// Split: first field is PID, rest is full command with args
-		idx := strings.IndexByte(line, ' ')
-		if idx < 0 {
+		before, after, ok := strings.Cut(line, " ")
+		if !ok {
 			continue
 		}
-		pid, err := strconv.Atoi(strings.TrimSpace(line[:idx]))
+		pid, err := strconv.Atoi(strings.TrimSpace(before))
 		if err != nil {
 			continue
 		}
-		args := strings.TrimSpace(line[idx+1:])
+		args := strings.TrimSpace(after)
 		// Full path is the first token of args
 		fullPath := args
 		if spaceIdx := strings.IndexByte(args, ' '); spaceIdx > 0 {
