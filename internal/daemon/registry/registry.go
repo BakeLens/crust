@@ -19,19 +19,8 @@
 //
 // # Process detection
 //
-// Targets can optionally implement the [ProcessDetectable] interface to enable
-// process scanning via [Registry.Detect]. For [HTTPAgent], set ExeNames when
-// registering:
-//
-//	Register(&HTTPAgent{
-//	    AgentName:  "MyAgent",
-//	    ConfigPath: func() string { ... },
-//	    URLKey:     "baseUrl",
-//	    ExeNames:   []string{"myagent", "myagent.exe"},
-//	})
-//
-// For [FuncTarget], set ExeNames in the struct literal. Targets without
-// ExeNames are silently skipped during process detection.
+// Process detection has been moved to the internal/agentdetect package.
+// See [agentdetect.Detect] for scanning running AI agent processes.
 package registry
 
 import "github.com/BakeLens/crust/internal/logger"
@@ -91,58 +80,3 @@ func (r *Registry) IsPatched(name string) bool {
 
 // Targets returns the registered targets (for testing).
 func (r *Registry) Targets() []Target { return r.targets }
-
-// DetectedAgent represents a running or configured AI agent.
-type DetectedAgent struct {
-	Name        string `json:"name"`
-	Status      string `json:"status"` // "protected", "running", "configured"
-	PIDs        []int  `json:"pids"`
-	ProcessName string `json:"process_name,omitempty"`
-}
-
-// Detect scans for running AI agent processes and returns their status.
-func (r *Registry) Detect() []DetectedAgent {
-	procs, err := scanProcesses()
-	if err != nil {
-		log.Warn("process scan failed: %v", err)
-		procs = nil
-	}
-
-	var agents []DetectedAgent
-	for _, t := range r.targets {
-		pd, ok := t.(ProcessDetectable)
-		if !ok {
-			continue
-		}
-		exeNames := pd.ProcessNames()
-		if len(exeNames) == 0 {
-			continue
-		}
-
-		// Find matching PIDs
-		var pids []int
-		var matchedName string
-		for _, p := range procs {
-			for _, exe := range exeNames {
-				if p.Name == exe {
-					pids = append(pids, p.PID)
-					if matchedName == "" {
-						matchedName = p.Name
-					}
-					break
-				}
-			}
-		}
-
-		patched := r.IsPatched(t.Name())
-
-		if len(pids) > 0 && patched {
-			agents = append(agents, DetectedAgent{Name: t.Name(), Status: "protected", PIDs: pids, ProcessName: matchedName})
-		} else if len(pids) > 0 {
-			agents = append(agents, DetectedAgent{Name: t.Name(), Status: "running", PIDs: pids, ProcessName: matchedName})
-		} else if patched {
-			agents = append(agents, DetectedAgent{Name: t.Name(), Status: "configured", PIDs: nil, ProcessName: ""})
-		}
-	}
-	return agents
-}

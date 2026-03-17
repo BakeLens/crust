@@ -1,6 +1,6 @@
 //go:build linux
 
-package registry
+package agentdetect
 
 import (
 	"os"
@@ -20,14 +20,21 @@ func scanProcesses() ([]processInfo, error) {
 		if err != nil {
 			continue
 		}
+
+		// Read exe name from comm
 		comm, err := os.ReadFile(filepath.Join("/proc", e.Name(), "comm"))
 		if err != nil {
 			continue
 		}
 		name := strings.TrimSpace(string(comm))
-		if name != "" {
-			procs = append(procs, processInfo{PID: pid, Name: name})
+		if name == "" {
+			continue
 		}
+
+		// Read full path from exe symlink (may fail for permission reasons)
+		fullPath, _ := os.Readlink(filepath.Join("/proc", e.Name(), "exe"))
+
+		procs = append(procs, processInfo{PID: pid, Name: name, Path: fullPath})
 	}
 	return procs, nil
 }

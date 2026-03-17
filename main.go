@@ -20,12 +20,12 @@ import (
 	"github.com/BakeLens/crust/internal/earlyinit" // side-effect import: init() runs before bubbletea's via dependency order + lexicographic tie-breaking
 
 	"github.com/BakeLens/crust/internal/acpwrap"
+	"github.com/BakeLens/crust/internal/agentdetect"
 	"github.com/BakeLens/crust/internal/autowrap"
 	"github.com/BakeLens/crust/internal/cli"
 	"github.com/BakeLens/crust/internal/completion"
 	"github.com/BakeLens/crust/internal/config"
 	"github.com/BakeLens/crust/internal/daemon"
-	"github.com/BakeLens/crust/internal/daemon/registry"
 	"github.com/BakeLens/crust/internal/fileutil"
 	"github.com/BakeLens/crust/internal/httpproxy"
 	"github.com/BakeLens/crust/internal/logger"
@@ -738,7 +738,7 @@ func runAgents(args []string) {
 		}
 	}
 
-	var agents []registry.DetectedAgent
+	var agents []agentdetect.DetectedAgent
 	if client != nil {
 		body, err := client.GetAgents()
 		if err == nil {
@@ -748,7 +748,7 @@ func runAgents(args []string) {
 
 	// If no daemon or API failed, do local scan only
 	if agents == nil {
-		agents = registry.Default.Detect()
+		agents = agentdetect.Detect()
 	}
 
 	if *jsonOutput {

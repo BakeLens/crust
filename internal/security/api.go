@@ -9,8 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/BakeLens/crust/internal/agentdetect"
 	"github.com/BakeLens/crust/internal/api"
-	agentregistry "github.com/BakeLens/crust/internal/daemon/registry"
 	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/mcpgateway"
 	"github.com/BakeLens/crust/internal/rules"
@@ -289,7 +289,7 @@ func (s *APIServer) handlePlugins(c *gin.Context) {
 // handleAgents handles GET /api/security/agents.
 // Returns detected AI agent processes and their protection status.
 func (s *APIServer) handleAgents(c *gin.Context) {
-	agents := agentregistry.Default.Detect()
+	agents := agentdetect.Detect()
 	c.JSON(http.StatusOK, agents)
 }
 

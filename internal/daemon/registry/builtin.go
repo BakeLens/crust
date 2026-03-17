@@ -19,8 +19,7 @@ func init() {
 			}
 			return filepath.Join(home, ".openclaw", "openclaw.json")
 		},
-		URLKey:   "baseUrl",
-		ExeNames: []string{"openclaw"},
+		URLKey: "baseUrl",
 	})
 
 	// ── MCP clients ───────────────────────────────────────────────────────────
@@ -29,7 +28,6 @@ func init() {
 	for _, c := range mcpdiscover.BuiltinClients() {
 		Register(&FuncTarget{
 			AgentName:   c.ClientName(),
-			ExeNames:    c.ExeNames,
 			PatchFunc:   func(_ int, bin string) error { return mcpdiscover.PatchClientDef(c, bin) },
 			RestoreFunc: func() error { return mcpdiscover.RestoreClientDef(c) },
 		})
