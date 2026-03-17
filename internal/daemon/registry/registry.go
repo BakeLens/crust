@@ -34,11 +34,7 @@
 // ExeNames are silently skipped during process detection.
 package registry
 
-import (
-	"strings"
-
-	"github.com/BakeLens/crust/internal/logger"
-)
+import "github.com/BakeLens/crust/internal/logger"
 
 var log = logger.New("registry")
 
@@ -128,7 +124,7 @@ func (r *Registry) Detect() []DetectedAgent {
 		var matchedName string
 		for _, p := range procs {
 			for _, exe := range exeNames {
-				if strings.EqualFold(p.Name, exe) {
+				if p.Name == exe {
 					pids = append(pids, p.PID)
 					if matchedName == "" {
 						matchedName = p.Name
