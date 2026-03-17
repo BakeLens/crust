@@ -61,6 +61,7 @@ crust list-rules --api-addr localhost:9090
 # Query API directly
 curl http://localhost:9090/api/security/status
 curl http://localhost:9090/api/security/stats
+curl http://localhost:9090/api/security/agents
 curl http://localhost:9090/api/telemetry/sessions
 
 # Stats aggregation (for dashboards)

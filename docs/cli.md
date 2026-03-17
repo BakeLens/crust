@@ -11,6 +11,7 @@ crust start --foreground --auto             # Foreground mode (for Docker)
 crust stop                                  # Stop the gateway
 crust status [--json] [--live]              # Check if running
 crust status --live --api-addr HOST:PORT    # Remote dashboard (Docker)
+crust agents [--json] [--api-addr ADDR]     # Detect running AI agents
 crust logs [-f] [-n N]                      # View logs
 
 # Rules
@@ -61,6 +62,23 @@ crust uninstall                             # Complete removal
 | Flag | Description |
 |------|-------------|
 | `--api-addr HOST:PORT` | Connect to a remote daemon (e.g. Docker) over TCP instead of the local Unix socket |
+
+## Agents Flags
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output as JSON |
+| `--api-addr HOST:PORT` | Query a remote daemon (e.g. Docker) over TCP instead of the local Unix socket |
+
+Agent statuses:
+
+| Status | Meaning |
+|--------|---------|
+| `protected` | Process detected and config patched to route through Crust |
+| `running` | Process detected but not routed through Crust |
+| `configured` | Config patched but process not currently running |
+
+Works with or without the daemon running. When the daemon is running, `crust agents` queries it for accurate patch status. Without the daemon, it performs a local process scan only.
 
 ## Doctor Flags
 
@@ -116,6 +134,11 @@ crust list-rules --json
 # Remote dashboard (daemon running in Docker)
 crust status --live --api-addr localhost:9090
 crust list-rules --api-addr localhost:9090
+
+# Detect running AI agents
+crust agents
+crust agents --json
+crust agents --api-addr localhost:9090   # query remote daemon
 
 # Diagnostics — check providers + scan for unguarded agent servers
 crust doctor

@@ -16,6 +16,22 @@
 //
 // Add one ClientDef entry to knownClients in internal/mcpdiscover/clients.go.
 // It is automatically included in the registry via BuiltinClients().
+//
+// # Process detection
+//
+// Targets can optionally implement the [ProcessDetectable] interface to enable
+// process scanning via [Registry.Detect]. For [HTTPAgent], set ExeNames when
+// registering:
+//
+//	Register(&HTTPAgent{
+//	    AgentName:  "MyAgent",
+//	    ConfigPath: func() string { ... },
+//	    URLKey:     "baseUrl",
+//	    ExeNames:   []string{"myagent", "myagent.exe"},
+//	})
+//
+// For [FuncTarget], set ExeNames in the struct literal. Targets without
+// ExeNames are silently skipped during process detection.
 package registry
 
 import (
