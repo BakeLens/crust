@@ -23,7 +23,11 @@
 // See [agentdetect.Detect] for scanning running AI agent processes.
 package registry
 
-import "github.com/BakeLens/crust/internal/logger"
+import (
+	"sync"
+
+	"github.com/BakeLens/crust/internal/logger"
+)
 
 var log = logger.New("registry")
 
@@ -32,6 +36,7 @@ var Default = &Registry{}
 
 // Registry holds all patch targets and provides PatchAll/RestoreAll operations.
 type Registry struct {
+	mu      sync.RWMutex
 	targets []Target
 	patched map[string]bool
 }
@@ -47,6 +52,8 @@ func Register(t Target) { Default.Register(t) }
 // proxyPort is the listening port; crustBin is the resolved crust binary path.
 // Errors are non-fatal — a failed patch is logged and skipped.
 func (r *Registry) PatchAll(proxyPort int, crustBin string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.patched == nil {
 		r.patched = make(map[string]bool)
 	}
@@ -62,6 +69,8 @@ func (r *Registry) PatchAll(proxyPort int, crustBin string) {
 // RestoreAll restores every registered target to its original config.
 // Best-effort: errors are logged and skipped.
 func (r *Registry) RestoreAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, t := range r.targets {
 		if err := t.Restore(); err != nil {
 			log.Warn("restore %s: %v", t.Name(), err)
@@ -72,9 +81,8 @@ func (r *Registry) RestoreAll() {
 
 // IsPatched reports whether the named target was successfully patched.
 func (r *Registry) IsPatched(name string) bool {
-	if r.patched == nil {
-		return false
-	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.patched[name]
 }
 

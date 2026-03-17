@@ -1,6 +1,7 @@
 package agentdetect
 
 import (
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -160,9 +161,15 @@ func isRegistryPatched(name string) bool {
 // cleanExePath strips self-update rename suffixes (e.g. ".old.1773623400727")
 // from executable paths. Some tools (Claude Code) rename the running binary
 // during auto-update; the OS reports the original path at process start time.
+// Only strips ".old." from the basename to avoid corrupting directory paths
+// like "/home/user/.old.cache/bin/claude".
 func cleanExePath(p string) string {
-	if i := strings.Index(p, ".old."); i > 0 {
-		return p[:i]
+	if p == "" {
+		return ""
+	}
+	base := filepath.Base(p)
+	if i := strings.Index(base, ".old."); i > 0 {
+		return filepath.Join(filepath.Dir(p), base[:i])
 	}
 	return p
 }

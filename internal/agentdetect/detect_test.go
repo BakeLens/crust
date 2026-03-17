@@ -129,6 +129,9 @@ func TestCleanExePath(t *testing.T) {
 		{"C:\\Users\\cyy\\.local\\bin\\claude.exe", "C:\\Users\\cyy\\.local\\bin\\claude.exe"},
 		{"/usr/local/bin/claude", "/usr/local/bin/claude"},
 		{"", ""},
+		// .old. in directory name must NOT be stripped
+		{"/home/user/.old.cache/bin/claude", "/home/user/.old.cache/bin/claude"},
+		{"/home/user/.old.backup/claude.exe.old.999", "/home/user/.old.backup/claude.exe"},
 	}
 	for _, tt := range tests {
 		if got := cleanExePath(tt.in); got != tt.want {

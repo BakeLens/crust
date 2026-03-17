@@ -23,8 +23,10 @@ func scanProcesses() ([]processInfo, error) {
 	err = windows.Process32First(snap, &pe)
 	for err == nil {
 		name := windows.UTF16ToString(pe.ExeFile[:])
-		name = strings.TrimSuffix(name, ".exe")
-		name = strings.TrimSuffix(name, ".EXE")
+		// Strip .exe suffix case-insensitively (Windows exe names can be any case)
+		if len(name) > 4 && strings.EqualFold(name[len(name)-4:], ".exe") {
+			name = name[:len(name)-4]
+		}
 
 		fullPath := queryFullPath(pe.ProcessID)
 
