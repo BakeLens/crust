@@ -78,7 +78,7 @@ Agent statuses:
 | `running` | Process detected but not routed through Crust |
 | `configured` | Config patched but process not currently running |
 
-Works with or without the daemon running. When the daemon is running, `crust agents` queries it for accurate patch status. Without the daemon, it performs a local process scan only.
+Works with or without the daemon running. When the daemon is running, `crust agents` queries it for accurate patch status (protected/configured). Without the daemon, it performs a local process scan only — detected agents show as `running` since patch status is unavailable.
 
 ## Doctor Flags
 
