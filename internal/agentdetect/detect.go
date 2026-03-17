@@ -1,7 +1,6 @@
 package agentdetect
 
 import (
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -164,12 +163,11 @@ func isRegistryPatched(name string) bool {
 // Only strips ".old." from the basename to avoid corrupting directory paths
 // like "/home/user/.old.cache/bin/claude".
 func cleanExePath(p string) string {
-	if p == "" {
-		return ""
-	}
-	base := filepath.Base(p)
+	// Find the basename start (after last separator)
+	lastSep := strings.LastIndexAny(p, `/\`)
+	base := p[lastSep+1:] // works even when lastSep == -1
 	if i := strings.Index(base, ".old."); i > 0 {
-		return filepath.Join(filepath.Dir(p), base[:i])
+		return p[:lastSep+1] + base[:i]
 	}
 	return p
 }
