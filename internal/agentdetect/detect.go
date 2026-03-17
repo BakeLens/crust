@@ -19,6 +19,7 @@ type AgentSignature struct {
 }
 
 // DetectedAgent represents a detected AI agent with its status.
+// PIDs are a point-in-time snapshot; processes may exit before display.
 type DetectedAgent struct {
 	Name        string `json:"name"`
 	Status      string `json:"status"` // "protected", "running", "configured"
@@ -86,8 +87,19 @@ var KnownAgents = []AgentSignature{
 		ExeNames: []string{"openclaw"},
 	},
 	{
-		Name:     "Neovim",
+		Name:     "Neovim (mcphub)",
 		ExeNames: []string{"nvim"},
+	},
+	{
+		Name:     "Aider",
+		ExeNames: []string{"aider"},
+	},
+	{
+		Name: "Amazon Q",
+		PathPatterns: []string{
+			"Amazon/AWSCLIV2/q", // Windows
+			"amazon-q/q",        // Homebrew
+		},
 	},
 }
 
@@ -122,7 +134,8 @@ func Detect() []DetectedAgent {
 				}
 			}
 
-			// Priority 2: exe name matching (fallback, case-sensitive)
+			// Priority 2: exe name matching (fallback, case-sensitive to
+			// distinguish e.g. "claude" (CLI) from "Claude" (Desktop))
 			if !matched {
 				matched = slices.Contains(sig.ExeNames, p.Name)
 			}
