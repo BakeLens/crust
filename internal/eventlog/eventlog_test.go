@@ -313,7 +313,9 @@ func TestMetrics_GetStats(t *testing.T) {
 	m.StdioPipeAllowed.Store(5)
 	m.MCPHTTPBlocks.Store(6)
 	m.MCPHTTPAllowed.Store(7)
-	m.TotalToolCalls.Store(8)
+	m.HookBlocks.Store(8)
+	m.HookAllowed.Store(9)
+	m.TotalToolCalls.Store(10)
 
 	stats := m.GetStats()
 
@@ -325,7 +327,11 @@ func TestMetrics_GetStats(t *testing.T) {
 		"stdio_pipe_allowed":     5,
 		"mcp_http_blocks":        6,
 		"mcp_http_allowed":       7,
-		"total_tool_calls":       8,
+		"hook_blocks":            8,
+		"hook_allowed":           9,
+		"total_tool_calls":       10,
+		"blocked_tool_calls":     1 + 2 + 4 + 6 + 8,
+		"allowed_tool_calls":     3 + 5 + 7 + 9,
 	}
 
 	if len(stats) != len(expected) {

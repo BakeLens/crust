@@ -99,6 +99,7 @@ func newModel(mgmtClient *http.Client, apiBase string, proxyBaseURL string, pid 
 		data:         StatusData{Running: true, PID: pid},
 		spinner:      s,
 		shimmer:      tui.NewShimmer(shimCfg),
+		prevBlocked:  -1, // sentinel: first fetch hasn't arrived yet
 		width:        60,
 	}
 }
@@ -177,7 +178,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 		} else {
-			if msg.data.Stats.BlockedCalls > m.prevBlocked && m.prevBlocked > 0 {
+			if msg.data.Stats.BlockedCalls > m.prevBlocked && m.prevBlocked >= 0 {
 				m.shimmer.Start(20)
 			}
 			m.prevBlocked = msg.data.Stats.BlockedCalls

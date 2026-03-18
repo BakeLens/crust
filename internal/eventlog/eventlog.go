@@ -172,6 +172,8 @@ func (m *Metrics) Reset() {
 	m.StdioPipeAllowed.Store(0)
 	m.MCPHTTPBlocks.Store(0)
 	m.MCPHTTPAllowed.Store(0)
+	m.HookBlocks.Store(0)
+	m.HookAllowed.Store(0)
 	m.TotalToolCalls.Store(0)
 }
 
