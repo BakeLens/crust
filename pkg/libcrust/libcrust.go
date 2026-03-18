@@ -14,11 +14,15 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/BakeLens/crust/internal/logger"
+	"github.com/BakeLens/crust/internal/plugin"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/security"
 	"github.com/BakeLens/crust/internal/telemetry"
 	"github.com/BakeLens/crust/internal/types"
 )
+
+var plog = logger.New("libcrust")
 
 // Version info — injected via ldflags at build time.
 var (
@@ -31,6 +35,7 @@ var (
 	mu          sync.RWMutex
 	engine      *rules.Engine
 	interceptor *security.Interceptor
+	pluginReg   *plugin.Registry
 )
 
 const errNotInitialized = "engine not initialized"
@@ -72,6 +77,24 @@ func Init(userRulesDir string) error {
 	rules.SetGlobalEngine(e)
 
 	interceptor = security.NewInterceptor(e, telemetry.NopRecorder{})
+
+	// Initialize plugin registry (sandbox, etc.).
+	if pluginReg != nil {
+		pluginReg.Close()
+	}
+	pool := plugin.NewPool(0, 0)
+	reg := plugin.NewRegistry(pool)
+	if sp, err := plugin.NewSandboxPlugin(); err == nil {
+		if regErr := reg.Register(sp, nil); regErr != nil {
+			plog.Warn("sandbox plugin registration failed: %v", regErr)
+		} else {
+			plog.Info("sandbox plugin registered (binary: %s)", sp.BinaryPath())
+		}
+	} else {
+		plog.Info("sandbox plugin not available: %v", err)
+	}
+	pluginReg = reg
+
 	return nil
 }
 
@@ -285,11 +308,34 @@ func ValidateURL(rawURL string) string {
 func Shutdown() {
 	mu.Lock()
 	defer mu.Unlock()
+	if pluginReg != nil {
+		pluginReg.Close()
+		pluginReg = nil
+	}
 	if engine != nil {
 		engine.Close()
 	}
 	engine = nil
 	interceptor = nil
+}
+
+// GetPluginStats returns health stats for all registered plugins as JSON.
+func GetPluginStats() string {
+	mu.RLock()
+	reg := pluginReg
+	mu.RUnlock()
+	if reg == nil {
+		return "[]"
+	}
+	stats := reg.Stats()
+	if len(stats) == 0 {
+		return "[]"
+	}
+	j, err := json.Marshal(stats)
+	if err != nil {
+		return "[]"
+	}
+	return string(j)
 }
 
 // --- internal helpers ---

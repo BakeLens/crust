@@ -123,6 +123,15 @@ func LibcrustGetBuildDate() (result *C.char) {
 	return C.CString(libcrust.GetBuildDate())
 }
 
+// LibcrustGetPluginStats returns health stats for registered plugins as JSON.
+// The caller must free the result with LibcrustFree.
+//
+//export LibcrustGetPluginStats
+func LibcrustGetPluginStats() (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetPluginStats())
+}
+
 // LibcrustShutdown releases all rule engine resources.
 //
 //export LibcrustShutdown
