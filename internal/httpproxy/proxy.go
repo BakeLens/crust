@@ -678,7 +678,7 @@ func extractUsageAndBody(resp *http.Response, apiType types.APIType) (inputToken
 			resp.Header.Del("Content-Encoding")
 		} else {
 			decompressed, readErr := io.ReadAll(io.LimitReader(gzReader, maxResponseBodySize+1))
-			gzReader.Close()
+			_ = gzReader.Close()
 			if readErr != nil {
 				log.Debug("Failed to decompress gzip body, using raw body: %v", readErr)
 				resp.Header.Del("Content-Encoding")

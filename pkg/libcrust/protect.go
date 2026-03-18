@@ -250,7 +250,7 @@ func handleEvalConn(conn net.Conn) {
 		ToolInput json.RawMessage `json:"tool_input"`
 	}
 	if json.Unmarshal(line, &req) != nil || req.ToolName == "" {
-		conn.Write([]byte(`{"matched":false}` + "\n"))
+		_, _ = conn.Write([]byte(`{"matched":false}` + "\n"))
 		return
 	}
 
@@ -260,7 +260,7 @@ func handleEvalConn(conn net.Conn) {
 	}
 
 	result := Evaluate(req.ToolName, argsJSON)
-	conn.Write(append([]byte(result), '\n'))
+	_, _ = conn.Write(append([]byte(result), '\n'))
 
 	// Record event for the GUI event stream and metrics.
 	var evalResult struct {
