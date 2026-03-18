@@ -6,8 +6,19 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/BakeLens/crust/internal/daemon"
 	"github.com/BakeLens/crust/internal/daemon/registry"
 )
+
+func TestResolveCrustBin(t *testing.T) {
+	bin := daemon.ResolveCrustBin()
+	if bin == "" {
+		t.Fatal("ResolveCrustBin returned empty string")
+	}
+	if _, err := os.Stat(bin); err != nil {
+		t.Fatalf("ResolveCrustBin returned non-existent path %q: %v", bin, err)
+	}
+}
 
 // newAgent creates a test HTTPAgent pointing at the given config path.
 func newAgent(path string) *registry.HTTPAgent {

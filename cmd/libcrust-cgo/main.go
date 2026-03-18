@@ -13,6 +13,7 @@ package main
 // #include <stdlib.h>
 import "C"
 import (
+	"encoding/json"
 	"fmt"
 	"unsafe"
 
@@ -358,6 +359,47 @@ func LibcrustProxyAddress() (result *C.char) {
 func LibcrustDetectAgents() (result *C.char) {
 	defer recoverErr(&result)
 	return C.CString(libcrust.DetectAgents())
+}
+
+// LibcrustPatchAgents patches all registered agent configs to route through
+// the Crust proxy. proxyPort is the local proxy port (0 for MCP-only).
+// The crust binary for MCP wrapping is resolved automatically.
+//
+//export LibcrustPatchAgents
+func LibcrustPatchAgents(proxyPort C.int) {
+	defer func() { recover() }() //nolint:errcheck
+	libcrust.PatchAgents(int(proxyPort))
+}
+
+// LibcrustRestoreAgents restores all patched agent configs to their originals.
+// Should be called on shutdown to clean up.
+//
+//export LibcrustRestoreAgents
+func LibcrustRestoreAgents() {
+	defer func() { recover() }() //nolint:errcheck
+	libcrust.RestoreAgents()
+}
+
+// =============================================================================
+// Wrap (stdio proxy)
+// =============================================================================
+
+// LibcrustWrap runs the auto-detecting stdio proxy ("crust wrap" equivalent).
+// argsJSON is a JSON-encoded string array: ["--", "npx", "mcp-server"].
+// Blocks until the subprocess exits. Returns the exit code.
+//
+//export LibcrustWrap
+func LibcrustWrap(argsJSON *C.char) (exitCode C.int) {
+	defer func() {
+		if r := recover(); r != nil {
+			exitCode = 1
+		}
+	}()
+	var args []string
+	if err := json.Unmarshal([]byte(C.GoString(argsJSON)), &args); err != nil {
+		return 1
+	}
+	return C.int(libcrust.Wrap(args))
 }
 
 func main() {}

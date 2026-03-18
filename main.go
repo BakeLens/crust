@@ -1292,9 +1292,9 @@ func runMCPDiscover(args []string) {
 	}
 
 	if *patch {
-		crustBin, err := mcpdiscover.CrustBinaryPath()
-		if err != nil {
-			tui.PrintError(fmt.Sprintf("Cannot resolve crust binary: %v", err))
+		crustBin := daemon.ResolveCrustBin()
+		if crustBin == "" {
+			tui.PrintError("Cannot resolve crust binary path")
 			os.Exit(1)
 		}
 		patchResult := mcpdiscover.PatchConfigs(crustBin)
