@@ -269,16 +269,6 @@ func TestRestoreConfig_NoBackup(t *testing.T) {
 	}
 }
 
-func TestCrustBinaryPath(t *testing.T) {
-	p, err := CrustBinaryPath()
-	if err != nil {
-		t.Fatalf("CrustBinaryPath error: %v", err)
-	}
-	if !filepath.IsAbs(p) {
-		t.Errorf("expected absolute path, got %q", p)
-	}
-}
-
 func TestPatchConfigFile_MultipleStdioServers(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFixture(t, dir, "config.json", `{

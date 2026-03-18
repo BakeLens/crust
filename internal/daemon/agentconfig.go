@@ -42,5 +42,9 @@ func ResolveCrustBin() string {
 	if err != nil {
 		return exe
 	}
-	return resolved
+	abs, err := filepath.Abs(resolved)
+	if err != nil {
+		return resolved
+	}
+	return abs
 }
