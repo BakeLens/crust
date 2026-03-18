@@ -107,6 +107,22 @@ func LibcrustGetVersion() (result *C.char) {
 	return C.CString(libcrust.GetVersion())
 }
 
+// LibcrustGetCommit returns the build commit hash.
+//
+//export LibcrustGetCommit
+func LibcrustGetCommit() (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetCommit())
+}
+
+// LibcrustGetBuildDate returns the build date.
+//
+//export LibcrustGetBuildDate
+func LibcrustGetBuildDate() (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetBuildDate())
+}
+
 // LibcrustShutdown releases all rule engine resources.
 //
 //export LibcrustShutdown

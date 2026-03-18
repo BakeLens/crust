@@ -210,6 +210,16 @@ func GetVersion() string {
 	return Version
 }
 
+// GetCommit returns the build commit hash.
+func GetCommit() string {
+	return Commit
+}
+
+// GetBuildDate returns the build date.
+func GetBuildDate() string {
+	return BuildDate
+}
+
 // ScanContent scans arbitrary text for secrets/PII using the DLP engine.
 // Returns a JSON string with the scan result:
 //
