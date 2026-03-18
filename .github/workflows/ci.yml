@@ -193,7 +193,10 @@ jobs:
           parallel_fuzz /tmp/config.fuzz FuzzKeystoreJSON || rc=1
           parallel_fuzz /tmp/mcpdiscover.fuzz FuzzMCPConfigPatch || rc=1
           parallel_fuzz /tmp/pathutil.fuzz FuzzExpandMSYS2Path || rc=1
-          parallel_fuzz /tmp/security.fuzz FuzzInterceptAnthropicResponse || rc=1
+          # FuzzInterceptAnthropicResponse initializes a rule engine (shell
+          # workers) whose startup cost can exceed 12s under CPU contention.
+          # Run standalone with 15s to avoid spurious deadline-exceeded failures.
+          /tmp/security.fuzz -test.fuzz=FuzzInterceptAnthropicResponse -test.fuzztime=15s -test.short -test.fuzzcachedir=/tmp/fuzz-cache || rc=1
           parallel_fuzz /tmp/selfprotect.fuzz FuzzSelfProtectBypass || rc=1
           exit $rc
 
