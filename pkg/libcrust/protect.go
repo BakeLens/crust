@@ -162,7 +162,9 @@ func ProtectStatus() string {
 	return string(out)
 }
 
-// ListAgents returns a JSON array of all registered agents with their status.
+// ListAgents returns a JSON array of agents that are installed or patched.
+// Agents whose config file does not exist on this machine are excluded
+// unless they are currently patched (e.g. via hook installation).
 func ListAgents() string {
 	type agentInfo struct {
 		Name    string `json:"name"`
@@ -170,9 +172,13 @@ func ListAgents() string {
 	}
 	var agents []agentInfo
 	for _, t := range registry.Default.Targets() {
+		patched := registry.Default.IsPatched(t.Name())
+		if !patched && !t.Installed() {
+			continue
+		}
 		agents = append(agents, agentInfo{
 			Name:    t.Name(),
-			Patched: registry.Default.IsPatched(t.Name()),
+			Patched: patched,
 		})
 	}
 	if agents == nil {
@@ -186,7 +192,12 @@ func ListAgents() string {
 func EnableAgent(name string) error {
 	protect.mu.Lock()
 	port := protect.port
+	running := protect.running
 	protect.mu.Unlock()
+
+	if !running || port == 0 {
+		return fmt.Errorf("protection is not running")
+	}
 
 	crustBin := daemon.ResolveCrustBin()
 	for _, t := range registry.Default.Targets() {

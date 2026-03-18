@@ -29,7 +29,15 @@ func init() {
 	// the correct client definition for each iteration.
 	for _, c := range mcpdiscover.BuiltinClients() {
 		Register(&FuncTarget{
-			AgentName:   c.ClientName(),
+			AgentName: c.ClientName(),
+			InstalledFunc: func() bool {
+				path := c.ConfigPath()
+				if path == "" {
+					return false
+				}
+				_, err := os.Stat(path)
+				return err == nil
+			},
 			PatchFunc:   func(_ int, bin string) error { return mcpdiscover.PatchClientDef(c, bin) },
 			RestoreFunc: func() error { return mcpdiscover.RestoreClientDef(c) },
 		})

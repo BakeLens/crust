@@ -19,6 +19,8 @@ var ErrNothingPatched = mcpdiscover.ErrNothingPatched
 // Implement this interface to add a new proxy target to the daemon registry.
 type Target interface {
 	Name() string
+	// Installed reports whether the agent's config file exists on this machine.
+	Installed() bool
 	// Patch routes the target through the Crust proxy.
 	// proxyPort is the listening port; crustBin is the resolved crust binary path.
 	Patch(proxyPort int, crustBin string) error
@@ -39,6 +41,15 @@ type HTTPAgent struct {
 }
 
 func (a *HTTPAgent) Name() string { return a.AgentName }
+
+func (a *HTTPAgent) Installed() bool {
+	path := a.ConfigPath()
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
 
 func (a *HTTPAgent) Patch(proxyPort int, _ string) error {
 	path := a.ConfigPath()
@@ -64,12 +75,19 @@ func (a *HTTPAgent) Restore() error {
 // FuncTarget adapts arbitrary closures into a Target.
 // Used in builtin.go to wrap MCP clients from the mcpdiscover package.
 type FuncTarget struct {
-	AgentName   string
-	PatchFunc   func(proxyPort int, crustBin string) error
-	RestoreFunc func() error
+	AgentName     string
+	InstalledFunc func() bool
+	PatchFunc     func(proxyPort int, crustBin string) error
+	RestoreFunc   func() error
 }
 
-func (f *FuncTarget) Name() string                  { return f.AgentName }
+func (f *FuncTarget) Name() string { return f.AgentName }
+func (f *FuncTarget) Installed() bool {
+	if f.InstalledFunc != nil {
+		return f.InstalledFunc()
+	}
+	return false
+}
 func (f *FuncTarget) Patch(p int, bin string) error { return f.PatchFunc(p, bin) }
 func (f *FuncTarget) Restore() error                { return f.RestoreFunc() }
 

@@ -157,11 +157,12 @@ func LibcrustCloseStorage() {
 // =============================================================================
 
 // LibcrustGetEvents returns recent security events as a JSON string.
+// blockedOnly: if non-zero, only return events where was_blocked=1.
 //
 //export LibcrustGetEvents
-func LibcrustGetEvents(minutes C.int, limit C.int) (result *C.char) {
+func LibcrustGetEvents(minutes C.int, limit C.int, blockedOnly C.int) (result *C.char) {
 	defer recoverErr(&result)
-	return C.CString(libcrust.GetEvents(int(minutes), int(limit)))
+	return C.CString(libcrust.GetEvents(int(minutes), int(limit), blockedOnly != 0))
 }
 
 // LibcrustGetSecurityStats returns in-memory session metrics as a JSON string.
@@ -178,6 +179,17 @@ func LibcrustGetSecurityStats() (result *C.char) {
 func LibcrustGetStats24h() (result *C.char) {
 	defer recoverErr(&result)
 	return C.CString(libcrust.GetStats24h())
+}
+
+// LibcrustClearEvents deletes all tool call logs and resets metrics.
+//
+//export LibcrustClearEvents
+func LibcrustClearEvents() (result *C.char) {
+	defer recoverErr(&result)
+	if err := libcrust.ClearEvents(); err != nil {
+		return C.CString(err.Error())
+	}
+	return nil
 }
 
 // =============================================================================

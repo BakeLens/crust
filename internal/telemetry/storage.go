@@ -916,6 +916,58 @@ func (s *Storage) GetRecentLogs(ctx context.Context, minutes int, limit int) ([]
 	return logs, nil
 }
 
+// GetRecentBlockedLogs returns only blocked events (was_blocked=1) from the
+// given time window. This avoids the issue where allowed events push blocked
+// events past the LIMIT boundary.
+func (s *Storage) GetRecentBlockedLogs(ctx context.Context, minutes int, limit int) ([]ToolCallLog, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if minutes <= 0 {
+		minutes = 60
+	} else if minutes > MaxRecentMinutes {
+		minutes = MaxRecentMinutes
+	}
+
+	rows, err := s.conn.QueryContext(ctx,
+		`SELECT id, timestamp, trace_id, session_id, tool_name, tool_arguments,
+		        api_type, was_blocked, blocked_by_rule, model, layer,
+		        protocol, direction, method, block_type
+		 FROM tool_call_logs
+		 WHERE timestamp > datetime('now', ?) AND was_blocked = 1
+		 ORDER BY timestamp DESC
+		 LIMIT ?`,
+		fmt.Sprintf("-%d minutes", minutes), limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blocked logs: %w", err)
+	}
+	defer rows.Close()
+
+	var logs []ToolCallLog
+	for rows.Next() {
+		var d db.ToolCallLog
+		if err := rows.Scan(
+			&d.ID, &d.Timestamp, &d.TraceID, &d.SessionID,
+			&d.ToolName, &d.ToolArguments, &d.ApiType, &d.WasBlocked,
+			&d.BlockedByRule, &d.Model, &d.Layer,
+			&d.Protocol, &d.Direction, &d.Method, &d.BlockType,
+		); err != nil {
+			return nil, err
+		}
+		logs = append(logs, dbToolCallLogToToolCallLog(&d))
+	}
+	return logs, rows.Err()
+}
+
+// ClearAllEvents deletes all rows from tool_call_logs.
+func (s *Storage) ClearAllEvents(ctx context.Context) (int64, error) {
+	result, err := s.conn.ExecContext(ctx, `DELETE FROM tool_call_logs`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 // MaxRetentionDays is the maximum allowed retention period
 const MaxRetentionDays = 36500 // 100 years
 
