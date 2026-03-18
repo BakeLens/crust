@@ -68,7 +68,9 @@ func Init(cfg Config) (*Manager, error) {
 
 	// Seed in-memory metrics from persisted events (last 24h) so stats
 	// survive daemon restarts.
-	if counts, err := storage.GetLayerCounts(context.Background()); err == nil {
+	seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer seedCancel()
+	if counts, err := storage.GetLayerCounts(seedCtx); err == nil {
 		m := eventlog.GetMetrics()
 		for _, lc := range counts {
 			m.Seed(lc.Layer, lc.Blocked, lc.Count)
@@ -169,9 +171,11 @@ func (m *Manager) cleanupLoop() {
 			return
 		case <-ticker.C:
 			if m.retentionDays > 0 {
-				if _, err := m.storage.CleanupOldData(context.Background(), m.retentionDays); err != nil {
+				cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				if _, err := m.storage.CleanupOldData(cleanCtx, m.retentionDays); err != nil {
 					log.Warn("Periodic cleanup failed: %v", err)
 				}
+				cleanCancel()
 			}
 		}
 	}

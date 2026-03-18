@@ -225,8 +225,10 @@ func (p *Provider) EndLLMSpan(spanCtx *SpanContext, data LLMSpanData) {
 		toolSpans = append(toolSpans, p.buildToolSpan(spanCtx.SpanID, data.TraceID, tc))
 	}
 
-	// Record everything atomically in a single transaction
-	if err := storage.RecordSpanTx(context.Background(), data.TraceID, data.SessionID, mainSpan, toolSpans); err != nil {
+	// Record everything atomically in a single transaction.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := storage.RecordSpanTx(ctx, data.TraceID, data.SessionID, mainSpan, toolSpans); err != nil {
 		log.Debug("[TELEMETRY] Failed to record span: %v", err)
 	}
 }

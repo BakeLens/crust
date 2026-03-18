@@ -2,6 +2,7 @@ package security
 
 import (
 	"context"
+	"time"
 
 	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/telemetry"
@@ -41,7 +42,9 @@ func (storageSink) LogEvent(event eventlog.Event) {
 		BlockType:     event.BlockType,
 	}
 
-	if err := storage.LogToolCall(context.Background(), tcLog); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := storage.LogToolCall(ctx, tcLog); err != nil {
 		log.Warn("Failed to log security event: %v", err)
 	}
 }
