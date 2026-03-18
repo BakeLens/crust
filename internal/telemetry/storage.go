@@ -186,6 +186,25 @@ func (s *Storage) GetLayerCounts(ctx context.Context) ([]LayerCount, error) {
 	return counts, rows.Err()
 }
 
+// Stats24h holds aggregated counts for the last 24 hours from SQLite.
+type Stats24h struct {
+	Blocked int64 `json:"blocked"`
+	Total   int64 `json:"total"`
+}
+
+// Get24hStats returns blocked and total tool call counts from the last 24 hours.
+// Unlike in-memory metrics, this always reflects the current sliding window.
+func (s *Storage) Get24hStats(ctx context.Context) (Stats24h, error) {
+	var st Stats24h
+	row := s.conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) as total,
+		        COALESCE(SUM(CASE WHEN was_blocked THEN 1 ELSE 0 END), 0) as blocked
+		 FROM tool_call_logs
+		 WHERE timestamp > datetime('now', '-24 hours')`)
+	err := row.Scan(&st.Total, &st.Blocked)
+	return st, err
+}
+
 func (s *Storage) initSchema() error {
 	_, err := s.conn.ExecContext(context.Background(), inlineSchema)
 	if err != nil {

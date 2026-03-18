@@ -36,6 +36,20 @@ func GetSecurityStats() string {
 	return mustJSON(m.GetStats())
 }
 
+// GetStats24h returns blocked/total counts for the last 24 hours from SQLite.
+// Unlike GetSecurityStats (in-memory), this always reflects the current sliding window.
+func GetStats24h() string {
+	s := getStorage()
+	if s == nil {
+		return `{"blocked":0,"total":0}`
+	}
+	st, err := s.Get24hStats(ctx())
+	if err != nil {
+		return `{"blocked":0,"total":0}`
+	}
+	return mustJSON(st)
+}
+
 // --- helpers ---
 
 func mustJSON(v any) string {

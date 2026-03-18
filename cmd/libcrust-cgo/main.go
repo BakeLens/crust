@@ -172,6 +172,14 @@ func LibcrustGetSecurityStats() (result *C.char) {
 	return C.CString(libcrust.GetSecurityStats())
 }
 
+// LibcrustGetStats24h returns blocked/total counts for the last 24h from SQLite.
+//
+//export LibcrustGetStats24h
+func LibcrustGetStats24h() (result *C.char) {
+	defer recoverErr(&result)
+	return C.CString(libcrust.GetStats24h())
+}
+
 // =============================================================================
 // Stats
 // =============================================================================
