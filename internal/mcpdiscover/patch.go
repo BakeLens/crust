@@ -169,18 +169,30 @@ func RestoreAllWithClients(clients []ClientDef) int {
 	return restored
 }
 
+// ErrNothingPatched is returned when a config file exists but contains no
+// stdio MCP servers to wrap. The registry uses this to avoid marking the
+// target as "patched" when no actual wrapping occurred.
+var ErrNothingPatched = errors.New("no MCP servers to patch")
+
 // PatchClientDef patches a single MCP client config to route its stdio servers
 // through "crust wrap". Used by the daemon registry for per-client patching.
+// Returns ErrNothingPatched if the config exists but has no servers to wrap.
 func PatchClientDef(c ClientDef, crustBin string) error {
 	path := c.ConfigPath()
 	if path == "" {
-		return nil
+		return ErrNothingPatched
 	}
-	_, err := patchConfigFile(path, c, crustBin)
+	n, err := patchConfigFile(path, c, crustBin)
 	if os.IsNotExist(err) {
-		return nil // config file absent — not an error
+		return ErrNothingPatched
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNothingPatched
+	}
+	return nil
 }
 
 // RestoreClientDef restores a single MCP client config from its backup.

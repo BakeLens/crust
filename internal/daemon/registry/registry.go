@@ -24,9 +24,11 @@
 package registry
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/BakeLens/crust/internal/logger"
+	"github.com/BakeLens/crust/internal/mcpdiscover"
 )
 
 var log = logger.New("registry")
@@ -59,7 +61,9 @@ func (r *Registry) PatchAll(proxyPort int, crustBin string) {
 	}
 	for _, t := range r.targets {
 		if err := t.Patch(proxyPort, crustBin); err != nil {
-			log.Warn("patch %s: %v", t.Name(), err)
+			if !errors.Is(err, mcpdiscover.ErrNothingPatched) {
+				log.Warn("patch %s: %v", t.Name(), err)
+			}
 		} else {
 			r.patched[t.Name()] = true
 		}
