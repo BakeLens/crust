@@ -189,6 +189,7 @@ func ListAgents() string {
 }
 
 // EnableAgent patches a single agent by name.
+// For Claude Code, also installs the PreToolUse hook.
 func EnableAgent(name string) error {
 	protect.mu.Lock()
 	port := protect.port
@@ -203,9 +204,19 @@ func EnableAgent(name string) error {
 	for _, t := range registry.Default.Targets() {
 		if t.Name() == name {
 			if err := t.Patch(port, crustBin); err != nil {
-				return err
+				// For Claude Code, MCP patching may fail (ErrNothingPatched)
+				// but hook installation should still proceed.
+				if name != "Claude Code" {
+					return err
+				}
 			}
 			registry.Default.MarkPatched(name)
+			// Claude Code: also install the PreToolUse hook.
+			if name == "Claude Code" {
+				if err := InstallClaudeHook(crustBin); err != nil {
+					plog.Warn("failed to install Claude hook: %v", err)
+				}
+			}
 			return nil
 		}
 	}
@@ -213,6 +224,7 @@ func EnableAgent(name string) error {
 }
 
 // DisableAgent restores a single agent by name.
+// For Claude Code, also uninstalls the PreToolUse hook.
 func DisableAgent(name string) error {
 	for _, t := range registry.Default.Targets() {
 		if t.Name() == name {
@@ -220,6 +232,12 @@ func DisableAgent(name string) error {
 				return err
 			}
 			registry.Default.MarkUnpatched(name)
+			// Claude Code: also uninstall the PreToolUse hook.
+			if name == "Claude Code" {
+				if err := UninstallClaudeHook(); err != nil {
+					plog.Warn("failed to uninstall Claude hook: %v", err)
+				}
+			}
 			return nil
 		}
 	}
