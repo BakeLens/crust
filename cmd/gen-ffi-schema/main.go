@@ -39,7 +39,7 @@ func main() {
 	}
 	b.WriteString("];\n")
 
-	if err := os.WriteFile(*out, []byte(b.String()), 0644); err != nil {
+	if err := os.WriteFile(*out, []byte(b.String()), 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "gen-ffi-schema: %v\n", err)
 		os.Exit(1)
 	}
