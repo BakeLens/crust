@@ -94,7 +94,11 @@ func StartProtect() (int, error) {
 	protect.evalPort = evalPort
 
 	// Write eval port so hook processes can find the running instance.
-	writePortFile(evalPort)
+	// Skip when evalPort is 0 (server failed to start) to avoid writing
+	// a zero port that would cause hook processes to connect to nothing.
+	if evalPort > 0 {
+		writePortFile(evalPort)
+	}
 
 	return port, nil
 }

@@ -448,8 +448,11 @@ func runDaemon(cfg *config.Config, logLevel string, disableBuiltin bool, endpoin
 		os.Exit(1)
 	}
 
-	// Patch known agent configs to point at the proxy (restored on shutdown)
+	// Patch known agent configs to point at the proxy (restored on shutdown).
+	// The defer ensures restoration on normal shutdown; if the daemon crashes
+	// before defers run, `crust stop` performs a best-effort restore.
 	daemon.PatchAgentConfigs(cfg.Server.Port)
+	defer daemon.RestoreAgentConfigs()
 
 	log.Info("Starting Crust daemon...")
 
@@ -597,6 +600,11 @@ func runDaemon(cfg *config.Config, logLevel string, disableBuiltin bool, endpoin
 	}
 	log.Info("  API: %s", socketPath)
 
+	// Register signal handler before starting the server to avoid a race
+	// where a signal arrives between ListenAndServe and signal.Notify.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+
 	// Start server
 	serverErr := make(chan error, 1)
 	go func() {
@@ -604,10 +612,6 @@ func runDaemon(cfg *config.Config, logLevel string, disableBuiltin bool, endpoin
 			serverErr <- err
 		}
 	}()
-
-	// Wait for interrupt signal or server error
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-quit:
 	case err := <-serverErr:
