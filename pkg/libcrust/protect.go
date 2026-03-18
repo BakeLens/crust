@@ -202,7 +202,11 @@ func EnableAgent(name string) error {
 	crustBin := daemon.ResolveCrustBin()
 	for _, t := range registry.Default.Targets() {
 		if t.Name() == name {
-			return t.Patch(port, crustBin)
+			if err := t.Patch(port, crustBin); err != nil {
+				return err
+			}
+			registry.Default.MarkPatched(name)
+			return nil
 		}
 	}
 	return fmt.Errorf("agent %q not found", name)
@@ -212,7 +216,11 @@ func EnableAgent(name string) error {
 func DisableAgent(name string) error {
 	for _, t := range registry.Default.Targets() {
 		if t.Name() == name {
-			return t.Restore()
+			if err := t.Restore(); err != nil {
+				return err
+			}
+			registry.Default.MarkUnpatched(name)
+			return nil
 		}
 	}
 	return fmt.Errorf("agent %q not found", name)

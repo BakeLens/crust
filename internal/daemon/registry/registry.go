@@ -90,6 +90,14 @@ func (r *Registry) IsPatched(name string) bool {
 	return r.patched[name]
 }
 
+// MarkUnpatched marks a target as no longer patched.
+// Used by DisableAgent to update the tracking state after Restore.
+func (r *Registry) MarkUnpatched(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.patched, name)
+}
+
 // MarkPatched marks a target as patched without calling Patch.
 // Used when protection is achieved through a mechanism other than
 // the target's own Patch function (e.g. Claude Code hook installation).
