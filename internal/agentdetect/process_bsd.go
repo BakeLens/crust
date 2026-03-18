@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin || freebsd || openbsd || netbsd || dragonfly
 
 package agentdetect
 
