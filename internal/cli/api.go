@@ -82,7 +82,7 @@ func (c *APIClient) IsServerRunning() bool {
 	if err != nil || resp == nil {
 		return false
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 	return true
 }
 
