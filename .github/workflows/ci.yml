@@ -430,10 +430,15 @@ jobs:
             go version
             # Mark checkout dir safe — VM user differs from checkout owner after rsync
             git config --global --add safe.directory '*'
+            # FreeBSD 15 enables ASLR by default, which is incompatible with
+            # Go's race detector (ThreadSanitizer). Disable ASLR for CI so
+            # -race works correctly.
+            sysctl kern.elf64.aslr.enable=0
+            sysctl kern.elf64.aslr.pie_enable=0
             # Test install.sh on FreeBSD (builds from source)
             bash install.sh --local . --prefix /usr/local/bin --no-font --no-completion
             which crust && crust version
-            go test -short ./...
+            go test -race -short ./...
 
   e2e:
     name: E2E Tests (MCP stdio + HTTP + ACP)

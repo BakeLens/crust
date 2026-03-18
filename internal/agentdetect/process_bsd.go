@@ -15,7 +15,7 @@ func scanProcesses() ([]processInfo, error) {
 	// ps -eo pid,args gives PID and full command path + arguments
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "ps", "-eo", "pid,args").Output()
+	out, err := exec.CommandContext(ctx, "ps", "-axo", "pid,args").Output()
 	if err != nil {
 		return nil, err
 	}

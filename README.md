@@ -26,7 +26,7 @@
   <a href="https://github.com/BakeLens/crust/releases"><img src="https://img.shields.io/github/v/release/BakeLens/crust" alt="Release" /></a>
   <img src="https://img.shields.io/github/go-mod/go-version/BakeLens/crust" alt="Go Version" />
   <img src="https://img.shields.io/badge/License-Elastic%202.0-blue.svg" alt="License" />
-  <img src="https://img.shields.io/badge/Platform-macOS%2012%2B%20%7C%20Linux%20%7C%20Windows%2010%2B%20%7C%20FreeBSD%2014%2B%20%7C%20iOS%2015%2B-lightgrey" alt="Platform" />
+  <img src="https://img.shields.io/badge/Platform-macOS%2012%2B%20%7C%20Linux%20%7C%20Windows%2010%2B%20%7C%20FreeBSD%2015%2B%20%7C%20iOS%2015%2B-lightgrey" alt="Platform" />
 </p>
 
 <p align="center">

@@ -61,6 +61,9 @@ func detect() ShellEnv {
 // Used when WSL env vars are absent (e.g. inside a sub-process that did not
 // inherit them).
 func isWSLKernel() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
 	data, err := os.ReadFile("/proc/version")
 	if err != nil {
 		return false
