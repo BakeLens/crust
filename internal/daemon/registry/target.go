@@ -6,9 +6,14 @@ import (
 	"os"
 
 	"github.com/BakeLens/crust/internal/fileutil"
+	"github.com/BakeLens/crust/internal/mcpdiscover"
 )
 
 const httpBackupSuffix = ".crust-backup"
+
+// ErrNothingPatched is re-exported from mcpdiscover for use by registry callers
+// and tests without requiring a direct mcpdiscover import.
+var ErrNothingPatched = mcpdiscover.ErrNothingPatched
 
 // Target is anything Crust patches when it starts and restores when it stops.
 // Implement this interface to add a new proxy target to the daemon registry.
@@ -38,10 +43,14 @@ func (a *HTTPAgent) Name() string { return a.AgentName }
 func (a *HTTPAgent) Patch(proxyPort int, _ string) error {
 	path := a.ConfigPath()
 	if path == "" {
-		return nil
+		return mcpdiscover.ErrNothingPatched
 	}
 	proxyURL := fmt.Sprintf("http://localhost:%d%s", proxyPort, a.PathSuffix)
-	return patchJSONField(path, a.URLKey, proxyURL)
+	err := patchJSONField(path, a.URLKey, proxyURL)
+	if os.IsNotExist(err) {
+		return mcpdiscover.ErrNothingPatched
+	}
+	return err
 }
 
 func (a *HTTPAgent) Restore() error {

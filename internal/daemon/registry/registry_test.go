@@ -115,19 +115,58 @@ func TestHTTPAgentMissingConfig(t *testing.T) {
 	}
 }
 
-// TestHTTPAgentEmptyConfigPath verifies that Patch/Restore return nil when
-// ConfigPath returns empty string (agent not installed on this machine).
+// TestHTTPAgentEmptyConfigPath verifies that Patch returns ErrNothingPatched
+// when ConfigPath returns empty string (agent not installed on this machine),
+// and Restore returns nil (nothing to undo).
 func TestHTTPAgentEmptyConfigPath(t *testing.T) {
 	agent := &registry.HTTPAgent{
 		AgentName:  "NotInstalled",
 		ConfigPath: func() string { return "" },
 		URLKey:     "baseUrl",
 	}
-	if err := agent.Patch(9090, ""); err != nil {
-		t.Errorf("Patch with empty path should be no-op, got: %v", err)
+	if err := agent.Patch(9090, ""); !errors.Is(err, registry.ErrNothingPatched) {
+		t.Errorf("Patch with empty path should return ErrNothingPatched, got: %v", err)
 	}
 	if err := agent.Restore(); err != nil {
 		t.Errorf("Restore with empty path should be no-op, got: %v", err)
+	}
+}
+
+// TestHTTPAgentMissingFileReturnsErrNothingPatched verifies that Patch returns
+// ErrNothingPatched (not a generic error) when the config file doesn't exist.
+func TestHTTPAgentMissingFileReturnsErrNothingPatched(t *testing.T) {
+	agent := &registry.HTTPAgent{
+		AgentName:  "Ghost",
+		ConfigPath: func() string { return filepath.Join(t.TempDir(), "nonexistent.json") },
+		URLKey:     "baseUrl",
+	}
+	err := agent.Patch(9090, "")
+	if !errors.Is(err, registry.ErrNothingPatched) {
+		t.Errorf("Patch on missing file should return ErrNothingPatched, got: %v", err)
+	}
+}
+
+// TestPatchAllSkipsErrNothingPatched verifies that PatchAll does not mark
+// targets as "patched" when they return ErrNothingPatched.
+func TestPatchAllSkipsErrNothingPatched(t *testing.T) {
+	r := &registry.Registry{}
+	r.Register(&registry.FuncTarget{
+		AgentName:   "Installed",
+		PatchFunc:   func(_ int, _ string) error { return nil },
+		RestoreFunc: func() error { return nil },
+	})
+	r.Register(&registry.FuncTarget{
+		AgentName:   "NotInstalled",
+		PatchFunc:   func(_ int, _ string) error { return registry.ErrNothingPatched },
+		RestoreFunc: func() error { return nil },
+	})
+
+	r.PatchAll(9090, "")
+	if !r.IsPatched("Installed") {
+		t.Error("Installed should be patched")
+	}
+	if r.IsPatched("NotInstalled") {
+		t.Error("NotInstalled should not be marked as patched")
 	}
 }
 
