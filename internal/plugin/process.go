@@ -19,6 +19,9 @@ const processStartTimeout = 15 * time.Second
 // maxRestartAttempts limits auto-restart retries to prevent tight restart loops.
 const maxRestartAttempts = 3
 
+// jsonNull is the JSON literal "null", used to detect empty plugin results.
+const jsonNull = "null"
+
 // ProcessPlugin implements Plugin by communicating with an external process
 // over JSON-newline stdin/stdout (wire protocol). This provides crash isolation
 // at the OS process level — a plugin segfault cannot crash the crust engine.
@@ -134,7 +137,7 @@ func (p *ProcessPlugin) Evaluate(ctx context.Context, req Request) *Result {
 	}
 
 	// null result = allow.
-	if string(resp.Result) == "null" || len(resp.Result) == 0 {
+	if string(resp.Result) == jsonNull || len(resp.Result) == 0 {
 		return nil
 	}
 
