@@ -102,7 +102,7 @@ func TestDetectShellEnv_CurrentProcess(t *testing.T) {
 		if !got.IsWindows() {
 			t.Errorf("GOOS=windows but ShellEnvironment()=%v is not Windows", got)
 		}
-	case "linux", "darwin":
+	case "linux", "darwin", "freebsd":
 		if got.IsWindows() {
 			t.Errorf("GOOS=%s but ShellEnvironment()=%v reports Windows", runtime.GOOS, got)
 		}

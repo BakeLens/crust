@@ -150,6 +150,9 @@ func (n *Normalizer) Normalize(path string) string {
 	// ".." traversals resolve correctly (e.g., /dev/fd/../environ →
 	// /proc/self/fd/../environ → clean → /proc/self/environ).
 	// On Linux, /dev/fd is a symlink to /proc/self/fd.
+	// On FreeBSD/macOS, /dev/fd is a real devfs node (not a symlink),
+	// but we still rewrite for consistent rule matching so that
+	// traversals like /dev/fd/../environ are caught uniformly.
 	if strings.HasPrefix(path, "/dev/fd/") {
 		path = "/proc/self/fd/" + path[len("/dev/fd/"):]
 	} else if path == "/dev/fd" {
