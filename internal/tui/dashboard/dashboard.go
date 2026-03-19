@@ -3,6 +3,7 @@
 package dashboard
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/BakeLens/crust/internal/monitor"
 	"github.com/BakeLens/crust/internal/tui"
 )
 
@@ -25,8 +27,13 @@ const (
 	listPaneWidth = 28 // fixed width of the session list pane
 )
 
-// tickMsg triggers a refresh.
+// tickMsg triggers a refresh for data not covered by the monitor stream.
 type tickMsg time.Time
+
+// changeMsg wraps a monitor.Change for delivery into the bubbletea update loop.
+type changeMsg struct {
+	change monitor.Change
+}
 
 // statsMsg carries fetched overview data.
 type statsMsg struct {
@@ -82,6 +89,9 @@ type model struct {
 	trend    []TrendPoint
 	dist     *Distribution
 	coverage []CoverageTool
+
+	// monitor delivers real-time changes for agents, events, protect, sessions
+	mon *monitor.Monitor
 }
 
 func newModel(mgmtClient *http.Client, apiBase string, proxyBaseURL string, pid int) model {
@@ -101,15 +111,32 @@ func newModel(mgmtClient *http.Client, apiBase string, proxyBaseURL string, pid 
 		shimmer:      tui.NewShimmer(shimCfg),
 		prevBlocked:  -1, // sentinel: first fetch hasn't arrived yet
 		width:        60,
+		mon:          monitor.New(),
 	}
 }
 
 func (m model) Init() tea.Cmd {
+	m.mon.Start()
 	return tea.Batch(
 		m.spinner.Tick,
 		m.fetchStats(),
 		m.fetchSessions(),
+		m.waitForChange(),
+		tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }),
 	)
+}
+
+// waitForChange returns a tea.Cmd that blocks until the next monitor change
+// arrives, then delivers it as a changeMsg. Returns nil when the channel closes.
+func (m model) waitForChange() tea.Cmd {
+	ch := m.mon.Changes()
+	return func() tea.Msg {
+		change, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return changeMsg{change: change}
+	}
 }
 
 // fetchStats fetches the overview status data.
@@ -184,22 +211,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.prevBlocked = msg.data.Stats.BlockedCalls
 			m.data = msg.data
 		}
-		cmds := []tea.Cmd{tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		})}
+		var cmds []tea.Cmd
 		if m.shimmer.Active {
 			cmds = append(cmds, m.shimmer.Tick())
 		}
 		return m, tea.Batch(cmds...)
 
+	// ── Monitor real-time changes ─────────────────────────────────────────
+	case changeMsg:
+		applyChange(&m, msg.change)
+		return m, m.waitForChange()
+
 	case tickMsg:
-		cmds := []tea.Cmd{m.fetchStats()}
+		// Only fetch data not covered by the monitor stream.
+		var cmds []tea.Cmd
 		switch m.activeTab {
 		case tabSessions:
-			cmds = append(cmds, m.fetchSessions())
+			// Session events for the selected session still need HTTP.
+			cmds = append(cmds, m.fetchSessionEvents())
 		case tabStats:
 			cmds = append(cmds, m.fetchStatsAgg())
 		}
+		// Schedule next tick.
+		cmds = append(cmds, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return tickMsg(t)
+		}))
 		return m, tea.Batch(cmds...)
 
 	// ── Stats aggregation data ───────────────────────────────────────────
@@ -275,6 +311,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
+			m.mon.Stop()
 			return m, tea.Quit
 
 		case "r":
@@ -325,6 +362,79 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// applyChange updates model fields based on a real-time monitor change.
+func applyChange(m *model, c monitor.Change) {
+	switch c.Kind {
+	case monitor.ChangeAgents:
+		// Agents payload is informational — the TUI overview doesn't display
+		// a dedicated agent list yet, but we keep this case for future use.
+
+	case monitor.ChangeEvent:
+		// A new security event arrived. Update the blocked count and trigger
+		// shimmer if it increased. The event payload carries per-event data;
+		// we increment counters optimistically so the overview reacts instantly.
+		var ev struct {
+			WasBlocked bool   `json:"was_blocked"`
+			ToolName   string `json:"tool_name"`
+		}
+		if json.Unmarshal(c.Payload, &ev) == nil {
+			m.data.Stats.TotalToolCalls++
+			if ev.WasBlocked {
+				m.data.Stats.BlockedCalls++
+				if m.prevBlocked >= 0 {
+					m.shimmer.Start(20)
+				}
+				m.prevBlocked = m.data.Stats.BlockedCalls
+			} else {
+				m.data.Stats.AllowedCalls++
+			}
+		}
+
+	case monitor.ChangeProtect:
+		// Protection status changed — update health/enabled flags.
+		var status struct {
+			Active    bool `json:"active"`
+			ProxyPort int  `json:"proxy_port"`
+		}
+		if json.Unmarshal(c.Payload, &status) == nil {
+			m.data.Healthy = status.Active
+			m.data.Enabled = status.Active
+		}
+
+	case monitor.ChangeSession:
+		// Session list updated. Decode and merge into the sessions tab.
+		var sessions []SessionSummary
+		if json.Unmarshal(c.Payload, &sessions) == nil {
+			prev := m.activeSessionID
+			prevSel := m.clampedSelection()
+			if len(m.sessions) > prevSel {
+				prev = m.sessions[prevSel].SessionID
+			}
+
+			m.sessions = sessions
+
+			// Re-find selected session by ID.
+			m.selectedSession = 0
+			for i, s := range m.sessions {
+				if s.SessionID == prev {
+					m.selectedSession = i
+					break
+				}
+			}
+
+			// Update activeSessionID for display consistency.
+			newSel := m.clampedSelection()
+			if len(m.sessions) > newSel {
+				newID := m.sessions[newSel].SessionID
+				if newID != m.activeSessionID {
+					m.activeSessionID = newID
+					m.sessionEvents = nil // will be fetched on next tick
+				}
+			}
+		}
+	}
 }
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -766,4 +876,21 @@ func RenderStatic(data StatusData) string {
 	}
 
 	return tui.StyleBox.Render(sb.String())
+}
+
+// applyChange updates the model in response to a real-time monitor change.
+// Changes that map directly to model fields are applied immediately;
+// others are ignored (data is refreshed on the next tick).
+func (m *model) applyChange(c monitor.Change) {
+	switch c.Kind {
+	case monitor.ChangeSession:
+		var sessions []SessionSummary
+		if json.Unmarshal(c.Payload, &sessions) == nil {
+			m.sessions = sessions
+		}
+	case monitor.ChangeEvent:
+		// Event changes are reflected in stats on next tick fetch.
+	case monitor.ChangeAgents, monitor.ChangeProtect:
+		// Agents and protect status are reflected in the overview on next tick fetch.
+	}
 }

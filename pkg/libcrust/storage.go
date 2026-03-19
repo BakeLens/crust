@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/BakeLens/crust/internal/eventlog"
+	"github.com/BakeLens/crust/internal/monitor"
 	"github.com/BakeLens/crust/internal/security"
 	"github.com/BakeLens/crust/internal/telemetry"
 )
@@ -96,6 +97,9 @@ func InitStorage(dbPath string, encryptionKey string) error {
 
 	// Set as global storage for telemetry provider.
 	telemetry.SetGlobalStorage(db)
+
+	// Wire storage for monitor session tracking.
+	monitor.SetStorage(db)
 
 	// Wire event sink so eventlog.Record() persists to SQLite.
 	eventlog.SetSink(storageSink{})

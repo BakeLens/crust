@@ -13,6 +13,7 @@ import (
 	"github.com/BakeLens/crust/internal/api"
 	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/mcpgateway"
+	"github.com/BakeLens/crust/internal/monitor"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
 )
@@ -80,6 +81,7 @@ func (s *APIServer) registerRoutes() {
 			security.GET("/stats", s.handleStats)
 			security.GET("/status", s.handleStatus)
 			security.GET("/events/stream", s.handleEventsStream)
+			security.GET("/changes/stream", s.handleChangesStream)
 			security.GET("/plugins", s.handlePlugins)
 			security.GET("/agents", s.handleAgents)
 		}
@@ -262,6 +264,57 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 			if err := mcpgateway.WriteSSEEvent(c.Writer, mcpgateway.SSEEvent{
 				Type: "security-event",
 				Data: string(data),
+			}); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// handleChangesStream handles GET /api/security/changes/stream.
+// Opens an SSE connection that streams unified change events from the monitor
+// package. Each change is sent as an SSE event where the event type is the
+// change kind (agents, event, session, protect) and the data is the JSON payload.
+// The connection closes when the client disconnects or the server shuts down.
+func (s *APIServer) handleChangesStream(c *gin.Context) {
+	mon := monitor.New()
+	mon.Start()
+	defer mon.Stop()
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
+	c.Writer.WriteHeader(http.StatusOK)
+	// Send initial comment so clients can confirm connection is live.
+	_, _ = c.Writer.Write([]byte(":connected\n\n"))
+	if f, ok := c.Writer.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	ctx := c.Request.Context()
+	keepalive := time.NewTicker(20 * time.Second)
+	defer keepalive.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-keepalive.C:
+			// SSE comment keepalive — prevents idle connection drops by proxies/firewalls.
+			if _, err := c.Writer.Write([]byte(":keepalive\n\n")); err != nil {
+				return
+			}
+			if f, ok := c.Writer.(http.Flusher); ok {
+				f.Flush()
+			}
+		case change, ok := <-mon.Changes():
+			if !ok {
+				return
+			}
+			if err := mcpgateway.WriteSSEEvent(c.Writer, mcpgateway.SSEEvent{
+				Type: string(change.Kind),
+				Data: string(change.Payload),
 			}); err != nil {
 				return
 			}
