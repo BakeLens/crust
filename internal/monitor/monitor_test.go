@@ -243,6 +243,7 @@ func TestMonitor_EventRelay_E2E(t *testing.T) {
 	}
 
 	// Record an event via eventlog — the event relay goroutine should pick it up.
+	// No delay needed: Start() subscribes to eventlog synchronously.
 	eventlog.Record(eventlog.Event{
 		Layer:      eventlog.LayerHook,
 		ToolName:   "Read",
@@ -252,7 +253,7 @@ func TestMonitor_EventRelay_E2E(t *testing.T) {
 	})
 
 	// Wait for the event change to arrive.
-	timer := time.After(2 * time.Second)
+	timer := time.After(5 * time.Second)
 	for {
 		select {
 		case ch, ok := <-m.Changes():

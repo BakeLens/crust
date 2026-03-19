@@ -47,9 +47,13 @@ func (m *Monitor) Start() {
 		// so the first Changes() read gets complete state.
 		m.emitInitialState()
 
+		// Subscribe to eventlog synchronously so no events are missed
+		// between Start() returning and the relay goroutine running.
+		subID, eventCh := subscribeEventlog()
+
 		m.wg.Add(4)
 		go m.runAgentScanner()
-		go m.runEventRelay()
+		go m.runEventRelay(subID, eventCh)
 		go m.runSessionTracker()
 		go m.runProtectWatcher()
 		log.Info("monitor started (4 goroutines)")

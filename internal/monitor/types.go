@@ -39,6 +39,10 @@ const (
 	ChangeProtect ChangeKind = "protect"
 )
 
+// AllChangeKinds lists every valid ChangeKind value. Used by FFI contract
+// tests to verify the Rust side handles all kinds the Go side can produce.
+var AllChangeKinds = []ChangeKind{ChangeAgents, ChangeEvent, ChangeSession, ChangeProtect}
+
 // Change is a single item in the unified change stream.
 // Kind identifies what changed; Payload contains the JSON-encoded details.
 type Change struct {

@@ -26,19 +26,29 @@ type eventPayload struct {
 	Timestamp  time.Time       `json:"timestamp"`
 }
 
-// runEventRelay subscribes to eventlog and relays events to the change channel.
-// Events are delivered in real-time with no polling delay.
-func (m *Monitor) runEventRelay() {
-	defer m.wg.Done()
-
+// subscribeEventlog subscribes to eventlog synchronously (called from Start).
+// Returns the subscriber ID and channel, or zero/nil if subscription fails.
+func subscribeEventlog() (uint64, <-chan eventlog.Event) {
 	id, ch, err := eventlog.Subscribe(128)
 	if err != nil {
 		log.Warn("event subscribe failed: %v", err)
-		// Fall back: no event relay. Agent/session/protect still work.
+		return 0, nil
+	}
+	return id, ch
+}
+
+// runEventRelay relays eventlog events to the change channel.
+// The subscription is established before the goroutine starts (in Start)
+// to guarantee no events are missed between Start() and the relay loop.
+func (m *Monitor) runEventRelay(subID uint64, ch <-chan eventlog.Event) {
+	defer m.wg.Done()
+
+	if ch == nil {
+		// Subscription failed — no event relay. Agent/session/protect still work.
 		<-m.stop
 		return
 	}
-	defer eventlog.Unsubscribe(id)
+	defer eventlog.Unsubscribe(subID)
 
 	for {
 		select {
