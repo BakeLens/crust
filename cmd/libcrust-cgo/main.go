@@ -560,8 +560,8 @@ func LibcrustUninstallClaudeHook() (result *C.char) {
 //export LibcrustFormatHookResponse
 func LibcrustFormatHookResponse(evalResult *C.char) (result *C.char) {
 	defer recoverErr(&result)
-	hookJSON, blocked := libcrust.FormatHookResponse(C.GoString(evalResult))
-	if !blocked {
+	hookJSON := libcrust.FormatHookResponse(C.GoString(evalResult))
+	if hookJSON == "" {
 		return nil
 	}
 	return C.CString(hookJSON)

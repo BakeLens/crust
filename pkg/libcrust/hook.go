@@ -15,17 +15,17 @@ type hookSpecificOutput struct {
 }
 
 // FormatHookResponse takes a raw eval result JSON (as returned by Evaluate)
-// and returns the Claude Code PreToolUse hook response.
+// and returns the PreToolUse hook response.
 //
-// Returns ("", false) if the tool call is allowed (no output needed).
-// Returns (hookJSON, true) if the tool call is blocked.
+// Returns "" if the tool call is allowed (no output needed).
+// Returns hookJSON string if the tool call is blocked.
 //
-// The hook protocol (https://docs.anthropic.com/en/docs/claude-code/hooks):
+// The hook protocol (https://code.claude.com/docs/en/hooks):
 //   - Exit 0 with JSON containing hookSpecificOutput.permissionDecision: "deny" -> block
 //   - Exit 0 with no JSON or permissionDecision: "allow" -> allow
 //
-// Fail-open: if the eval result is malformed or not a block, returns allowed.
-func FormatHookResponse(evalResult string) (string, bool) {
+// Fail-open: if the eval result is malformed or not a block, returns "".
+func FormatHookResponse(evalResult string) string {
 	var result struct {
 		Matched  bool   `json:"matched"`
 		RuleName string `json:"rule_name"`
@@ -33,11 +33,11 @@ func FormatHookResponse(evalResult string) (string, bool) {
 		Message  string `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(evalResult), &result); err != nil {
-		return "", false // fail-open on malformed input
+		return "" // fail-open on malformed input
 	}
 
 	if !result.Matched || result.Action != "block" {
-		return "", false // allowed
+		return "" // allowed
 	}
 
 	reason := "Blocked by Crust rule '" + result.RuleName + "': " + result.Message
@@ -51,7 +51,7 @@ func FormatHookResponse(evalResult string) (string, bool) {
 
 	out, err := json.Marshal(resp)
 	if err != nil {
-		return "", false // fail-open on marshal error (shouldn't happen)
+		return "" // fail-open on marshal error (shouldn't happen)
 	}
-	return string(out), true
+	return string(out)
 }
