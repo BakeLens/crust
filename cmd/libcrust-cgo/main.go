@@ -553,6 +553,20 @@ func LibcrustUninstallClaudeHook() (result *C.char) {
 	return nil
 }
 
+// LibcrustFormatHookResponse formats a raw eval result into a Claude Code
+// PreToolUse hook response JSON. Returns the hook JSON if blocked, or NULL
+// if allowed. The caller must free the result with LibcrustFree if non-NULL.
+//
+//export LibcrustFormatHookResponse
+func LibcrustFormatHookResponse(evalResult *C.char) (result *C.char) {
+	defer recoverErr(&result)
+	hookJSON, blocked := libcrust.FormatHookResponse(C.GoString(evalResult))
+	if !blocked {
+		return nil
+	}
+	return C.CString(hookJSON)
+}
+
 // =============================================================================
 // Wrap (stdio proxy)
 // =============================================================================
