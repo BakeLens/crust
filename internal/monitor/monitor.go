@@ -23,11 +23,11 @@ const changeBufSize = 256
 //	    handle(change)
 //	}
 type Monitor struct {
-	changes  chan Change
-	stop     chan struct{}
+	changes   chan Change
+	stop      chan struct{}
 	startOnce sync.Once
 	stopOnce  sync.Once
-	wg       sync.WaitGroup
+	wg        sync.WaitGroup
 }
 
 // New creates a new Monitor. Call Start() to begin monitoring.

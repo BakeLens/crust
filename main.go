@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -1673,43 +1672,6 @@ func printDoctorResult(r httpproxy.DoctorResult) {
 	fmt.Printf("  %s %s %s\n", style.Render(icon), tui.StyleBold.Render(paddedName), tui.Faint(r.URL))
 	fmt.Printf("    %s  %s %s\n", style.Render(tag), r.Diagnosis, tui.Faint(latency))
 	fmt.Println()
-}
-
-// buildDoctorReport generates a sanitized markdown report for GitHub issues.
-// Privacy: user-defined provider URLs are masked to host-only; API keys are
-// never included (DoctorResult doesn't carry them).
-func buildDoctorReport(results []httpproxy.DoctorResult, okCount, warnCount, errCount int) string {
-	var sb strings.Builder
-	sb.WriteString("## Crust Doctor Report\n\n")
-	sb.WriteString("```\n")
-	fmt.Fprintf(&sb, "Version: %s (commit %s, built %s)\n", Version, Commit, BuildDate)
-	fmt.Fprintf(&sb, "OS:      %s/%s\n", runtime.GOOS, runtime.GOARCH)
-	fmt.Fprintf(&sb, "Go:      %s\n", runtime.Version())
-	fmt.Fprintf(&sb, "Summary: %d ok, %d auth, %d error\n\n", okCount, warnCount, errCount)
-
-	fmt.Fprintf(&sb, "%-14s %-5s %4s  %-8s  %s\n", "PROVIDER", "STAT", "CODE", "LATENCY", "DIAGNOSIS")
-	fmt.Fprintf(&sb, "%-14s %-5s %4s  %-8s  %s\n", "--------", "----", "----", "-------", "---------")
-	for _, r := range results {
-		code := "-"
-		if r.StatusCode > 0 {
-			code = strconv.Itoa(r.StatusCode)
-		}
-		name := r.Name
-		diagnosis := r.Diagnosis
-		if r.IsUser {
-			name += " *"
-			// Sanitize diagnosis for user-defined providers:
-			// connection errors may embed the full URL.
-			diagnosis = r.Status.String()
-		}
-		fmt.Fprintf(&sb, "%-14s %-5s %4s  %-8s  %s\n",
-			name, r.Status, code,
-			r.Duration.Round(time.Millisecond).String(), diagnosis,
-		)
-	}
-	sb.WriteString("```\n")
-	sb.WriteString("\nPaste the block above into a GitHub issue at https://github.com/BakeLens/crust/issues/new\n")
-	return sb.String()
 }
 
 // agentPort describes a well-known AI agent localhost server.

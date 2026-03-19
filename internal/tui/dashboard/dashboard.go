@@ -877,20 +877,3 @@ func RenderStatic(data StatusData) string {
 
 	return tui.StyleBox.Render(sb.String())
 }
-
-// applyChange updates the model in response to a real-time monitor change.
-// Changes that map directly to model fields are applied immediately;
-// others are ignored (data is refreshed on the next tick).
-func (m *model) applyChange(c monitor.Change) {
-	switch c.Kind {
-	case monitor.ChangeSession:
-		var sessions []SessionSummary
-		if json.Unmarshal(c.Payload, &sessions) == nil {
-			m.sessions = sessions
-		}
-	case monitor.ChangeEvent:
-		// Event changes are reflected in stats on next tick fetch.
-	case monitor.ChangeAgents, monitor.ChangeProtect:
-		// Agents and protect status are reflected in the overview on next tick fetch.
-	}
-}

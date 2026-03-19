@@ -106,4 +106,3 @@ func takeProtectSnapshot() protectSnapshot {
 		PatchedAgents: strings.Join(sorted, ","),
 	}
 }
-

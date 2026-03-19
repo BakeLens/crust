@@ -37,7 +37,7 @@ func TestStartMonitor_InitialEmission(t *testing.T) {
 	// Collect the 3 initial changes with a timeout.
 	var got []ChangeKind
 	timeout := time.After(5 * time.Second)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		select {
 		case ch := <-m.Changes():
 			got = append(got, ch.Kind)
@@ -226,7 +226,7 @@ func TestEmit_FullChannel(t *testing.T) {
 
 	// Fill the channel buffer completely.
 	payload := map[string]string{"test": "data"}
-	for i := 0; i < changeBufSize; i++ {
+	for range changeBufSize {
 		m.emit(ChangeAgents, payload)
 	}
 
