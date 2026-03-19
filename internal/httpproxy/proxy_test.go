@@ -796,26 +796,6 @@ func TestStreamingRequest_StripsHopByHopHeaders(t *testing.T) {
 	}
 }
 
-// Test: escapeJSON must not return raw unescaped strings on error.
-func TestEscapeJSON_SpecialCharacters(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{`hello`, `hello`},
-		{`say "hi"`, `say \"hi\"`},
-		{`path\to\file`, `path\\to\\file`},
-		{`line1` + "\n" + `line2`, `line1\nline2`},
-		{"", ""},
-	}
-	for _, tt := range tests {
-		got := escapeJSON(tt.input)
-		if got != tt.want {
-			t.Errorf("escapeJSON(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
 // stripAPIPrefix tests (issue #19)
 func TestStripAPIPrefix(t *testing.T) {
 	tests := []struct {
@@ -1139,7 +1119,7 @@ func TestAgent_DeepSeek_NonStreaming_HopByHop(t *testing.T) {
 func TestAgent_Anthropic_StreamingContent_EscapeJSON(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		// Content with quotes, backslashes, newlines — exercises escapeJSON
+		// Content with quotes, backslashes, newlines — exercises JSON escaping
 		events := []string{
 			`event: message_start` + "\n" + `data: {"type":"message_start","message":{"id":"msg_01","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":10,"output_tokens":1}}}` + "\n\n",
 			`event: content_block_start` + "\n" + `data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n",

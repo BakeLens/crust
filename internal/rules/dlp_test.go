@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestDLPFalsePositives verifies DLP patterns do NOT fire on normal code
@@ -836,6 +837,39 @@ func TestDLPBugFixes(t *testing.T) {
 			t.Errorf("FHIR pattern should not match input without proper type field")
 		} else {
 			t.Logf("PASS: large non-matching input handled without issue")
+		}
+	})
+
+	t.Run("Bug22: FHIR ReDoS completes within timeout on adversarial input", func(t *testing.T) {
+		// Adversarial input: partial FHIR match followed by 100KB of junk.
+		// With unbounded [\s\S]*? this would hang; bounded {0,5000} returns quickly.
+		adversarial := `{"resourceType":"Bundle",` + strings.Repeat(`"k":"v",`, 20000) + `"end":true}`
+		args, _ := json.Marshal(map[string]string{"file_path": "/tmp/redos.json", "content": adversarial})
+		call := ToolCall{Name: "Write", Arguments: args}
+
+		done := make(chan struct{})
+		go func() {
+			engine.Evaluate(call)
+			close(done)
+		}()
+		select {
+		case <-done:
+			// completed — pass
+		case <-time.After(2 * time.Second):
+			t.Fatal("FHIR DLP regex took >2s — probable ReDoS")
+		}
+	})
+
+	t.Run("Bug22: FHIR pattern matches when type field is within 5000 chars", func(t *testing.T) {
+		// Ensure the bounded quantifier still matches valid FHIR when the
+		// "type" field appears within the 5000 character window.
+		padding := strings.Repeat(" ", 2000)
+		fhir := `{"resourceType":"Bundle",` + padding + `"type":"searchset"}`
+		args, _ := json.Marshal(map[string]string{"file_path": "/tmp/fhir.json", "content": fhir})
+		call := ToolCall{Name: "Write", Arguments: args}
+		result := engine.Evaluate(call)
+		if !result.Matched {
+			t.Error("Expected FHIR bundle with type within 5000 chars to be blocked")
 		}
 	})
 }

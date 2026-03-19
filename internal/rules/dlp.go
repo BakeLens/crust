@@ -4,6 +4,11 @@ package rules
 
 import "regexp"
 
+var (
+	fhirBundlePrefix = regexp.MustCompile(`"resourceType"\s*:\s*"Bundle"`)
+	fhirBundleType   = regexp.MustCompile(`"type"\s*:\s*"(?:searchset|collection|document)"`)
+)
+
 // Hardcoded DLP (Data Loss Prevention) token detection patterns.
 // Compiled at init, checked on all operations (Tier 1).
 // Core patterns sourced from gitleaks v8.24, extended for newer AI/cloud services.
@@ -13,6 +18,7 @@ import "regexp"
 type dlpPattern struct {
 	name    string
 	re      *regexp.Regexp
+	check   func(string) bool // optional: replaces re.MatchString when set
 	message string
 }
 
@@ -335,10 +341,20 @@ var dlpPatterns = []dlpPattern{
 		message: "Cannot write Apple Configuration Profile — potential MDM enrollment attack",
 	},
 
-	// HL7 FHIR health data bundle — structured health records
+	// HL7 FHIR health data bundle — structured health records.
+	// Uses a check function instead of a single regex to avoid ReDoS:
+	// first finds "resourceType":"Bundle", then searches a bounded window
+	// (5000 chars) for the matching "type" field.
 	{
-		name:    "builtin:dlp-fhir-bundle",
-		re:      regexp.MustCompile(`"resourceType"\s*:\s*"Bundle"[\s\S]*?"type"\s*:\s*"(?:searchset|collection|document)"`),
+		name: "builtin:dlp-fhir-bundle",
+		check: func(s string) bool {
+			idx := fhirBundlePrefix.FindStringIndex(s)
+			if idx == nil {
+				return false
+			}
+			end := min(idx[1]+5000, len(s))
+			return fhirBundleType.MatchString(s[idx[1]:end])
+		},
 		message: "Cannot write FHIR health data bundle — potential health record exfiltration",
 	},
 

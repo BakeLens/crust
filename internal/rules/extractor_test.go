@@ -780,7 +780,7 @@ func TestResolvesToLoopback(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			if tt.needDNS && !dnsEnabled {
+			if tt.needDNS && !dnsEnabled.Load() {
 				t.Skip("DNS disabled (fuzz mode)")
 			}
 			if got := ResolvesToLoopback(tt.host); got != tt.want {
@@ -888,7 +888,7 @@ func TestHostResolvesToLoopbackWithCrust(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.needDNS && !dnsEnabled {
+			if tt.needDNS && !dnsEnabled.Load() {
 				t.Skip("DNS disabled (fuzz mode)")
 			}
 			if got := hostResolvesToLoopbackWithCrust(tt.hosts, tt.rawJSON); got != tt.want {
@@ -899,7 +899,7 @@ func TestHostResolvesToLoopbackWithCrust(t *testing.T) {
 }
 
 func TestResolveAndExpandHosts(t *testing.T) {
-	if !dnsEnabled {
+	if !dnsEnabled.Load() {
 		t.Skip("DNS disabled (fuzz mode)")
 	}
 	// localhost should get 127.0.0.1 added

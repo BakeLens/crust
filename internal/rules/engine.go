@@ -817,7 +817,13 @@ func (e *Engine) ScanDLP(content string) *MatchResult {
 	}
 	// Tier 1: hardcoded patterns (fast, always available)
 	for _, pat := range dlpPatterns {
-		if pat.re.MatchString(content) {
+		matched := false
+		if pat.check != nil {
+			matched = pat.check(content)
+		} else {
+			matched = pat.re.MatchString(content)
+		}
+		if matched {
 			m := NewMatch(pat.name, SeverityCritical, ActionBlock, pat.message)
 			return &m
 		}

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -439,15 +440,19 @@ const dnsLookupTimeout = 2 * time.Second
 // dnsEnabled controls whether DNS resolution is active.
 // Automatically set to false during fuzz runs (-test.fuzz flag) to avoid
 // 2s-per-lookup timeouts on random hostnames that accumulate and cause CI failures.
-var dnsEnabled = true
+var dnsEnabled atomic.Bool
 
 var dnsInitOnce sync.Once
+
+func init() {
+	dnsEnabled.Store(true)
+}
 
 func initDNSEnabled() {
 	dnsInitOnce.Do(func() {
 		for _, arg := range os.Args {
 			if strings.HasPrefix(arg, "-test.fuzz=") || strings.HasPrefix(arg, "--test.fuzz=") {
-				dnsEnabled = false
+				dnsEnabled.Store(false)
 				return
 			}
 		}
@@ -471,7 +476,7 @@ func resolveHost(host string) []netip.Addr {
 		return nil
 	}
 	// Skip DNS resolution when disabled (fuzz/test mode)
-	if !dnsEnabled {
+	if !dnsEnabled.Load() {
 		return nil
 	}
 	// Skip non-hostname strings — but don't require a dot (covers "localhost"

@@ -799,14 +799,6 @@ func extractToolCalls(bodyBytes []byte, apiType types.APIType) []telemetry.ToolC
 	return toolCalls
 }
 
-func escapeJSON(s string) string {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return ""
-	}
-	return string(b[1 : len(b)-1])
-}
-
 // marshalContentJSON builds a {"content":"..."} JSON object safely using
 // json.Marshal for the value, avoiding manual string concatenation that
 // static analyzers (CodeQL) flag as potentially unsafe quoting.
