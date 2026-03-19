@@ -88,3 +88,12 @@ func LibcrustNextChange() *C.char {
 	}
 	return C.CString(string(data))
 }
+
+// LibcrustChangeKinds returns a JSON array of all valid change kind strings.
+// Used by Rust contract tests to verify both sides handle the same set of kinds.
+//
+//export LibcrustChangeKinds
+func LibcrustChangeKinds() *C.char {
+	data, _ := json.Marshal(monitor.AllChangeKinds)
+	return C.CString(string(data))
+}
