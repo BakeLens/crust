@@ -250,6 +250,17 @@ type CommandInfo struct {
 	PathArgIndex []int       // positional args that are paths
 	PathFlags    []string    // flags followed by paths (-o, --output)
 	SkipFlags    []string    // flags followed by non-path values (-n, --count)
+	// CodeFlag is the flag that accepts inline code for interpreter commands
+	// (e.g., "-c" for python/bash, "-e" for node/ruby/perl, "-r" for php).
+	// When set, the extractor scans the flag's argument for embedded paths,
+	// URLs, and shell commands using string literal extraction + shell parsing.
+	CodeFlag string
+	// PSInterpreter marks PowerShell executables (powershell, pwsh, etc.)
+	// whose -Command/-c/-EncodedCommand flags contain PowerShell code strings
+	// that must be recursively analyzed. Separate from CodeFlag because
+	// PowerShell uses case-insensitive flags and -Command consumes ALL
+	// remaining args (not just the next one).
+	PSInterpreter bool
 }
 
 // AllOperations returns all operations for this command (primary + extra).

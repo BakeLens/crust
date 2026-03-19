@@ -7,9 +7,9 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"net/url"
 	"os"
 	"path"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -185,37 +185,225 @@ var shellInterpreters = map[string]bool{
 	"su": true,
 }
 
-// interpreterCodeFlags maps interpreter commands to their "execute code" flags.
-// When detected, we extract quoted paths from the code string.
-var interpreterCodeFlags = map[string]string{
-	"python": "-c", "python3": "-c", "python2": "-c",
-	"perl": "-e", "ruby": "-e", "node": "-e", "php": "-r",
-}
+// extractFromInterpreterCode extracts paths, hosts, and embedded shell commands
+// from inline interpreter code (python -c, node -e, etc.).
+// Uses string literal extraction + the existing shell parser for nested commands.
+func (e *Extractor) extractFromInterpreterCode(code string) (paths []string, hosts []string) {
+	seen := make(map[string]bool)
 
-// quotedPathRe matches absolute paths in single-quoted or double-quoted strings
-// with paired quotes (not mixed). Used for interpreter code path extraction.
-// Groups: 1=Unix single, 2=Unix double, 3=Win single, 4=Win double.
-var quotedPathRe = regexp.MustCompile(
-	`'(/[a-zA-Z0-9_.~/-]+)'` + // Unix single-quoted
-		`|"(/[a-zA-Z0-9_.~/-]+)"` + // Unix double-quoted
-		`|'([A-Za-z]:[/\\][a-zA-Z0-9_.~\\/:-]*)'` + // Windows single-quoted
-		`|"([A-Za-z]:[/\\][a-zA-Z0-9_.~\\/:-]*)"`) // Windows double-quoted
+	// Step 1: Extract all string literals (single and double quoted)
+	literals := extractStringLiterals(code)
 
-// extractPathsFromInterpreterCode extracts absolute paths from interpreter code
-// strings (e.g., python3 -c "open('/home/user/.env')" or
-// python3 -c "open('C:\\Users\\user\\.env')").
-func extractPathsFromInterpreterCode(code string) []string {
-	matches := quotedPathRe.FindAllStringSubmatch(code, -1)
-	var paths []string
-	for _, m := range matches {
-		for _, group := range m[1:] {
-			if group != "" {
-				paths = append(paths, group)
-				break
+	for _, lit := range literals {
+		// Step 2: If it looks like a URL, extract host
+		if looksLikeURL(lit) {
+			if h := extractHostFromURL(lit); h != "" {
+				hosts = append(hosts, h)
+			}
+			// Also extract the path component if it's a file:// URL
+			if u, err := url.Parse(lit); err == nil && u.Scheme == "file" {
+				p := u.Path
+				if p != "" && !seen[p] {
+					seen[p] = true
+					paths = append(paths, p)
+				}
+			}
+			continue
+		}
+		// Step 3: If it looks like a path, add it
+		if looksLikePath(lit) {
+			if !seen[lit] {
+				seen[lit] = true
+				paths = append(paths, lit)
+			}
+			continue
+		}
+		// Step 4: If it looks like a shell command, parse it through the shell parser
+		if looksLikeShellCommand(lit) {
+			cmds, _ := e.parseShellCommandsExpand(lit, nil)
+			for _, cmd := range cmds {
+				// Extract paths from the parsed command via the command DB
+				cmdName := stripPathPrefix(cmd.Name)
+				lookupName := strings.ToLower(cmdName)
+				cmdBaseName := strings.TrimSuffix(lookupName, ".exe")
+				if cmdInfo, ok := e.commandDB[lookupName]; ok {
+					var tmpInfo ExtractedInfo
+					tmpInfo.RawArgs = make(map[string]any)
+					e.extractPathsFromArgs(&tmpInfo, cmdName, cmd.Args, cmdInfo)
+					for _, p := range tmpInfo.Paths {
+						if !seen[p] {
+							seen[p] = true
+							paths = append(paths, p)
+						}
+					}
+					// Extract hosts from network commands
+					if slices.Contains(cmdInfo.AllOperations(), OpNetwork) {
+						hosts = append(hosts, extractHosts(cmd.Args)...)
+					}
+				}
+				// Also check for paths in raw args (handles unknown commands)
+				for _, arg := range cmd.Args {
+					if looksLikePath(arg) && !seen[arg] {
+						seen[arg] = true
+						paths = append(paths, arg)
+					}
+				}
+				// Check redirect paths
+				for _, p := range cmd.RedirPaths {
+					if !seen[p] {
+						seen[p] = true
+						paths = append(paths, p)
+					}
+				}
+				for _, p := range cmd.RedirInPaths {
+					if !seen[p] {
+						seen[p] = true
+						paths = append(paths, p)
+					}
+				}
+				// Recurse for interpreter commands within the parsed shell
+				_ = cmdBaseName // available for future use
 			}
 		}
 	}
-	return paths
+
+	return
+}
+
+// extractStringLiterals extracts all single-quoted and double-quoted strings
+// from code. Handles escaped quotes (\" and \') within strings.
+// Uses a simple state machine rather than regex for robustness.
+func extractStringLiterals(code string) []string {
+	var literals []string
+	i := 0
+	for i < len(code) {
+		ch := code[i]
+		if ch == '\'' || ch == '"' {
+			quote := ch
+			var buf strings.Builder
+			i++ // skip opening quote
+			for i < len(code) {
+				if code[i] == '\\' && i+1 < len(code) {
+					// Handle escaped character
+					next := code[i+1]
+					if next == quote || next == '\\' {
+						buf.WriteByte(next)
+						i += 2
+						continue
+					}
+					// Write the backslash and next char as-is for other escapes
+					buf.WriteByte(code[i])
+					buf.WriteByte(next)
+					i += 2
+					continue
+				}
+				if code[i] == quote {
+					// End of string
+					break
+				}
+				buf.WriteByte(code[i])
+				i++
+			}
+			if i < len(code) {
+				i++ // skip closing quote
+			}
+			lit := buf.String()
+			if lit != "" {
+				literals = append(literals, lit)
+			}
+		} else {
+			i++
+		}
+	}
+	return literals
+}
+
+// looksLikePath returns true if s looks like an absolute file path.
+// Matches Unix paths (/...), home-relative paths (~/...), $HOME paths,
+// and Windows drive-letter paths (C:\...).
+func looksLikePath(s string) bool {
+	if s == "" {
+		return false
+	}
+	// Unix absolute path with at least 2 segments (avoid matching lone / or division)
+	if s[0] == '/' && len(s) > 1 && s[1] != '/' {
+		// Must have at least one more slash to be a real path (e.g., /etc/shadow)
+		if strings.Contains(s[1:], "/") {
+			return true
+		}
+		// Single segment is OK if it looks like a config file (starts with .)
+		if len(s) > 2 {
+			return true
+		}
+	}
+	// Home-relative
+	if strings.HasPrefix(s, "~/") {
+		return true
+	}
+	// $HOME-relative
+	if strings.HasPrefix(s, "$HOME/") {
+		return true
+	}
+	// Windows drive letter
+	if len(s) >= 3 && s[1] == ':' && (s[2] == '/' || s[2] == '\\') {
+		c := s[0]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+			return true
+		}
+	}
+	return false
+}
+
+// looksLikeURL returns true if s looks like an HTTP/HTTPS/FTP URL.
+func looksLikeURL(s string) bool {
+	lower := strings.ToLower(s)
+	return strings.HasPrefix(lower, "http://") ||
+		strings.HasPrefix(lower, "https://") ||
+		strings.HasPrefix(lower, "ftp://")
+}
+
+// shellCommandPrefixes are common command names that indicate a string is a
+// shell command rather than a plain value. Used by looksLikeShellCommand.
+var shellCommandPrefixes = map[string]bool{
+	"cat": true, "rm": true, "cp": true, "mv": true, "ls": true,
+	"curl": true, "wget": true, "chmod": true, "chown": true,
+	"mkdir": true, "rmdir": true, "touch": true, "head": true,
+	"tail": true, "grep": true, "find": true, "sed": true,
+	"awk": true, "sort": true, "tar": true, "gzip": true,
+	"gunzip": true, "zip": true, "unzip": true, "ssh": true,
+	"scp": true, "rsync": true, "nc": true, "ncat": true,
+	"dd": true, "tee": true, "xargs": true, "kill": true,
+	"pkill": true, "killall": true, "sh": true, "bash": true,
+	"zsh": true, "env": true, "sudo": true, "su": true,
+	"echo": true, "printf": true, "eval": true, "exec": true,
+	"mount": true, "umount": true, "whoami": true, "id": true,
+	"passwd": true, "useradd": true, "userdel": true,
+	"apt": true, "yum": true, "pip": true, "npm": true,
+	"git": true, "docker": true, "kubectl": true,
+	"python": true, "python3": true, "node": true, "ruby": true,
+	"perl": true, "php": true,
+}
+
+// looksLikeShellCommand returns true if s looks like it could be a shell command.
+// Checks if the first whitespace-delimited token is a known command name, or if
+// the string contains a path after a space.
+func looksLikeShellCommand(s string) bool {
+	if !strings.Contains(s, " ") {
+		return false
+	}
+	// Extract the first word
+	firstWord := s
+	if idx := strings.IndexByte(s, ' '); idx > 0 {
+		firstWord = s[:idx]
+	}
+	// Strip path prefix (e.g., /usr/bin/cat -> cat)
+	firstWord = stripPathPrefix(firstWord)
+	if shellCommandPrefixes[strings.ToLower(firstWord)] {
+		return true
+	}
+	// Check if there's a path-like token after a space
+	parts := strings.Fields(s)
+	return slices.ContainsFunc(parts[1:], looksLikePath)
 }
 
 // extractFlagValue returns the value following a flag in an argument list.
@@ -270,7 +458,7 @@ func (e *Extractor) extractFromParsedCommandsDepth(info *ExtractedInfo, commands
 		cmdName, args := e.resolveCommand(pc.Name, pc.Args)
 
 		// lookupName is lowercased for case-insensitive commandDB lookup.
-		// cmdName retains its original case for shellInterpreters, powershellInterpreters,
+		// cmdName retains its original case for shellInterpreters,
 		// glob detection, etc.
 		lookupName := strings.ToLower(cmdName)
 		// cmdBaseName strips .exe so Windows paths like C:/Python/python.exe
@@ -520,7 +708,8 @@ func (e *Extractor) handlePowerShellIEX(info *ExtractedInfo, cmdBaseName string,
 func (e *Extractor) handlePowerShellInterpreter(info *ExtractedInfo, cmdBaseName string, args []string, depth int, parentSymtab map[string]string) bool {
 	// Recursively parse "powershell -Command '...'" / "pwsh -c '...'".
 	// Separate from shellInterpreters because inner code is PowerShell, not POSIX sh.
-	if !powershellInterpreters[cmdBaseName] || depth >= maxShellRecursionDepth {
+	dbInfo, inDB := e.commandDB[cmdBaseName]
+	if !inDB || !dbInfo.PSInterpreter || depth >= maxShellRecursionDepth {
 		return false
 	}
 
@@ -694,17 +883,24 @@ func (e *Extractor) extractUnknownCommandPaths(info *ExtractedInfo, origCmdBase 
 // extractInterpreterAndRedirects extracts paths from interpreter code strings
 // (python -c, perl -e, etc.) and redirect targets/sources.
 func (e *Extractor) extractInterpreterAndRedirects(info *ExtractedInfo, cmdBaseName string, args []string, pc parsedCommand) {
-	// Extract paths from interpreter code strings (python -c, perl -e, etc.)
+	// Extract paths and hosts from interpreter code strings (python -c, perl -e, etc.)
+	// The CodeFlag field in the command DB is the single source of truth for which
+	// flag accepts inline code for each interpreter command.
 	// When file paths are found in interpreter code, force OpRead as primary
 	// regardless of the command DB operation. "python3 -c 'open(.env)'" is
 	// primarily a file read — file-protection rules (actions:[read]) must fire.
 	// forceOperation keeps OpExecute in Operations so execute rules also fire.
-	if flag, ok := interpreterCodeFlags[cmdBaseName]; ok {
-		if code := extractFlagValue(args, flag); code != "" {
-			paths := extractPathsFromInterpreterCode(code)
+	// When URLs/hosts are found, add OpNetwork so network rules can fire.
+	if dbInfo, ok := e.commandDB[cmdBaseName]; ok && dbInfo.CodeFlag != "" {
+		if code := extractFlagValue(args, dbInfo.CodeFlag); code != "" {
+			paths, hosts := e.extractFromInterpreterCode(code)
 			if len(paths) > 0 {
 				info.Paths = append(info.Paths, paths...)
 				info.forceOperation(OpRead)
+			}
+			if len(hosts) > 0 {
+				info.Hosts = append(info.Hosts, hosts...)
+				info.addOperation(OpNetwork)
 			}
 		}
 	}

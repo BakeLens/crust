@@ -9,14 +9,6 @@ import (
 	"github.com/BakeLens/crust/internal/rules/pwsh"
 )
 
-// powershellInterpreters are PowerShell executables whose -Command/-c/-EncodedCommand
-// flags contain PowerShell code strings that must be recursively analyzed.
-// Separate from shellInterpreters because inner code is PowerShell, not POSIX sh.
-var powershellInterpreters = map[string]bool{
-	"powershell": true, "powershell.exe": true,
-	"pwsh": true, "pwsh.exe": true,
-}
-
 // isPowerShellCmdlet returns true if the command name follows PowerShell's
 // Verb-Noun naming convention (e.g., Get-Content, Set-Content, Remove-Item).
 // Used to scope case-insensitive flag matching to PS cmdlets only, avoiding
@@ -248,10 +240,11 @@ func (e *Extractor) parsePowerShellInnerCommand(info *ExtractedInfo, innerCmd st
 		}
 	}
 
-	// Attempt 3: regex heuristic extraction from the raw string
-	paths := extractPathsFromInterpreterCode(innerCmd)
+	// Attempt 3: parser-based extraction from the raw string
+	paths, extractedHosts := e.extractFromInterpreterCode(innerCmd)
 	paths = append(paths, unquotedAbsPathRe.FindAllString(innerCmd, -1)...)
 	hosts := extractHosts(strings.Fields(innerCmd))
+	hosts = append(hosts, extractedHosts...)
 
 	if len(paths) > 0 || len(hosts) > 0 {
 		info.Paths = append(info.Paths, paths...)

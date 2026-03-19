@@ -407,13 +407,13 @@ func defaultCommandDB() map[string]CommandInfo {
 		"csh":     {Operation: OpExecute, PathArgIndex: []int{0}},
 		"tcsh":    {Operation: OpExecute, PathArgIndex: []int{0}},
 		"fish":    {Operation: OpExecute, PathArgIndex: []int{0}},
-		"python":  {Operation: OpExecute, PathArgIndex: []int{0}},
-		"python2": {Operation: OpExecute, PathArgIndex: []int{0}},
-		"python3": {Operation: OpExecute, PathArgIndex: []int{0}},
-		"node":    {Operation: OpExecute, PathArgIndex: []int{0}},
-		"ruby":    {Operation: OpExecute, PathArgIndex: []int{0}},
-		"perl":    {Operation: OpExecute, PathArgIndex: []int{0}},
-		"php":     {Operation: OpExecute, PathArgIndex: []int{0}},
+		"python":  {Operation: OpExecute, PathArgIndex: []int{0}, CodeFlag: "-c"},
+		"python2": {Operation: OpExecute, PathArgIndex: []int{0}, CodeFlag: "-c"},
+		"python3": {Operation: OpExecute, PathArgIndex: []int{0}, CodeFlag: "-c"},
+		"node":    {Operation: OpExecute, PathArgIndex: []int{0}, CodeFlag: "-e"},
+		"ruby":    {Operation: OpExecute, PathArgIndex: []int{0}, CodeFlag: "-e"},
+		"perl":    {Operation: OpExecute, PathArgIndex: []int{0}, CodeFlag: "-e"},
+		"php":     {Operation: OpExecute, PathArgIndex: []int{0}, CodeFlag: "-r"},
 		"lua":     {Operation: OpExecute, PathArgIndex: []int{0}},
 		"luajit":  {Operation: OpExecute, PathArgIndex: []int{0}},
 		"tclsh":   {Operation: OpExecute, PathArgIndex: []int{0}},
@@ -446,10 +446,10 @@ func defaultCommandDB() map[string]CommandInfo {
 		// -Command/-EncodedCommand are handled by the dedicated PowerShell handler
 		// in extractFromParsedCommandsDepth (not as PathFlags). Only -File remains
 		// as a PathFlag since it genuinely takes a file path.
-		"powershell":     {Operation: OpExecute, PathFlags: []string{"-File"}, SkipFlags: []string{"-NoProfile", "-NonInteractive", "-NoLogo", "-ExecutionPolicy", "-WindowStyle", "-OutputFormat", "-InputFormat"}},
-		"powershell.exe": {Operation: OpExecute, PathFlags: []string{"-File"}, SkipFlags: []string{"-NoProfile", "-NonInteractive", "-NoLogo", "-ExecutionPolicy", "-WindowStyle", "-OutputFormat", "-InputFormat"}},
-		"pwsh":           {Operation: OpExecute, PathFlags: []string{"-File"}, SkipFlags: []string{"-NoProfile", "-NonInteractive", "-NoLogo", "-ExecutionPolicy", "-WindowStyle", "-OutputFormat", "-InputFormat"}},
-		"pwsh.exe":       {Operation: OpExecute, PathFlags: []string{"-File"}, SkipFlags: []string{"-NoProfile", "-NonInteractive", "-NoLogo", "-ExecutionPolicy", "-WindowStyle", "-OutputFormat", "-InputFormat"}},
+		"powershell":     {Operation: OpExecute, PSInterpreter: true, PathFlags: []string{"-File"}, SkipFlags: []string{"-NoProfile", "-NonInteractive", "-NoLogo", "-ExecutionPolicy", "-WindowStyle", "-OutputFormat", "-InputFormat"}},
+		"powershell.exe": {Operation: OpExecute, PSInterpreter: true, PathFlags: []string{"-File"}, SkipFlags: []string{"-NoProfile", "-NonInteractive", "-NoLogo", "-ExecutionPolicy", "-WindowStyle", "-OutputFormat", "-InputFormat"}},
+		"pwsh":           {Operation: OpExecute, PSInterpreter: true, PathFlags: []string{"-File"}, SkipFlags: []string{"-NoProfile", "-NonInteractive", "-NoLogo", "-ExecutionPolicy", "-WindowStyle", "-OutputFormat", "-InputFormat"}},
+		"pwsh.exe":       {Operation: OpExecute, PSInterpreter: true, PathFlags: []string{"-File"}, SkipFlags: []string{"-NoProfile", "-NonInteractive", "-NoLogo", "-ExecutionPolicy", "-WindowStyle", "-OutputFormat", "-InputFormat"}},
 		"cmd.exe":        {Operation: OpExecute, PathArgIndex: []int{0}},
 		"cmd":            {Operation: OpExecute, PathArgIndex: []int{0}},
 		"mshta":          {Operation: OpExecute, PathArgIndex: []int{0}},
@@ -459,16 +459,16 @@ func defaultCommandDB() map[string]CommandInfo {
 		"wmic":           {Operation: OpExecute, PathArgIndex: []int{0, 1, 2, 3}},
 		"certutil":       {Operation: OpWrite, PathArgIndex: []int{0, 1, 2, 3}}, // LOLBAS: download+write
 		"bitsadmin":      {Operation: OpNetwork, PathArgIndex: []int{0, 1, 2, 3}},
-		"osascript":      {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                             // macOS AppleScript
-		"nu":             {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                             // Nushell
-		"nushell":        {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                             // Nushell (full name)
-		"elvish":         {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                             // Elvish shell
-		"oil":            {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                             // Oil shell
-		"osh":            {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                             // Oil shell (POSIX mode)
-		"ysh":            {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                             // Oil shell (new syntax)
-		"rc":             {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                             // Plan 9 shell
-		"es":             {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                             // Extensible shell
-		"pwsh-preview":   {Operation: OpExecute, PathFlags: []string{"-File"}, SkipFlags: []string{"-NoProfile", "-NonInteractive", "-NoLogo", "-ExecutionPolicy", "-WindowStyle", "-OutputFormat", "-InputFormat"}}, // PowerShell preview
+		"osascript":      {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                                                  // macOS AppleScript
+		"nu":             {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                                                  // Nushell
+		"nushell":        {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                                                  // Nushell (full name)
+		"elvish":         {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                                                  // Elvish shell
+		"oil":            {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                                                  // Oil shell
+		"osh":            {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                                                  // Oil shell (POSIX mode)
+		"ysh":            {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                                                  // Oil shell (new syntax)
+		"rc":             {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                                                  // Plan 9 shell
+		"es":             {Operation: OpExecute, PathArgIndex: []int{0}},                                                                                                                                                                  // Extensible shell
+		"pwsh-preview":   {Operation: OpExecute, PSInterpreter: true, PathFlags: []string{"-File"}, SkipFlags: []string{"-NoProfile", "-NonInteractive", "-NoLogo", "-ExecutionPolicy", "-WindowStyle", "-OutputFormat", "-InputFormat"}}, // PowerShell preview
 
 		// Windows file operations
 		"type":     {Operation: OpRead, PathArgIndex: []int{0, 1, 2}}, // Windows cat equivalent

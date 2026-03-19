@@ -42,7 +42,7 @@ extractBashCommand (entry point)
                 ├─ resolveCommand: strip wrappers (sudo, env, timeout...)
                 ├─ Shell interpreter + -c flag → recursive parseShellCommandsExpand
                 ├─ Command DB lookup → extract paths by positional index / flags
-                ├─ Interpreter code flags (python -c, perl -e) → regex path extraction
+                ├─ Interpreter code via CommandInfo.CodeFlag (python -c, perl -e) → string literal path extraction
                 └─ Redirect paths → info.Paths (write for >/>>; read for <)
 ```
 
@@ -62,11 +62,33 @@ Eliminating minPrint in favor of reconstructing `info.Command` from Runner outpu
 |------|---------|
 | `ExtractedInfo` | Output: paths, hosts, operation, command string, evasion flags |
 | `parsedCommand` | Intermediate: single command with name, args, redirect paths, subst flag |
-| `CommandInfo` | Config: maps command names to operations and path argument positions |
+| `CommandInfo` | Config: maps command names to operations, path argument positions, and interpreter code flags (`CodeFlag`) |
 
 ## Recursion
 
 `sh -c`, `bash -c`, etc. trigger recursive parsing up to `maxShellRecursionDepth` (3). The parent's symbol table propagates to the child via `mergeEnvArgs` + `parseShellCommandsExpand`, so `env F=/etc/passwd sh -c 'cat $F'` correctly extracts `/etc/passwd`.
+
+## Command Database
+
+The command database (`defaultCommandDB()` in `command_db.go`) is the **single source of truth** for command metadata: operation type, path argument positions, path flags, skip flags, and interpreter code flags. All extraction logic looks up commands in this DB rather than maintaining separate maps.
+
+### Interpreter Code Flags (`CodeFlag`)
+
+Interpreter commands like `python`, `node`, `ruby`, `perl`, and `php` accept inline code via a flag (`-c`, `-e`, `-r`). The `CodeFlag` field in `CommandInfo` tells the extractor which flag carries inline code:
+
+| Interpreter | CodeFlag | Example |
+|-------------|----------|---------|
+| python, python2, python3 | `-c` | `python3 -c 'open("/etc/shadow")'` |
+| node | `-e` | `node -e 'require("fs").readFileSync("/etc/shadow")'` |
+| ruby | `-e` | `ruby -e 'File.read("/etc/shadow")'` |
+| perl | `-e` | `perl -e 'system("cat /etc/shadow")'` |
+| php | `-r` | `php -r 'file_get_contents("/etc/shadow");'` |
+
+When `CodeFlag` is set, `extractInterpreterAndRedirects` scans the flag's argument for embedded paths, URLs, and shell commands using string literal extraction + shell parsing. If file paths are found, the operation is forced to `OpRead` (overriding `OpExecute`) so file-protection rules fire.
+
+To add a new interpreter, add a single entry to `defaultCommandDB()` with the `CodeFlag` field set. No other maps or code changes are needed.
+
+**Note:** Shell interpreters (`bash`, `sh`, `zsh`, `dash`, `ksh`, `su`) use a different mechanism (`shellInterpreters` map + recursive shell parsing via `-c`) because their inner code is a full shell script, not interpreter-specific code. Do not add shell interpreters to `CodeFlag`.
 
 ## Environment
 

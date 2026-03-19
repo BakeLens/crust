@@ -5289,3 +5289,90 @@ func TestIsMobileVirtualPath(t *testing.T) {
 		t.Error("expected false for empty string")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Interpreter code path extraction tests
+// ---------------------------------------------------------------------------
+
+func mustMarshalJSON(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	return b
+}
+
+func TestExtract_PythonOsSystem(t *testing.T) {
+	ext := NewExtractor()
+	info := ext.Extract("Bash", mustMarshalJSON(t, map[string]any{
+		"command": `python3 -c "import os; os.system('cat /etc/shadow')"`,
+	}))
+	if !slices.Contains(info.Paths, "/etc/shadow") {
+		t.Fatalf("expected /etc/shadow in paths, got %v", info.Paths)
+	}
+	t.Logf("OK: paths=%v op=%s", info.Paths, info.Operation)
+}
+
+func TestExtract_NodeFsRead(t *testing.T) {
+	ext := NewExtractor()
+	info := ext.Extract("Bash", mustMarshalJSON(t, map[string]any{
+		"command": `node -e "require('fs').readFileSync('/etc/shadow')"`,
+	}))
+	if !slices.Contains(info.Paths, "/etc/shadow") {
+		t.Fatalf("expected /etc/shadow in paths, got %v", info.Paths)
+	}
+	t.Logf("OK: paths=%v op=%s", info.Paths, info.Operation)
+}
+
+func TestExtract_RubyFileRead(t *testing.T) {
+	ext := NewExtractor()
+	info := ext.Extract("Bash", mustMarshalJSON(t, map[string]any{
+		"command": `ruby -e "File.read('/etc/shadow')"`,
+	}))
+	if !slices.Contains(info.Paths, "/etc/shadow") {
+		t.Fatalf("expected /etc/shadow in paths, got %v", info.Paths)
+	}
+	t.Logf("OK: paths=%v op=%s", info.Paths, info.Operation)
+}
+
+func TestExtract_PerlSystem(t *testing.T) {
+	ext := NewExtractor()
+	info := ext.Extract("Bash", mustMarshalJSON(t, map[string]any{
+		"command": `perl -e "system('cat /etc/shadow')"`,
+	}))
+	if !slices.Contains(info.Paths, "/etc/shadow") {
+		t.Fatalf("expected /etc/shadow in paths, got %v", info.Paths)
+	}
+	t.Logf("OK: paths=%v op=%s", info.Paths, info.Operation)
+}
+
+func TestExtract_InterpreterSafeCommand(t *testing.T) {
+	ext := NewExtractor()
+	info := ext.Extract("Bash", mustMarshalJSON(t, map[string]any{
+		"command": `python3 -c "print('hello')"`,
+	}))
+	// "print('hello')" contains no absolute paths — Paths should not include
+	// anything sensitive. The only path might be the python3 binary itself
+	// from the command DB, but no /etc/* or /home/* paths should appear.
+	for _, p := range info.Paths {
+		if strings.HasPrefix(p, "/etc/") || strings.HasPrefix(p, "/home/") {
+			t.Fatalf("unexpected sensitive path %q in safe command, paths=%v", p, info.Paths)
+		}
+	}
+	t.Logf("OK: no sensitive paths extracted, paths=%v", info.Paths)
+}
+
+func TestExtract_InterpreterURLExtraction(t *testing.T) {
+	ext := NewExtractor()
+	info := ext.Extract("Bash", mustMarshalJSON(t, map[string]any{
+		"command": `python3 -c "import urllib.request; urllib.request.urlopen('http://169.254.169.254/')"`,
+	}))
+	if !slices.Contains(info.Hosts, "169.254.169.254") {
+		t.Fatalf("expected 169.254.169.254 in hosts, got %v", info.Hosts)
+	}
+	if !slices.Contains(info.Operations, OpNetwork) {
+		t.Fatalf("expected OpNetwork in operations, got %v", info.Operations)
+	}
+	t.Logf("OK: hosts=%v operations=%v", info.Hosts, info.Operations)
+}
