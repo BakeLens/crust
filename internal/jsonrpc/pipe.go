@@ -55,7 +55,7 @@ const (
 // scanDLP checks a JSON-RPC field for leaked secrets. Returns true if blocked.
 // If id is non-empty, sends a JSON-RPC error response to errWriter.
 // For notifications (no ID), the message is dropped silently.
-func scanDLP(log *logger.Logger, engine *rules.Engine, data json.RawMessage,
+func scanDLP(log *logger.Logger, engine rules.RuleEvaluator, data json.RawMessage,
 	id json.RawMessage, errWriter *LockedWriter, protocol, logLabel string) bool {
 	if len(data) == 0 {
 		return false
@@ -94,7 +94,7 @@ func forwardLine(log *logger.Logger, w *LockedWriter, data []byte, label string)
 
 // processMessage inspects a single JSON-RPC message and either forwards or blocks it.
 // This is the core inspection logic, reused by both the main loop and batch handler.
-func processMessage(log *logger.Logger, engine *rules.Engine, line []byte, msg *Message,
+func processMessage(log *logger.Logger, engine rules.RuleEvaluator, line []byte, msg *Message,
 	fwdWriter, errWriter *LockedWriter, convert MethodConverter, protocol, label string) processResult {
 
 	// Response (no method): DLP-scan only.
@@ -176,7 +176,7 @@ func processMessage(log *logger.Logger, engine *rules.Engine, line []byte, msg *
 // processBatch handles a JSON-RPC batch array by inspecting each element
 // individually. Each allowed element is forwarded as an individual JSONL line.
 // MCP stdio transport is JSONL, so splitting batches is correct behavior.
-func processBatch(log *logger.Logger, engine *rules.Engine, line []byte,
+func processBatch(log *logger.Logger, engine rules.RuleEvaluator, line []byte,
 	fwdWriter, errWriter *LockedWriter, convert MethodConverter, protocol, label string) processResult {
 
 	var batch []json.RawMessage
@@ -219,7 +219,7 @@ func processBatch(log *logger.Logger, engine *rules.Engine, line []byte,
 //   - convert: the protocol-specific method converter
 //   - protocol: "ACP" or "MCP" (for log messages)
 //   - label: direction label for debug logs (e.g., "Agent->IDE")
-func PipeInspect(log *logger.Logger, engine *rules.Engine, src io.Reader,
+func PipeInspect(log *logger.Logger, engine rules.RuleEvaluator, src io.Reader,
 	fwdWriter, errWriter *LockedWriter, convert MethodConverter, protocol, label string) {
 
 	scanner := bufio.NewScanner(src)

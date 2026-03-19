@@ -264,8 +264,16 @@ func startEvalServer() (int, error) {
 		}
 	}()
 
-	_, portStr, _ := net.SplitHostPort(ln.Addr().String())
-	port, _ := strconv.Atoi(portStr)
+	_, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		ln.Close()
+		return 0, fmt.Errorf("parse eval server address: %w", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		ln.Close()
+		return 0, fmt.Errorf("parse eval server port %q: %w", portStr, err)
+	}
 	return port, nil
 }
 

@@ -15,7 +15,7 @@ import (
 // ServeHTTPGateway creates an MCP HTTP reverse proxy with security rules and
 // runs it with graceful shutdown on SIGINT/SIGTERM. It blocks until the server
 // exits. Returns an error if the server fails to start or encounters a fatal error.
-func ServeHTTPGateway(upstream, listen string, engine *rules.Engine) error {
+func ServeHTTPGateway(upstream, listen string, engine rules.RuleEvaluator) error {
 	gw, err := NewHTTPGateway(upstream, engine)
 	if err != nil {
 		return fmt.Errorf("gateway init: %w", err)

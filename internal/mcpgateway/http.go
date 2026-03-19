@@ -27,13 +27,13 @@ const sseMessageType = "message"
 // It inspects JSON-RPC messages using the Crust rule engine and DLP scanner.
 type HTTPGateway struct {
 	upstream *url.URL
-	engine   *rules.Engine
+	engine   rules.RuleEvaluator
 	client   *http.Client
 	sessions *SessionStore
 }
 
 // NewHTTPGateway creates a new MCP HTTP gateway proxying to upstreamURL.
-func NewHTTPGateway(upstreamURL string, engine *rules.Engine) (*HTTPGateway, error) {
+func NewHTTPGateway(upstreamURL string, engine rules.RuleEvaluator) (*HTTPGateway, error) {
 	u, err := url.Parse(upstreamURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid upstream URL: %w", err)

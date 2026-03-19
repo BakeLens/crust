@@ -31,7 +31,7 @@ type InspectResult struct {
 // and DLP-scans notification params.
 //
 // For responses (no method), use InspectResponse instead.
-func InspectRequest(engine *rules.Engine, msg *jsonrpc.Message) InspectResult {
+func InspectRequest(engine rules.RuleEvaluator, msg *jsonrpc.Message) InspectResult {
 	// Notifications: DLP-scan params for leaked secrets first.
 	if msg.IsNotification() {
 		if dlp := engine.ScanDLP(string(msg.Params)); dlp != nil {
@@ -80,7 +80,7 @@ func InspectRequest(engine *rules.Engine, msg *jsonrpc.Message) InspectResult {
 
 // InspectResponse DLP-scans a JSON-RPC response's result and error fields.
 // Returns Block if either field contains leaked secrets.
-func InspectResponse(engine *rules.Engine, msg *jsonrpc.Message) InspectResult {
+func InspectResponse(engine rules.RuleEvaluator, msg *jsonrpc.Message) InspectResult {
 	if len(msg.Result) > 0 {
 		if dlp := engine.ScanDLP(string(msg.Result)); dlp != nil {
 			return InspectResult{

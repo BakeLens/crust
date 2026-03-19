@@ -48,10 +48,8 @@ func loadProtectStateFunc() func() (bool, int) {
 
 // runProtectWatcher checks protection status every 1 second.
 // Emits ChangeProtect only when the status differs from the previous check.
-func (m *Monitor) runProtectWatcher() {
+func (m *Monitor) runProtectWatcher(prev protectSnapshot) {
 	defer m.wg.Done()
-
-	prev := takeProtectSnapshot()
 	ticker := time.NewTicker(protectWatchInterval)
 	defer ticker.Stop()
 

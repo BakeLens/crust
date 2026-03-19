@@ -103,6 +103,18 @@ type EngineConfig struct {
 	PreChecker func(rawJSON string) *MatchResult
 }
 
+// RuleEvaluator is the consumer-facing interface for rule evaluation and DLP scanning.
+// Implemented by *Engine. Consumers should depend on this interface, not *Engine directly,
+// to enable testing with mock implementations.
+type RuleEvaluator interface {
+	Evaluate(call ToolCall) MatchResult
+	ScanDLP(content string) *MatchResult
+	RuleCount() int
+}
+
+// Compile-time check: *Engine implements RuleEvaluator.
+var _ RuleEvaluator = (*Engine)(nil)
+
 // ReloadCallback is called after rules are reloaded
 type ReloadCallback func(rules []Rule)
 
@@ -817,7 +829,7 @@ func (e *Engine) ScanDLP(content string) *MatchResult {
 	}
 	// Tier 1: hardcoded patterns (fast, always available)
 	for _, pat := range dlpPatterns {
-		matched := false
+		var matched bool
 		if pat.check != nil {
 			matched = pat.check(content)
 		} else {

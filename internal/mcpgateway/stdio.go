@@ -12,7 +12,7 @@ var log = logger.New("mcp")
 
 // Run starts the MCP gateway proxy. It spawns the MCP server subprocess, wires up
 // stdio, and evaluates security-relevant messages. Returns the server's exit code.
-func Run(engine *rules.Engine, serverCmd []string) int {
+func Run(engine rules.RuleEvaluator, serverCmd []string) int {
 	return jsonrpc.RunProxy(engine, serverCmd, os.Stdin, os.Stdout, jsonrpc.ProxyConfig{
 		Log:          log,
 		ProcessLabel: "MCP server",

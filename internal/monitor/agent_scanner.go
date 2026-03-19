@@ -18,10 +18,8 @@ type agentSnapshot struct {
 
 // runAgentScanner polls for agent process changes every 5 seconds.
 // Emits ChangeAgents only when the agent list or status differs from the previous poll.
-func (m *Monitor) runAgentScanner() {
+func (m *Monitor) runAgentScanner(prev []agentSnapshot) {
 	defer m.wg.Done()
-
-	prev := snapshotAgents(detectCurrentAgents())
 	ticker := time.NewTicker(agentScanInterval)
 	defer ticker.Stop()
 

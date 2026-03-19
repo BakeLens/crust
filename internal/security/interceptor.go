@@ -25,13 +25,13 @@ func dlpRedact(msg string) string { return "[REDACTED by Crust: " + msg + "]" }
 
 // Interceptor handles tool call interception and response modification
 type Interceptor struct {
-	engine  *rules.Engine
+	engine  rules.RuleEvaluator
 	storage telemetry.Recorder
 	enabled atomic.Bool
 }
 
 // NewInterceptor creates a new interceptor
-func NewInterceptor(engine *rules.Engine, storage telemetry.Recorder) *Interceptor {
+func NewInterceptor(engine rules.RuleEvaluator, storage telemetry.Recorder) *Interceptor {
 	i := &Interceptor{
 		engine:  engine,
 		storage: storage,
@@ -51,7 +51,7 @@ func (i *Interceptor) IsEnabled() bool {
 }
 
 // GetEngine returns the rule engine
-func (i *Interceptor) GetEngine() *rules.Engine {
+func (i *Interceptor) GetEngine() rules.RuleEvaluator {
 	return i.engine
 }
 

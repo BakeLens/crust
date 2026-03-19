@@ -21,7 +21,7 @@ var log = logger.New("wrap")
 
 // Run starts the auto-detecting proxy. It spawns the subprocess, wires up stdio,
 // and evaluates security-relevant messages from both ACP and MCP protocols.
-func Run(engine *rules.Engine, cmd []string) int {
+func Run(engine rules.RuleEvaluator, cmd []string) int {
 	return jsonrpc.RunProxy(engine, cmd, os.Stdin, os.Stdout, jsonrpc.ProxyConfig{
 		Log:          log,
 		ProcessLabel: "Subprocess",

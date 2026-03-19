@@ -38,7 +38,7 @@ type ProxyConfig struct {
 
 // RunProxy starts the stdio proxy. It spawns cmd, wires up stdio pipes,
 // runs the configured inspection/passthrough pipes, and returns the child's exit code.
-func RunProxy(engine *rules.Engine, cmd []string, stdin io.ReadCloser, stdout io.Writer, cfg ProxyConfig) int {
+func RunProxy(engine rules.RuleEvaluator, cmd []string, stdin io.ReadCloser, stdout io.Writer, cfg ProxyConfig) int {
 	log := cfg.Log
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -51,11 +51,17 @@ func (m *Monitor) Start() {
 		// between Start() returning and the relay goroutine running.
 		subID, eventCh := subscribeEventlog()
 
+		// Snapshot initial state BEFORE launching goroutines so that
+		// state changes between Start() and goroutine startup are detected.
+		agentPrev := snapshotAgents(detectCurrentAgents())
+		protectPrev := takeProtectSnapshot()
+		sessionPrev := sessionIDs(getCurrentSessions())
+
 		m.wg.Add(4)
-		go m.runAgentScanner()
+		go m.runAgentScanner(agentPrev)
 		go m.runEventRelay(subID, eventCh)
-		go m.runSessionTracker()
-		go m.runProtectWatcher()
+		go m.runSessionTracker(sessionPrev)
+		go m.runProtectWatcher(protectPrev)
 		log.Info("monitor started (4 goroutines)")
 	})
 }

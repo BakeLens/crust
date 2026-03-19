@@ -350,7 +350,7 @@ func TestE2E_HotReloadRules(t *testing.T) {
 	}
 
 	// Hot-reload: add a rule that blocks /tmp/secret/**
-	err = interceptor.GetEngine().AddRulesFromYAML([]byte(`
+	err = interceptor.GetEngine().(*rules.Engine).AddRulesFromYAML([]byte(`
 rules:
   - name: block-tmp-secret
     message: Secret access blocked

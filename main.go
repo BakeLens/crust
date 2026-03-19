@@ -789,7 +789,7 @@ func runReloadRules(_ []string) {
 type proxyRunConfig struct {
 	name  string // subcommand name (e.g., "acp-wrap")
 	usage string // usage line (e.g., "acp-wrap [flags] -- <agent-command> [args...]")
-	run   func(engine *rules.Engine, cmd []string) int
+	run   func(engine rules.RuleEvaluator, cmd []string) int
 }
 
 // commonFlags registers the shared --config, --log-level, --rules-dir, and

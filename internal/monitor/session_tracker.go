@@ -41,10 +41,8 @@ func loadStorage() storageProvider {
 
 // runSessionTracker polls for session changes every 10 seconds.
 // Emits ChangeSession only when the session list differs from the previous poll.
-func (m *Monitor) runSessionTracker() {
+func (m *Monitor) runSessionTracker(prev string) {
 	defer m.wg.Done()
-
-	prev := sessionIDs(getCurrentSessions())
 	ticker := time.NewTicker(sessionTrackInterval)
 	defer ticker.Stop()
 
