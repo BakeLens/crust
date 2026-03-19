@@ -53,8 +53,6 @@ var (
 	BuildDate = "unknown"
 )
 
-var log = logger.New("main")
-
 func main() {
 	// Shell worker subprocess mode: if invoked with _CRUST_SHELL_WORKER=1,
 	// enter the worker loop for crash-isolated shell interpretation.

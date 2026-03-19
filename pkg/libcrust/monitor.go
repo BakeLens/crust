@@ -9,7 +9,6 @@ import "C"
 import (
 	"encoding/json"
 	"sync"
-	"unsafe"
 
 	"github.com/BakeLens/crust/internal/monitor"
 )
@@ -88,11 +87,4 @@ func LibcrustNextChange() *C.char {
 		return nil
 	}
 	return C.CString(string(data))
-}
-
-// freeString is a helper for Rust to free C strings returned by LibcrustNextChange.
-//
-//export LibcrustFreeString
-func LibcrustFreeString(s *C.char) {
-	C.free(unsafe.Pointer(s))
 }

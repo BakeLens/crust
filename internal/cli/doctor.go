@@ -74,6 +74,8 @@ func RunDoctor(opts DoctorOptions) DoctorResult {
 
 	for _, r := range result.ProviderResults {
 		switch r.Status {
+		case httpproxy.StatusOK:
+			// No issue.
 		case httpproxy.StatusAuthError:
 			result.IssuesFound++
 		case httpproxy.StatusPathError, httpproxy.StatusConnError, httpproxy.StatusOtherError:
@@ -91,7 +93,10 @@ func RunDoctor(opts DoctorOptions) DoctorResult {
 		rulesDir = rules.DefaultUserRulesDir()
 	}
 	loader := rules.NewLoader(rulesDir)
-	userRules, _ := loader.LoadUser()
+	userRules, err := loader.LoadUser()
+	if err != nil {
+		result.IssuesFound++
+	}
 	result.UserRuleCount = len(userRules)
 
 	if len(userRules) > 0 {
