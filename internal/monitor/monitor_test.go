@@ -2,9 +2,11 @@ package monitor
 
 import (
 	"encoding/json"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/telemetry"
 	"github.com/BakeLens/crust/internal/types"
 )
@@ -218,6 +220,117 @@ func TestStopMonitor_Idempotent(t *testing.T) {
 	// Both calls should succeed without panic.
 	m.Stop()
 	m.Stop()
+}
+
+// --- E2E Tests ---
+
+// TestMonitor_EventRelay_E2E initializes eventlog, starts the monitor,
+// records an event via eventlog.Record(), and verifies it appears as a
+// Change{Kind: "event"} on the Changes() channel.
+func TestMonitor_EventRelay_E2E(t *testing.T) {
+	m := New()
+	m.Start()
+	defer m.Stop()
+
+	// Drain the 3 initial state emissions (agents, protect, session).
+	timeout := time.After(5 * time.Second)
+	for range 3 {
+		select {
+		case <-m.Changes():
+		case <-timeout:
+			t.Fatal("timed out draining initial state")
+		}
+	}
+
+	// Record an event via eventlog — the event relay goroutine should pick it up.
+	eventlog.Record(eventlog.Event{
+		Layer:      eventlog.LayerHook,
+		ToolName:   "Read",
+		WasBlocked: true,
+		RuleName:   "test-rule",
+		Protocol:   "test",
+	})
+
+	// Wait for the event change to arrive.
+	timer := time.After(2 * time.Second)
+	for {
+		select {
+		case ch, ok := <-m.Changes():
+			if !ok {
+				t.Fatal("changes channel closed unexpectedly")
+			}
+			if ch.Kind == ChangeEvent {
+				// Verify the payload contains the tool name.
+				var payload map[string]any
+				if err := json.Unmarshal(ch.Payload, &payload); err != nil {
+					t.Fatalf("failed to unmarshal event payload: %v", err)
+				}
+				if payload["tool_name"] != "Read" {
+					t.Errorf("tool_name = %v, want %q", payload["tool_name"], "Read")
+				}
+				if payload["was_blocked"] != true {
+					t.Errorf("was_blocked = %v, want true", payload["was_blocked"])
+				}
+				return // success
+			}
+			// Other change kinds (agent scan, etc.) — keep reading.
+		case <-timer:
+			t.Fatal("timed out waiting for event change after eventlog.Record()")
+		}
+	}
+}
+
+// TestMonitor_ProtectWatcher_E2E sets a protect state func, starts the
+// monitor, changes the state, and verifies a "protect" change appears
+// reflecting the new state.
+func TestMonitor_ProtectWatcher_E2E(t *testing.T) {
+	// Start with protect inactive. Use atomic for cross-goroutine visibility.
+	var active atomic.Bool
+	SetProtectStateFunc(func() (bool, int) {
+		return active.Load(), 0
+	})
+	defer SetProtectStateFunc(nil)
+
+	m := New()
+	m.Start()
+	defer m.Stop()
+
+	// Drain the 3 initial state emissions.
+	timeout := time.After(5 * time.Second)
+	for range 3 {
+		select {
+		case <-m.Changes():
+		case <-timeout:
+			t.Fatal("timed out draining initial state")
+		}
+	}
+
+	// Change protect state — the watcher polls every 1s, so we should
+	// see a ChangeProtect within ~2 seconds.
+	active.Store(true)
+
+	timer := time.After(5 * time.Second)
+	for {
+		select {
+		case ch, ok := <-m.Changes():
+			if !ok {
+				t.Fatal("changes channel closed unexpectedly")
+			}
+			if ch.Kind == ChangeProtect {
+				var payload map[string]any
+				if err := json.Unmarshal(ch.Payload, &payload); err != nil {
+					t.Fatalf("failed to unmarshal protect payload: %v", err)
+				}
+				if payload["active"] != true {
+					t.Errorf("active = %v, want true", payload["active"])
+				}
+				return // success
+			}
+			// Other change kinds — keep reading.
+		case <-timer:
+			t.Fatal("timed out waiting for protect change after state flip")
+		}
+	}
 }
 
 // TestEmit_FullChannel fills the buffer and verifies emit does not block.
