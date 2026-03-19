@@ -17,10 +17,11 @@ const expectedPatternCount = 46
 
 // dlpVector defines a test vector for a single DLP pattern.
 type dlpVector struct {
-	name    string   // pattern name (builtin:dlp-*)
-	regex   string   // raw regex string (must compile)
-	mustHit []string // strings that MUST match
-	mustMis []string // strings that MUST NOT match
+	name     string   // pattern name (builtin:dlp-*)
+	regex    string   // raw regex string (must compile)
+	altRegex string   // optional second regex for two-step check patterns
+	mustHit  []string // strings that MUST match
+	mustMis  []string // strings that MUST NOT match
 }
 
 // pad returns a string of n repeated '0' characters. Used to construct
@@ -528,8 +529,11 @@ var vectors = []dlpVector{
 		},
 	},
 	{
-		name:  "builtin:dlp-fhir-bundle",
-		regex: `"resourceType"\s*:\s*"Bundle"[\s\S]*?"type"\s*:\s*"(?:searchset|collection|document)"`,
+		name: "builtin:dlp-fhir-bundle",
+		// Two-step check: fhirBundlePrefix + fhirBundleType within 5000-char window.
+		// Verify each sub-regex independently since the check function is not a single regex.
+		regex:    `"resourceType"\s*:\s*"Bundle"`,
+		altRegex: `"type"\s*:\s*"(?:searchset|collection|document)"`,
 		mustHit: []string{
 			`"resourceType":"Bundle","type":"searchset"`,
 			`"resourceType" : "Bundle", "id": "123", "type" : "collection"`,
@@ -573,7 +577,7 @@ func main() {
 
 	// 3. Verify SHA-512 of dlp.go source.
 	hash := fmt.Sprintf("%x", sha512.Sum512(data))
-	const expectedHash = "11cffe66a7e572a237ed6308495ab60d3cd96f49e7903b0ecc8f6d482fefe2d9fdee9bd80a8cd3e188d90b5b16a164ad7967c88ed6792bf0047bf56e7f66c798"
+	const expectedHash = "9856fdf0b27bb2f00e9bd2c858907d848d3fbbd4c338d823713cf2c62ef7161b2ffc5f0e8fdde8d22ca5bdb2b47580b61c9e077ada78c58429490b527f6ab056"
 	if hash != expectedHash {
 		fmt.Fprintf(os.Stderr, "FAIL: dlp.go SHA-512 mismatch\n  got:  %s\n  want: %s\n", hash, expectedHash)
 		failed++
@@ -588,15 +592,34 @@ func main() {
 			continue
 		}
 
+		var altRe *regexp.Regexp
+		if v.altRegex != "" {
+			altRe, err = regexp.Compile(v.altRegex)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "FAIL: [%d] %s: altRegex compile error: %v\n", i, v.name, err)
+				failed++
+				continue
+			}
+		}
+
 		for _, s := range v.mustHit {
-			if !re.MatchString(s) {
+			matched := re.MatchString(s)
+			if altRe != nil {
+				// Two-step check: both regexes must match
+				matched = matched && altRe.MatchString(s)
+			}
+			if !matched {
 				fmt.Fprintf(os.Stderr, "FAIL: [%d] %s: mustHit not matched: %q\n", i, v.name, s)
 				failed++
 			}
 		}
 
 		for _, s := range v.mustMis {
-			if re.MatchString(s) {
+			matched := re.MatchString(s)
+			if altRe != nil {
+				matched = matched && altRe.MatchString(s)
+			}
+			if matched {
 				fmt.Fprintf(os.Stderr, "FAIL: [%d] %s: mustMis incorrectly matched: %q\n", i, v.name, s)
 				failed++
 			}
@@ -609,6 +632,10 @@ func main() {
 		// Check the regex string appears in dlp.go (backtick-quoted).
 		if !strings.Contains(src, v.regex) {
 			fmt.Fprintf(os.Stderr, "FAIL: [%d] %s: regex not found in dlp.go source\n", i, v.name)
+			failed++
+		}
+		if v.altRegex != "" && !strings.Contains(src, v.altRegex) {
+			fmt.Fprintf(os.Stderr, "FAIL: [%d] %s: altRegex not found in dlp.go source\n", i, v.name)
 			failed++
 		}
 		// Check the pattern name appears in dlp.go.
