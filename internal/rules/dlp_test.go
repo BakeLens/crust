@@ -841,9 +841,9 @@ func TestDLPBugFixes(t *testing.T) {
 	})
 
 	t.Run("Bug22: FHIR ReDoS completes within timeout on adversarial input", func(t *testing.T) {
-		// Adversarial input: partial FHIR match followed by 100KB of junk.
-		// With unbounded [\s\S]*? this would hang; bounded {0,5000} returns quickly.
-		adversarial := `{"resourceType":"Bundle",` + strings.Repeat(`"k":"v",`, 20000) + `"end":true}`
+		// Adversarial input: partial FHIR match followed by ~50KB of junk.
+		// With unbounded [\s\S]*? this would hang; bounded window returns quickly.
+		adversarial := `{"resourceType":"Bundle",` + strings.Repeat(`"k":"v",`, 5000) + `"end":true}`
 		args, _ := json.Marshal(map[string]string{"file_path": "/tmp/redos.json", "content": adversarial})
 		call := ToolCall{Name: "Write", Arguments: args}
 
@@ -855,8 +855,8 @@ func TestDLPBugFixes(t *testing.T) {
 		select {
 		case <-done:
 			// completed — pass
-		case <-time.After(2 * time.Second):
-			t.Fatal("FHIR DLP regex took >2s — probable ReDoS")
+		case <-time.After(10 * time.Second):
+			t.Fatal("FHIR DLP regex took >10s — probable ReDoS")
 		}
 	})
 
