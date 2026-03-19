@@ -20,7 +20,7 @@ func (p *Proxy) handleStreamingRequest(ctx *RequestContext) {
 	// request carries tool definitions. Pure text-generation streams can
 	// never produce tool calls, so buffering them adds latency for zero
 	// security benefit.
-	secCfg := security.GetInterceptionConfig()
+	secCfg := p.secCfg
 	if secCfg.BufferStreaming && len(ctx.Tools) > 0 {
 		p.handleBufferedStreamingRequest(ctx, secCfg)
 		return
@@ -38,7 +38,7 @@ func (p *Proxy) handleStreamingRequest(ctx *RequestContext) {
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-				resp.Body = NewSSEReaderWithSecurity(resp.Body, ctx.APIType, ctx.TraceID, ctx.SessionID, ctx.Model, func(in, out int64, content string, toolCalls []telemetry.ToolCall) {
+				resp.Body = NewSSEReaderWithSecurity(resp.Body, ctx.APIType, ctx.TraceID, ctx.SessionID, ctx.Model, p.interceptor, func(in, out int64, content string, toolCalls []telemetry.ToolCall) {
 					duration := time.Since(ctx.StartTime)
 
 					log.Info("%s %s model=%s → %s status=%d duration=%v tokens=%d/%d tools=%d [stream]",
@@ -147,7 +147,7 @@ func (p *Proxy) handleBufferedStreamingRequest(ctx *RequestContext, secCfg secur
 	)
 
 	// Get interceptor early to avoid goto issues.
-	interceptor := security.GetGlobalInterceptor()
+	interceptor := p.interceptor
 
 	// Read and buffer SSE events. Headers are NOT written to the client yet.
 	bufferOverflowed := false
@@ -308,7 +308,7 @@ func (p *Proxy) retryAsNonStreaming(ctx *RequestContext) (responseBody json.RawM
 
 	statusCode = resp.StatusCode
 	var rawBody []byte
-	rawBody, inputTokens, outputTokens, toolCalls = processNonStreamingResponse(resp, ctx.APIType, ctx.TraceID, ctx.SessionID, ctx.Model)
+	rawBody, inputTokens, outputTokens, toolCalls = processNonStreamingResponse(resp, ctx.APIType, ctx.TraceID, ctx.SessionID, ctx.Model, p.interceptor, p.secCfg)
 	responseBody = rawBody
 
 	copyHeaders(ctx.Writer.Header(), resp.Header)

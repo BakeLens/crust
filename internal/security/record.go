@@ -9,15 +9,12 @@ import (
 )
 
 // storageSink implements eventlog.Sink by writing to the telemetry database.
-type storageSink struct{}
+type storageSink struct {
+	storage telemetry.Recorder
+}
 
-func (storageSink) LogEvent(event eventlog.Event) {
-	interceptor := GetGlobalInterceptor()
-	if interceptor == nil {
-		return
-	}
-	storage := interceptor.GetStorage()
-	if storage == nil {
+func (s storageSink) LogEvent(event eventlog.Event) {
+	if s.storage == nil {
 		return
 	}
 
@@ -44,13 +41,13 @@ func (storageSink) LogEvent(event eventlog.Event) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := storage.LogToolCall(ctx, tcLog); err != nil {
+	if err := s.storage.LogToolCall(ctx, tcLog); err != nil {
 		log.Warn("Failed to log security event: %v", err)
 	}
 }
 
 // initEventSink registers the storage sink with eventlog.
 // Called by Manager.Init after storage is ready.
-func initEventSink() {
-	eventlog.SetSink(storageSink{})
+func initEventSink(storage telemetry.Recorder) {
+	eventlog.SetSink(storageSink{storage: storage})
 }

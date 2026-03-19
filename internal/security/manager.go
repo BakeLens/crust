@@ -49,10 +49,11 @@ type Config struct {
 	SecurityEnabled bool
 	RetentionDays   int // Data retention in days, 0 = forever
 	// Streaming buffering settings
-	BufferStreaming bool            // Enable response buffering for streaming requests
-	MaxBufferEvents int             // Maximum SSE events to buffer
-	BufferTimeout   int             // Buffer timeout in seconds
-	BlockMode       types.BlockMode // types.BlockModeRemove (default) or types.BlockModeReplace
+	BufferStreaming bool                // Enable response buffering for streaming requests
+	MaxBufferEvents int                 // Maximum SSE events to buffer
+	BufferTimeout   int                 // Buffer timeout in seconds
+	BlockMode       types.BlockMode     // types.BlockModeRemove (default) or types.BlockModeReplace
+	Engine          rules.RuleEvaluator // Rule engine (required if SecurityEnabled)
 }
 
 // Init initializes the manager
@@ -116,15 +117,12 @@ func Init(cfg Config) (*Manager, error) {
 	}
 
 	// Initialize interceptor if security is enabled and rules engine exists
-	if cfg.SecurityEnabled {
-		ruleEngine := rules.GetGlobalEngine()
-		if ruleEngine != nil {
-			m.interceptor = NewInterceptor(ruleEngine, storage)
-		}
+	if cfg.SecurityEnabled && cfg.Engine != nil {
+		m.interceptor = NewInterceptor(cfg.Engine, storage)
 	}
 
 	// Initialize API server with Unix domain socket (or named pipe on Windows)
-	m.apiServer = NewAPIServer(storage, m.interceptor)
+	m.apiServer = NewAPIServer(storage, m.interceptor, cfg.Engine, m)
 	m.socketPath = cfg.SocketPath
 
 	ln, err := apiListener(cfg.SocketPath)
@@ -153,8 +151,8 @@ func Init(cfg Config) (*Manager, error) {
 	globalManager = m
 	globalManagerMu.Unlock()
 
-	// Register storage sink for event recording after global manager is set.
-	initEventSink()
+	// Register storage sink for event recording.
+	initEventSink(storage)
 
 	return m, nil
 }
@@ -232,6 +230,19 @@ func (m *Manager) GetInterceptor() *Interceptor {
 		return nil
 	}
 	return m.interceptor
+}
+
+// InterceptionCfg returns the security interception configuration for this manager instance.
+func (m *Manager) InterceptionCfg() InterceptionConfig {
+	if m == nil {
+		return InterceptionConfig{BlockMode: types.BlockModeRemove}
+	}
+	return InterceptionConfig{
+		BufferStreaming: m.bufferStreaming,
+		MaxBufferEvents: m.maxBufferEvents,
+		BufferTimeout:   m.bufferTimeout,
+		BlockMode:       m.blockMode,
+	}
 }
 
 // GetRegistry returns the plugin registry

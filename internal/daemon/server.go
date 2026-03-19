@@ -115,6 +115,7 @@ func RunServer(scfg ServerConfig) error {
 		rulesDir = rules.DefaultUserRulesDir()
 	}
 
+	var ruleEngine *rules.Engine
 	if cfg.Rules.Enabled {
 		engineCfg := rules.EngineConfig{
 			UserRulesDir:        rulesDir,
@@ -123,12 +124,13 @@ func RunServer(scfg ServerConfig) error {
 			PreChecker:          selfprotect.Check,
 		}
 
-		ruleEngine, err := rules.NewEngine(engineCtx, engineCfg)
+		var err error
+		ruleEngine, err = rules.NewEngine(engineCtx, engineCfg)
 		if err != nil {
 			return fmt.Errorf("failed to initialize rules engine: %w", err)
 		}
 
-		rules.SetGlobalEngine(ruleEngine)
+		rules.SetGlobalEngine(ruleEngine) // TODO: remove once libcrust is refactored
 		log.Info("Rules engine: %d rules loaded", ruleEngine.RuleCount())
 
 		if cfg.Rules.Watch {
@@ -160,6 +162,7 @@ func RunServer(scfg ServerConfig) error {
 		MaxBufferEvents: cfg.Security.MaxBufferEvents,
 		BufferTimeout:   cfg.Security.BufferTimeout,
 		BlockMode:       cfg.Security.BlockMode,
+		Engine:          ruleEngine,
 	}
 
 	manager, err := security.Init(managerCfg)
@@ -194,7 +197,7 @@ func RunServer(scfg ServerConfig) error {
 	}
 
 	// Create proxy
-	proxyHandler, err := httpproxy.NewProxy(cfg.Upstream.URL, cfg.Upstream.APIKey, time.Duration(cfg.Upstream.Timeout)*time.Second, cfg.Upstream.Providers, scfg.AutoMode)
+	proxyHandler, err := httpproxy.NewProxy(cfg.Upstream.URL, cfg.Upstream.APIKey, time.Duration(cfg.Upstream.Timeout)*time.Second, cfg.Upstream.Providers, scfg.AutoMode, manager.GetInterceptor(), manager.InterceptionCfg())
 	if err != nil {
 		return fmt.Errorf("failed to create proxy: %w", err)
 	}

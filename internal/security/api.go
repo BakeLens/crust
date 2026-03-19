@@ -22,12 +22,14 @@ import (
 type APIServer struct {
 	storage      *telemetry.Storage
 	interceptor  *Interceptor
+	engine       rules.RuleEvaluator
+	manager      *Manager
 	telemetryAPI *telemetry.APIHandler
 	router       *gin.Engine
 }
 
 // NewAPIServer creates a new API server
-func NewAPIServer(storage *telemetry.Storage, interceptor *Interceptor) *APIServer {
+func NewAPIServer(storage *telemetry.Storage, interceptor *Interceptor, engine rules.RuleEvaluator, manager *Manager) *APIServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 
@@ -39,6 +41,8 @@ func NewAPIServer(storage *telemetry.Storage, interceptor *Interceptor) *APIServ
 	s := &APIServer{
 		storage:      storage,
 		interceptor:  interceptor,
+		engine:       engine,
+		manager:      manager,
 		telemetryAPI: telemetry.NewAPIHandler(storage),
 		router:       router,
 	}
@@ -103,8 +107,8 @@ func (s *APIServer) registerRoutes() {
 		}
 
 		// Rules routes (if rule engine is available)
-		if ruleEngine := rules.GetGlobalEngine(); ruleEngine != nil {
-			rulesAPI := rules.NewAPIHandler(ruleEngine)
+		if eng, ok := s.engine.(*rules.Engine); ok && eng != nil {
+			rulesAPI := rules.NewAPIHandler(eng)
 			rulesGroup := apiGroup.Group(apiGroups[2] + "/rules")
 			{
 				rulesGroup.GET("", rulesAPI.HandleRules)
@@ -176,9 +180,11 @@ func (s *APIServer) handleStats(c *gin.Context) {
 func (s *APIServer) handleStatus(c *gin.Context) {
 	ruleCount := 0
 	lockedCount := 0
-	if ruleEngine := rules.GetGlobalEngine(); ruleEngine != nil {
-		ruleCount = ruleEngine.RuleCount()
-		lockedCount = ruleEngine.LockedRuleCount()
+	if s.engine != nil {
+		ruleCount = s.engine.RuleCount()
+		if eng, ok := s.engine.(*rules.Engine); ok {
+			lockedCount = eng.LockedRuleCount()
+		}
 	}
 
 	enabled := false
@@ -325,12 +331,11 @@ func (s *APIServer) handleChangesStream(c *gin.Context) {
 // handlePlugins handles GET /api/security/plugins.
 // Returns health stats for all registered plugins (e.g., sandbox).
 func (s *APIServer) handlePlugins(c *gin.Context) {
-	manager := GetGlobalManager()
-	if manager == nil {
+	if s.manager == nil {
 		api.Success(c, []gin.H{})
 		return
 	}
-	registry := manager.GetRegistry()
+	registry := s.manager.GetRegistry()
 	if registry == nil {
 		api.Success(c, []gin.H{})
 		return

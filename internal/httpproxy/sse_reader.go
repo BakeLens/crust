@@ -33,22 +33,24 @@ type SSEReader struct {
 	completed  bool
 
 	// Security interception fields
-	traceID   types.TraceID
-	sessionID types.SessionID
-	model     string
+	traceID     types.TraceID
+	sessionID   types.SessionID
+	model       string
+	interceptor *security.Interceptor
 }
 
 // NewSSEReaderWithSecurity creates a new SSE reader with security interception support
-func NewSSEReaderWithSecurity(body io.ReadCloser, apiType types.APIType, traceID types.TraceID, sessionID types.SessionID, model string, onComplete func(int64, int64, string, []telemetry.ToolCall)) *SSEReader {
+func NewSSEReaderWithSecurity(body io.ReadCloser, apiType types.APIType, traceID types.TraceID, sessionID types.SessionID, model string, interceptor *security.Interceptor, onComplete func(int64, int64, string, []telemetry.ToolCall)) *SSEReader {
 	return &SSEReader{
-		reader:     body,
-		apiType:    apiType,
-		parser:     NewSSEParser(true), // Enable sanitization
-		onComplete: onComplete,
-		toolCalls:  make(map[int]*StreamingToolCall),
-		traceID:    traceID,
-		sessionID:  sessionID,
-		model:      model,
+		reader:      body,
+		apiType:     apiType,
+		parser:      NewSSEParser(true), // Enable sanitization
+		onComplete:  onComplete,
+		toolCalls:   make(map[int]*StreamingToolCall),
+		traceID:     traceID,
+		sessionID:   sessionID,
+		model:       model,
+		interceptor: interceptor,
 	}
 }
 
@@ -91,7 +93,7 @@ func (r *SSEReader) triggerComplete() {
 	// The buffered streaming path (handleBufferedStreamingRequest) evaluates tool
 	// calls BEFORE sending to the client and can block them. Buffered streaming is
 	// used automatically when buffer_streaming is enabled and the request has tools.
-	interceptor := security.GetGlobalInterceptor()
+	interceptor := r.interceptor
 	if interceptor != nil && interceptor.IsEnabled() && len(toolCalls) > 0 {
 		engine := interceptor.GetEngine()
 
