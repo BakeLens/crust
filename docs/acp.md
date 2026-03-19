@@ -3,7 +3,7 @@
 Crust can wrap any [ACP](https://agentclientprotocol.com)-compatible agent as a transparent stdio proxy — intercepting file reads, writes, and terminal commands before the IDE executes them. No changes to the agent or IDE required.
 
 ```bash
-crust acp-wrap -- goose acp
+crust wrap -- goose acp
 ```
 
 ## Prerequisites
@@ -47,7 +47,7 @@ export GEMINI_API_KEY=...
   "agent_servers": {
     "Goose via Crust": {
       "command": "crust",
-      "args": ["acp-wrap", "--", "goose", "acp"]
+      "args": ["wrap", "--", "goose", "acp"]
     }
   }
 }
@@ -60,7 +60,7 @@ export GEMINI_API_KEY=...
   "agent_servers": {
     "Gemini via Crust": {
       "command": "crust",
-      "args": ["acp-wrap", "--", "gemini", "--experimental-acp"],
+      "args": ["wrap", "--", "gemini", "--experimental-acp"],
       "env": {
         "GEMINI_API_KEY": "..."
       }
@@ -83,7 +83,7 @@ Install the [ACP Client](https://marketplace.visualstudio.com/items?itemName=for
     "Goose via Crust": {
       "enabled": true,
       "command": "crust",
-      "args": ["acp-wrap", "--", "goose", "acp"]
+      "args": ["wrap", "--", "goose", "acp"]
     }
   }
 }
@@ -93,7 +93,7 @@ Install the [ACP Client](https://marketplace.visualstudio.com/items?itemName=for
 
 ## Other Editors
 
-Any editor that supports ACP (Zed, Neovim via CodeCompanion/avante.nvim) can use `crust acp-wrap`. Consult your editor's ACP documentation for how to configure a custom agent command.
+Any editor that supports ACP (Zed, Neovim via CodeCompanion/avante.nvim) can use `crust wrap`. Consult your editor's ACP documentation for how to configure a custom agent command.
 
 ## Status
 
@@ -105,4 +105,4 @@ Please [open an issue](https://github.com/BakeLens/crust/issues) if you encounte
 
 ## CLI Reference
 
-See [CLI docs](cli.md#acp-wrap-flags) for all `crust acp-wrap` flags (`--log-level`, `--rules-dir`, `--disable-builtin`, etc.).
+See [CLI docs](cli.md#wrap-flags) for all `crust wrap` flags (`--log-level`, `--rules-dir`, `--disable-builtin`, etc.).

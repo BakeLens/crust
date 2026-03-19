@@ -120,14 +120,11 @@ Rule patterns (regex, glob) are now validated and pre-compiled at rule load time
 
 ### How to Check Your Rules
 
-Run the linter before upgrading. It now catches all patterns that would be rejected at load time:
+Validate your rules before upgrading. The `add-rule` command now validates automatically before adding, and `list-rules --reload` forces a reload:
 
 ```bash
-# Lint all rule files
-crust lint-rules
-
-# Lint a specific file
-crust lint-rules /path/to/rules.yaml
+# Validate by adding (auto-validates before adding)
+crust add-rule /path/to/rules.yaml
 
 # Validate via API (Unix domain socket)
 curl --unix-socket ~/.crust/crust-api-9090.sock \
@@ -135,10 +132,10 @@ curl --unix-socket ~/.crust/crust-api-9090.sock \
   -d @rules.yaml
 ```
 
-The linter reports per-rule results including pattern compilation errors:
+The `add-rule` command reports per-rule validation results including pattern compilation errors:
 
 ```text
-$ crust lint-rules
+$ crust add-rule my-rules.yaml
 Linting builtin rules...
   No issues found.
 Linting user rules...

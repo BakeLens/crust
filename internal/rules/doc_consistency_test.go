@@ -158,8 +158,9 @@ func TestDocConsistency_BuiltinRuleCounts(t *testing.T) {
 
 // ── CLI commands ──────────────────────────────────────────────────────────────
 
-// requiredCLICommands lists top-level commands that must appear in docs/cli.md.
-// Add a command here whenever a new top-level subcommand is introduced.
+// requiredCLICommands lists user-facing commands that must appear in docs/cli.md.
+// Hidden aliases (wrap, acp-wrap, mcp, reload-rules, lint-rules, agents) are
+// internal and not required in docs.
 var requiredCLICommands = []string{
 	"crust start",
 	"crust stop",
@@ -168,12 +169,7 @@ var requiredCLICommands = []string{
 	"crust add-rule",
 	"crust remove-rule",
 	"crust list-rules",
-	"crust reload-rules",
-	"crust lint-rules",
 	"crust doctor",
-	"crust acp-wrap",
-	"crust mcp",
-	"crust wrap",
 }
 
 func TestDocConsistency_CLICommands(t *testing.T) {

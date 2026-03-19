@@ -1,13 +1,13 @@
 # MCP Gateway
 
-Crust can secure MCP servers via stdio proxy (`crust mcp gateway`) or HTTP reverse proxy (`crust mcp http`).
+Crust can secure MCP servers via stdio proxy (`crust wrap`) or HTTP reverse proxy (`crust wrap`). The dedicated `mcp gateway` and `mcp http` subcommands are hidden aliases that still work.
 
 ## Stdio Gateway
 
 Wrap any [MCP](https://modelcontextprotocol.io) server as a transparent stdio proxy — intercepting requests in both directions and scanning responses for leaked secrets.
 
 ```bash
-crust mcp gateway -- npx -y @modelcontextprotocol/server-filesystem /path/to/dir
+crust wrap -- npx -y @modelcontextprotocol/server-filesystem /path/to/dir
 ```
 
 ### How It Works
@@ -17,7 +17,7 @@ MCP Client (Claude Desktop, IDE, etc.)
   │ stdin/stdout (JSON-RPC 2.0)
   ▼
 ┌──────────────────────────────────────┐
-│         crust mcp gateway            │
+│           crust wrap                 │
 │                                      │
 │  Client→Server (inbound):            │
 │    ├─ tools/call      → Evaluate     │
@@ -42,7 +42,7 @@ Real MCP Server (filesystem, database, etc.)
 For remote MCP servers that expose an HTTP endpoint ([MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports)):
 
 ```bash
-crust mcp http --upstream https://mcp-server.example.com/mcp
+crust wrap --upstream https://mcp-server.example.com/mcp
 ```
 
 ### How It Works
@@ -52,7 +52,7 @@ MCP Client (Claude Desktop, VS Code, etc.)
   │ HTTP (JSON-RPC 2.0 over POST/GET/DELETE)
   ▼
 ┌──────────────────────────────────────┐
-│         crust mcp http               │
+│           crust wrap                 │
 │                                      │
 │  POST (Client→Server requests):      │
 │    ├─ tools/call      → Evaluate     │
@@ -128,7 +128,7 @@ Add Crust as a wrapper in your Claude Desktop MCP config (`~/Library/Application
   "mcpServers": {
     "filesystem": {
       "command": "crust",
-      "args": ["mcp", "gateway", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/Users/you/projects"]
+      "args": ["wrap", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/Users/you/projects"]
     }
   }
 }
@@ -136,25 +136,16 @@ Add Crust as a wrapper in your Claude Desktop MCP config (`~/Library/Application
 
 ### Auto-discover and Patch
 
-`crust mcp discover` scans known IDE/client config files and can automatically patch them to route stdio MCP servers through `crust wrap`.
+`crust doctor` scans known IDE/client config files (in addition to provider diagnostics) and can automatically patch them to route stdio MCP servers through `crust wrap`.
 
 ```bash
-# Scan and display discovered MCP servers
-crust mcp discover
-
-# Patch configs to route through crust wrap
-crust mcp discover --patch
-
-# Undo all patches (restore from backups)
-crust mcp discover --restore
-
-# Machine-readable output
-crust mcp discover --json
+# Run diagnostics + scan for MCP servers
+crust doctor
 ```
 
 Supported clients: Claude Desktop, Cursor, Windsurf, Claude Code, Neovim (mcphub).
 
-When the Crust daemon starts (`crust start`), it automatically patches these configs and restores them on `crust stop`. The `mcp discover` command is useful for manual control outside the daemon lifecycle.
+When the Crust daemon starts (`crust start`), it automatically patches these configs and restores them on `crust stop`. The `doctor` command is useful for manual control outside the daemon lifecycle.
 
 **Crash resilience:** `crust wrap` runs independently of the daemon — it spawns the child process directly and inspects stdio in-process. If the Crust daemon crashes, wrapped MCP servers continue working with security rules still enforced.
 
@@ -195,10 +186,10 @@ The same rules apply as the HTTP gateway and ACP modes. Security-relevant tool c
 
 ## CLI Reference
 
-### `mcp gateway` (stdio)
+### `wrap` (stdio — auto-detects MCP or ACP)
 
 ```bash
-crust mcp gateway [flags] -- <mcp-server-command> [args...]
+crust wrap [flags] -- <mcp-server-command> [args...]
 ```
 
 | Flag | Default | Description |
@@ -207,35 +198,14 @@ crust mcp gateway [flags] -- <mcp-server-command> [args...]
 | `--rules-dir` | `~/.crust/rules/` | Directory for custom rules |
 | `--log-level` | `warn` | Log level (`trace`, `debug`, `info`, `warn`, `error`) |
 | `--disable-builtin` | `false` | Disable built-in security rules (locked rules remain active) |
+| `--upstream` | — | Upstream MCP server URL (for HTTP reverse proxy mode) |
+| `--listen` | `127.0.0.1:9091` | Local listen address (HTTP mode only) |
 
-Logs go to stderr so they don't interfere with the JSON-RPC stdio stream.
+Logs go to stderr so they don't interfere with the JSON-RPC stdio stream. The hidden aliases `mcp gateway`, `mcp http`, and `acp-wrap` still work.
 
-### `mcp http` (Streamable HTTP)
+### `doctor` (includes MCP config scan)
 
-```bash
-crust mcp http --upstream <url> [flags]
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--upstream` | (required) | Upstream MCP server URL |
-| `--listen` | `127.0.0.1:9091` | Local listen address |
-| `--config` | `~/.crust/config.yaml` | Configuration file |
-| `--rules-dir` | `~/.crust/rules/` | Custom rules directory |
-| `--log-level` | `warn` | Log level |
-| `--disable-builtin` | `false` | Disable built-in rules |
-
-### `mcp discover`
-
-```bash
-crust mcp discover [flags]
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--json` | `false` | Output as JSON |
-| `--patch` | `false` | Patch configs to route through `crust wrap` |
-| `--restore` | `false` | Restore configs from backups |
+`crust doctor` now includes the MCP config discovery previously provided by `mcp discover`. It scans known IDE/client config files automatically.
 
 Scans the following config files:
 

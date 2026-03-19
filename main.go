@@ -655,8 +655,22 @@ func runStatus(args []string) {
 	statusFlags := flag.NewFlagSet("status", flag.ExitOnError)
 	jsonOutput := statusFlags.Bool("json", false, "Output as JSON")
 	live := statusFlags.Bool("live", false, "Live dashboard with auto-refresh")
+	agents := statusFlags.Bool("agents", false, "Detect running AI agents and protection status")
 	apiAddr := statusFlags.String("api-addr", "", "Remote daemon address (host:port)")
 	_ = statusFlags.Parse(args)
+
+	// --agents: delegate to agent detection (same as `crust agents`)
+	if *agents && !*live {
+		var agentArgs []string
+		if *jsonOutput {
+			agentArgs = append(agentArgs, "--json")
+		}
+		if *apiAddr != "" {
+			agentArgs = append(agentArgs, "--api-addr", *apiAddr)
+		}
+		runAgents(agentArgs)
+		return
+	}
 
 	// Resolve client, PID, and log file based on local vs remote
 	var client *cli.APIClient
@@ -834,37 +848,33 @@ func printUsage() {
 	banner.PrintBanner(Version)
 	fmt.Println()
 
-	fmt.Println(tui.Separator("Usage"))
+	fmt.Println(tui.Separator("Lifecycle"))
 	fmt.Print(tui.AlignColumns([][2]string{
-		{"crust start [flags]", "Start crust (interactive or with flags)"},
+		{"crust start [--foreground]", "Start crust"},
 		{"crust stop", "Stop crust"},
-		{"crust status [--json] [--live] [--api-addr]", "Check if crust is running"},
-		{"crust agents [--json] [--api-addr]", "Detect running AI agents and protection status"},
-		{"crust logs [-f] [-n N]", "View logs (-f to follow, -n for line count)"},
+		{"crust status [--json] [--live] [--agents]", "Check status or live dashboard"},
 	}, "  ", 2, tui.StyleCommand, tui.StyleMuted))
 	fmt.Println()
 
-	fmt.Println(tui.Separator("Rule Management"))
+	fmt.Println(tui.Separator("Rules"))
 	fmt.Print(tui.AlignColumns([][2]string{
-		{"crust add-rule <file.yaml>", "Add a rule file to user rules"},
-		{"crust remove-rule <filename>", "Remove a user rule file"},
-		{"crust list-rules [--json]", "List all active rules"},
-		{"crust reload-rules", "Trigger hot reload of rules"},
-		{"crust lint-rules [file.yaml]", "Validate rule syntax and patterns"},
+		{"crust add-rule <file>", "Add a rule (validates first)"},
+		{"crust remove-rule <name>", "Remove a rule"},
+		{"crust list-rules [--json] [--reload]", "List active rules"},
+	}, "  ", 2, tui.StyleCommand, tui.StyleMuted))
+	fmt.Println()
+
+	fmt.Println(tui.Separator("Diagnostics"))
+	fmt.Print(tui.AlignColumns([][2]string{
+		{"crust logs [-f] [-n N]", "View logs (-f to follow)"},
+		{"crust doctor [--dry-run]", "Diagnose and auto-fix issues"},
 	}, "  ", 2, tui.StyleCommand, tui.StyleMuted))
 	fmt.Println()
 
 	fmt.Println(tui.Separator("Other"))
 	fmt.Print(tui.AlignColumns([][2]string{
-		{"crust doctor [--timeout 5s] [--report]", "Check provider endpoint connectivity"},
-		{"crust acp-wrap [flags] -- <cmd...>", "ACP stdio proxy with security rules"},
-		{"crust mcp gateway [flags] -- <cmd...>", "MCP stdio proxy with security rules"},
-		{"crust mcp http --upstream <url>", "MCP HTTP reverse proxy with security rules"},
-		{"crust mcp discover [--patch] [--restore]", "Scan/patch MCP client configs"},
-		{"crust completion [--install]", "Install shell completion (bash/zsh/fish)"},
-		{"crust uninstall", "Uninstall crust completely"},
-		{"crust help", "Show this help message"},
-		{"crust version [--json]", "Show version"},
+		{"crust uninstall", "Uninstall crust"},
+		{"crust completion <shell>", "Generate shell completions"},
 	}, "  ", 2, tui.StyleCommand, tui.StyleMuted))
 	fmt.Println()
 
@@ -993,10 +1003,21 @@ func runListRules(args []string) {
 	tui.WindowTitle("crust rules")
 	listFlags := flag.NewFlagSet("list-rules", flag.ExitOnError)
 	jsonOutput := listFlags.Bool("json", false, "Output as JSON")
+	reload := listFlags.Bool("reload", false, "Trigger hot reload before listing")
 	apiAddr := listFlags.String("api-addr", "", "Remote daemon address (host:port)")
 	_ = listFlags.Parse(args)
 
 	client := cli.NewAPIClient(*apiAddr)
+
+	// If --reload, trigger a hot reload first (same as reload-rules)
+	if *reload {
+		if _, err := client.ReloadRules(); err != nil {
+			exitNotRunning()
+		}
+		tui.PrintSuccess("Rules reloaded")
+		fmt.Println()
+	}
+
 	body, err := client.GetRules()
 	if err != nil {
 		exitNotRunning()
@@ -1460,14 +1481,12 @@ func runLintRules(args []string) {
 	}
 }
 
-// runDoctor handles the doctor subcommand — checks provider endpoint connectivity.
+// runDoctor handles the doctor subcommand — diagnoses and auto-fixes issues.
 func runDoctor(args []string) {
 	tui.WindowTitle("crust doctor")
 	doctorFlags := flag.NewFlagSet("doctor", flag.ExitOnError)
 	configPath := doctorFlags.String("config", config.DefaultConfigPath(), "Path to configuration file")
-	timeout := doctorFlags.Duration("timeout", 5*time.Second, "Timeout per provider check")
-	retries := doctorFlags.Int("retries", 1, "Retries for connection errors")
-	report := doctorFlags.Bool("report", false, "Generate a sanitized report for GitHub issues")
+	dryRun := doctorFlags.Bool("dry-run", false, "Diagnose without making changes")
 	_ = doctorFlags.Parse(args)
 
 	// Load config for user-defined providers (no daemon needed)
@@ -1476,17 +1495,19 @@ func runDoctor(args []string) {
 		cfg = config.DefaultConfig()
 	}
 
+	var issuesFixed, issuesFound int
+
+	// --- Provider Diagnostics ---
 	fmt.Println()
 	fmt.Println(tui.Separator("Provider Diagnostics"))
 	fmt.Println()
 
 	results := httpproxy.RunDoctor(httpproxy.DoctorOptions{
-		Timeout:       *timeout,
-		Retries:       *retries,
+		Timeout:       5 * time.Second,
+		Retries:       1,
 		UserProviders: cfg.Upstream.Providers,
 	})
 
-	// Print each result
 	var okCount, warnCount, errCount int
 	for _, r := range results {
 		printDoctorResult(r)
@@ -1495,12 +1516,13 @@ func runDoctor(args []string) {
 			okCount++
 		case httpproxy.StatusAuthError:
 			warnCount++
+			issuesFound++
 		case httpproxy.StatusPathError, httpproxy.StatusConnError, httpproxy.StatusOtherError:
 			errCount++
+			issuesFound++
 		}
 	}
 
-	// Summary
 	fmt.Println()
 	switch {
 	case errCount > 0:
@@ -1511,15 +1533,104 @@ func runDoctor(args []string) {
 		tui.PrintSuccess(fmt.Sprintf("All %d providers ok", okCount))
 	}
 
-	// Scan for unguarded agent servers on localhost
+	// --- Agent Security Scan ---
 	fmt.Println()
 	fmt.Println(tui.Separator("Agent Security Scan"))
 	fmt.Println()
-	scanAgentPorts(*timeout)
+	scanAgentPorts(5 * time.Second)
 
-	if *report {
+	// --- Rule Linting ---
+	fmt.Println()
+	fmt.Println(tui.Separator("Rule Linting"))
+	fmt.Println()
+
+	rulesDir := cfg.Rules.UserDir
+	if rulesDir == "" {
+		rulesDir = rules.DefaultUserRulesDir()
+	}
+	loader := rules.NewLoader(rulesDir)
+	userRules, loadErr := loader.LoadUser()
+	if loadErr != nil {
+		tui.PrintWarning(fmt.Sprintf("Failed to load user rules: %v", loadErr))
+	}
+	if len(userRules) == 0 {
+		tui.PrintInfo("No user rules installed")
+	} else {
+		linter := rules.NewLinter()
+		lintResult := linter.LintRules(userRules)
+		if lintResult.Errors > 0 || lintResult.Warns > 0 {
+			fmt.Print(lintResult.FormatIssues(false))
+			issuesFound += lintResult.Errors + lintResult.Warns
+			tui.PrintWarning(fmt.Sprintf("%d error(s), %d warning(s) in user rules", lintResult.Errors, lintResult.Warns))
+		} else {
+			tui.PrintSuccess(fmt.Sprintf("All %d user rules valid", len(userRules)))
+		}
+	}
+
+	// --- MCP Config Scan & Auto-Patch ---
+	fmt.Println()
+	fmt.Println(tui.Separator("MCP Config Scan"))
+	fmt.Println()
+
+	mcpResult := mcpdiscover.Discover()
+
+	if len(mcpResult.Servers) == 0 && len(mcpResult.Errors) == 0 {
+		tui.PrintInfo("No MCP servers found in known client configs")
+	} else {
+		// Show status of each server
+		var unpatched int
+		for _, srv := range mcpResult.Servers {
+			status := tui.StyleWarning.Render("unpatched")
+			if srv.AlreadyWrapped {
+				status = tui.StyleSuccess.Render("patched")
+			} else if srv.Transport == mcpdiscover.TransportHTTP {
+				status = tui.StyleMuted.Render("http (skip)")
+			} else {
+				unpatched++
+			}
+			fmt.Printf("  %s  %s  %s\n", status, tui.StyleBold.Render(srv.Name), commandSummary(srv))
+		}
+		for _, e := range mcpResult.Errors {
+			tui.PrintWarning(fmt.Sprintf("%s: %v", e.ConfigPath, e.Err))
+		}
 		fmt.Println()
-		fmt.Println(buildDoctorReport(results, okCount, warnCount, errCount))
+
+		if unpatched > 0 {
+			issuesFound += unpatched
+			if *dryRun {
+				tui.PrintInfo(fmt.Sprintf("%d unpatched MCP server(s) found (dry-run: no changes made)", unpatched))
+			} else {
+				crustBin := daemon.ResolveCrustBin()
+				if crustBin == "" {
+					tui.PrintError("Cannot resolve crust binary path — skipping MCP patch")
+				} else {
+					patchResult := mcpdiscover.PatchConfigs(crustBin)
+					if patchResult.Patched > 0 {
+						issuesFixed += patchResult.Patched
+						tui.PrintSuccess(fmt.Sprintf("Patched %d MCP server(s) to route through crust wrap", patchResult.Patched))
+					}
+					for _, e := range patchResult.Errors {
+						tui.PrintWarning(fmt.Sprintf("%s: %v", e.ConfigPath, e.Err))
+					}
+				}
+			}
+		} else {
+			tui.PrintSuccess("All MCP servers already patched")
+		}
+	}
+
+	// --- Summary ---
+	fmt.Println()
+	fmt.Println(tui.Separator("Summary"))
+	fmt.Println()
+	if issuesFound == 0 {
+		tui.PrintSuccess("All checks passed")
+	} else if issuesFixed > 0 {
+		tui.PrintSuccess(fmt.Sprintf("Fixed %d issue(s), %d remaining", issuesFixed, issuesFound-issuesFixed))
+	} else if *dryRun {
+		tui.PrintInfo(fmt.Sprintf("Found %d issue(s) (dry-run: no changes made)", issuesFound))
+	} else {
+		tui.PrintWarning(fmt.Sprintf("Found %d issue(s)", issuesFound))
 	}
 }
 

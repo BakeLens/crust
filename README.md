@@ -57,9 +57,9 @@ Crust has five entry points — use one or combine them:
 | Entry Point | Command | What It Does |
 |-------------|---------|--------------|
 | **HTTP Proxy** | `crust start` | Sits between your agent and the LLM API. Scans tool calls in both the request (conversation history) and response (new actions) before they execute. |
-| **MCP Stdio Gateway** | `crust mcp gateway` | Wraps any stdio [MCP](https://modelcontextprotocol.io) server, intercepting `tools/call` and `resources/read` in both directions — including DLP scanning of server responses for leaked secrets. |
-| **MCP HTTP Gateway** | `crust mcp http` | Reverse proxy for [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) MCP servers — same rule engine, no stdio required. |
-| **ACP Stdio Proxy** | `crust acp-wrap` | Wraps any [ACP](https://agentclientprotocol.com) agent, intercepting file reads, writes, and terminal commands before the IDE executes them. |
+| **MCP Stdio Gateway** | `crust wrap` | Wraps any stdio [MCP](https://modelcontextprotocol.io) server, intercepting `tools/call` and `resources/read` in both directions — including DLP scanning of server responses for leaked secrets. |
+| **MCP HTTP Gateway** | `crust wrap` | Reverse proxy for [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) MCP servers — same rule engine, no stdio required. |
+| **ACP Stdio Proxy** | `crust wrap` | Wraps any [ACP](https://agentclientprotocol.com) agent, intercepting file reads, writes, and terminal commands before the IDE executes them. |
 | **Auto-detect** | `crust wrap` | Inspects both MCP and ACP methods simultaneously — use when you don't know which protocol a subprocess speaks. |
 
 All entry points apply the same [evaluation pipeline](docs/how-it-works.md) — self-protection, input sanitization, Unicode normalization, obfuscation detection, DLP secret scanning, path normalization, symlink resolution, and rule matching — each step in microseconds.
@@ -131,7 +131,7 @@ Crust auto-detects the provider from the model name and passes through your auth
 
 ```bash
 crust status     # Check if running
-crust agents     # Detect running AI agents and protection status
+crust status --agents  # Detect running AI agents and protection status
 crust logs -f    # Follow logs
 crust doctor     # Diagnose provider endpoints
 crust stop       # Stop crust
@@ -142,7 +142,7 @@ crust stop       # Stop crust
 For [MCP](https://modelcontextprotocol.io) servers, Crust intercepts `tools/call` and `resources/read` requests before they reach the server.
 
 ```bash
-crust mcp gateway -- npx -y @modelcontextprotocol/server-filesystem /path/to/dir
+crust wrap -- npx -y @modelcontextprotocol/server-filesystem /path/to/dir
 ```
 
 Works with any MCP server. See the [MCP setup guide](docs/mcp.md) for details and examples.
@@ -152,7 +152,7 @@ Works with any MCP server. See the [MCP setup guide](docs/mcp.md) for details an
 For IDEs that use the [Agent Client Protocol](https://agentclientprotocol.com) (ACP), Crust can wrap any ACP agent as a transparent stdio proxy — intercepting file reads, writes, and terminal commands before the IDE executes them. No changes to the agent or IDE required.
 
 ```bash
-crust acp-wrap -- goose acp
+crust wrap -- goose acp
 ```
 
 Supports JetBrains IDEs and other ACP-compatible editors. See the [ACP setup guide](docs/acp.md) for step-by-step instructions.
