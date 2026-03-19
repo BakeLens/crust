@@ -138,8 +138,8 @@ func ScanAgentPorts(timeout time.Duration) []AgentPortResult {
 	for _, ap := range KnownAgentPorts {
 		addr := fmt.Sprintf("127.0.0.1:%d", ap.Port)
 		conn, err := dialer.DialContext(context.Background(), "tcp", addr)
-		open := err == nil
-		if open {
+		open := conn != nil && err == nil
+		if conn != nil {
 			conn.Close()
 		}
 		results = append(results, AgentPortResult{AgentPort: ap, Open: open})
