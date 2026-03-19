@@ -961,3 +961,98 @@ func TestEngine_DeterministicRuleOrder(t *testing.T) {
 		}
 	}
 }
+
+// --- PostChecker tests ---
+
+// TestEngine_PostChecker_CalledAfterAllow verifies PostChecker is called when rules allow.
+func TestEngine_PostChecker_CalledAfterAllow(t *testing.T) {
+	engine, err := NewTestEngine([]Rule{
+		{
+			Name:    "block-env",
+			Actions: []Operation{OpRead},
+			Block:   Block{Paths: []string{"**/.env"}},
+			Message: "blocked",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	called := false
+	engine.SetPostChecker(func(call ToolCall, info ExtractedInfo) *MatchResult {
+		called = true
+		return nil // allow
+	})
+
+	// This call is NOT blocked by rules, so PostChecker should fire.
+	call := makeToolCall("Bash", map[string]any{"command": "cat README.md"})
+	result := engine.Evaluate(call)
+
+	if result.Matched {
+		t.Error("expected call to be allowed")
+	}
+	if !called {
+		t.Error("expected PostChecker to be called when rules allow")
+	}
+}
+
+// TestEngine_PostChecker_SkippedOnBlock verifies PostChecker is NOT called when rules block.
+func TestEngine_PostChecker_SkippedOnBlock(t *testing.T) {
+	engine, err := NewTestEngine([]Rule{
+		{
+			Name:    "block-env",
+			Actions: []Operation{OpRead},
+			Block:   Block{Paths: []string{"**/.env"}},
+			Message: "blocked",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	called := false
+	engine.SetPostChecker(func(call ToolCall, info ExtractedInfo) *MatchResult {
+		called = true
+		return nil
+	})
+
+	// This call IS blocked by rules, so PostChecker should NOT fire.
+	call := makeToolCall("Bash", map[string]any{"command": "cat .env"})
+	result := engine.Evaluate(call)
+
+	if !result.Matched {
+		t.Error("expected call to be blocked by rule")
+	}
+	if called {
+		t.Error("PostChecker should NOT be called when rules already blocked the call")
+	}
+}
+
+// TestEngine_PostChecker_CanBlock verifies PostChecker can convert allow to block.
+func TestEngine_PostChecker_CanBlock(t *testing.T) {
+	engine, err := NewTestEngine(nil) // no rules
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	engine.SetPostChecker(func(call ToolCall, info ExtractedInfo) *MatchResult {
+		m := NewMatch("plugin:sandbox", SeverityHigh, ActionBlock, "sandbox denied")
+		return &m
+	})
+
+	call := makeToolCall("Bash", map[string]any{"command": "ls /tmp"})
+	result := engine.Evaluate(call)
+
+	if !result.Matched {
+		t.Fatal("expected PostChecker to block the call")
+	}
+	if result.RuleName != "plugin:sandbox" {
+		t.Errorf("expected rule 'plugin:sandbox', got %q", result.RuleName)
+	}
+	if result.Action != ActionBlock {
+		t.Errorf("expected action block, got %q", result.Action)
+	}
+	if result.Message != "sandbox denied" {
+		t.Errorf("expected message 'sandbox denied', got %q", result.Message)
+	}
+}

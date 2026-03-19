@@ -2,14 +2,16 @@
 
 ## Overview
 
-Plugins are **post-engine protection layers** that operate after the built-in 14-step evaluation pipeline decides to allow a tool call. They do not re-evaluate rules — they **enforce** policy at a different layer (e.g., OS-level sandboxing at exec time).
+Plugins are **post-engine protection layers** (PostChecker) that run after the built-in 14-step evaluation pipeline decides to allow a tool call. They do not re-evaluate rules — they provide **additional checks** at a different layer (e.g., sandbox policy validation, rate limiting, compliance enforcement).
 
 ```text
-Tool Call ──▶ [Steps 1-14: Engine Pipeline] ──▶ allowed? ──▶ [Exec Time: Plugins] ──▶ Command Runs
+Tool Call ──▶ [Steps 1-14: Engine Pipeline] ──▶ allowed? ──▶ [PostChecker: Plugins] ──▶ Result
                                                     │               │
-                                                 ↓ BLOCK      enforce sandbox
-                                              (engine)        (OS-level policy)
+                                                 ↓ BLOCK      block or allow
+                                              (engine)        (plugin decision)
 ```
+
+Plugins are wired into the engine via `PostChecker`, so **all evaluation paths** (PreToolUse hook, HTTP proxy, MCP/ACP wrap) automatically consult plugins — no per-caller wiring needed.
 
 Plugins can implement sandboxing, rate limiting, audit logging, custom policy enforcement, or any other protection logic. They receive the same extracted information that the built-in pipeline computed (paths, hosts, operations, commands), plus a **read-only snapshot of all active engine rules**.
 
@@ -77,7 +79,7 @@ or on error:
 
 ### Request
 
-Sent with `method="evaluate"`. Contains everything the engine extracted during steps 1-14, plus a snapshot of all active rules:
+Sent with `method="evaluate"`. Contains everything the engine extracted during the evaluation pipeline (including interpreter code scanning), plus a snapshot of all active rules:
 
 ```json
 {
@@ -283,25 +285,42 @@ If a `ProcessPlugin`'s external process crashes or times out during IPC, it is k
 The plugin registry is created and managed by the **security manager**. After the engine's 14-step pipeline allows a tool call, plugins enforce additional policy at exec time (e.g., OS-level sandboxing).
 
 ```text
-Tool Call ──▶ [Steps 1-14: Engine Pipeline] ──▶ allowed? ──▶ [Exec Time] ──▶ Plugin (sandbox)
-                                                    │              │
-                                                 ↓ BLOCK     wraps command
-                                              (engine)    with OS-level policy
+Tool Call ──▶ [Steps 1-14: Engine Pipeline] ──▶ allowed? ──▶ [PostChecker: PostChecker] ──▶ Result
+                                                    │                   │
+                                                 ↓ BLOCK         plugin.Evaluate()
+                                              (engine)          (sandbox, rate-limiter, etc.)
 ```
 
 ### Current wiring
 
+Plugins are wired into the engine via `PostChecker` — a callback that runs after the 14-step pipeline allows a tool call. This is set during `libcrust.Init()`:
+
 ```go
-// security/manager.go — Init()
+// pkg/libcrust/libcrust.go — Init()
 pool := plugin.NewPool(0, 0)
-m.registry = plugin.NewRegistry(pool)
+reg := plugin.NewRegistry(pool)
 if sp, err := plugin.NewSandboxPlugin(); err == nil {
-    m.registry.Register(sp, nil)
+    reg.Register(sp, nil)
 }
-m.interceptor.SetRegistry(m.registry)
+pluginReg = reg
+
+// Wire as PostChecker so ALL evaluation paths get plugin coverage.
+engine.SetPostChecker(func(call rules.ToolCall, info rules.ExtractedInfo) *rules.MatchResult {
+    req := buildPluginRequest(engine, call, info)
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    pluginResult := pluginReg.Evaluate(ctx, req)
+    if pluginResult == nil {
+        return nil // plugins allow
+    }
+    m := rules.NewMatch(pluginResult.RuleName, pluginResult.Severity, pluginResult.Action, pluginResult.Message)
+    return &m
+})
 ```
 
-The registry is accessible via `manager.GetRegistry()`. The **sandbox plugin** (`plugin/sandbox.go`) is an in-process plugin that wraps the `bakelens-sandbox` binary. It builds an OS-level enforcement policy from the engine's rule snapshots, translating them into process-level sandbox constraints.
+Because PostChecker is inside `Engine.Evaluate()`, **all callers** automatically get plugin evaluation — the HTTP proxy interceptor, MCP/ACP wrap pipe, PreToolUse hook, and direct `Evaluate()` calls.
+
+The **sandbox plugin** (`plugin/sandbox.go`) is an in-process plugin that wraps the `bakelens-sandbox` binary. It builds an OS-level enforcement policy from the engine's rule snapshots, translating them into process-level sandbox constraints.
 
 Plugins are registered only when their backing binary is available on `$PATH` — graceful degradation when absent.
 
@@ -486,7 +505,7 @@ func (r *RateLimiter) Close() error { return nil }
 
 1. **Wire protocol first** — Plugins are external processes communicating over JSON stdin/stdout. Any language can implement a plugin. The Go `Plugin` interface is an internal adapter, not the primary API.
 
-2. **Late-stage only** — Plugins never weaken built-in protections. They run after all 13 built-in steps pass. A plugin can only block, never allow something the engine blocked.
+2. **Late-stage only** — Plugins never weaken built-in protections. They run after all built-in pipeline steps pass. A plugin can only block, never allow something the engine blocked.
 
 3. **First-block wins** — Plugins are evaluated concurrently. The first non-nil Result cancels remaining evaluations; when multiple plugins block simultaneously, the one with the lowest registration index wins.
 

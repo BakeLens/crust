@@ -84,6 +84,11 @@ type Engine struct {
 	// Pre-checker runs before the evaluation pipeline (e.g., self-protection).
 	preChecker func(rawJSON string) *MatchResult
 
+	// Post-checker runs after the evaluation pipeline allows a tool call.
+	// Used for late-stage plugins (sandbox, rate-limiter, etc.) that enforce
+	// additional constraints beyond the rule engine.
+	postChecker func(call ToolCall, info ExtractedInfo) *MatchResult
+
 	// Close guard
 	closeOnce sync.Once
 
@@ -101,6 +106,12 @@ type EngineConfig struct {
 	// PreChecker is called before the evaluation pipeline (e.g., self-protection).
 	// Injected at construction time to avoid circular imports with selfprotect.
 	PreChecker func(rawJSON string) *MatchResult
+
+	// PostChecker is called after the evaluation pipeline allows a tool call.
+	// Used for late-stage plugins (sandbox, rate-limiter, etc.) that enforce
+	// additional constraints beyond the rule engine.
+	// Receives the tool call and extracted info; returns non-nil to block.
+	PostChecker func(call ToolCall, info ExtractedInfo) *MatchResult
 }
 
 // RuleEvaluator is the consumer-facing interface for rule evaluation and DLP scanning.
@@ -166,14 +177,15 @@ func NewEngineWithNormalizer(ctx context.Context, cfg EngineConfig, normalizer *
 	}
 
 	e := &Engine{
-		extractor:  NewExtractorWithEnv(extEnv),
-		normalizer: normalizer,
-		loader:     loader,
-		preFilter:  NewPreFilter(),
-		dlpScanner: dlp,
-		config:     cfg,
-		preChecker: cfg.PreChecker,
-		hitCounts:  make(map[string]*int64),
+		extractor:   NewExtractorWithEnv(extEnv),
+		normalizer:  normalizer,
+		loader:      loader,
+		preFilter:   NewPreFilter(),
+		dlpScanner:  dlp,
+		config:      cfg,
+		preChecker:  cfg.PreChecker,
+		postChecker: cfg.PostChecker,
+		hitCounts:   make(map[string]*int64),
 	}
 
 	if cfg.SubprocessIsolation {
@@ -435,7 +447,16 @@ func (e *Engine) Evaluate(call ToolCall) MatchResult {
 	}
 
 	// Steps 13-14: Rule matching (operation-based + content-only fallback).
-	return e.matchRules(&info, allPaths, call.Name)
+	result := e.matchRules(&info, allPaths, call.Name)
+
+	// Step 15: Post-checker (plugins) — only consulted when rules allowed the call.
+	if !result.Matched && e.postChecker != nil {
+		if m := e.postChecker(call, info); m != nil {
+			return *m
+		}
+	}
+
+	return result
 }
 
 // validateContent runs content validation (steps 4-8): Unicode normalization,
@@ -709,6 +730,12 @@ func (e *Engine) evaluateMatchCompiled(cm *compiledMatch, info ExtractedInfo, no
 }
 
 // EvaluateJSON is a convenience method that accepts JSON arguments
+// ExtractInfo extracts paths, hosts, operation, and command from a tool call
+// without evaluating rules. Used by plugins that need the extracted info.
+func (e *Engine) ExtractInfo(call ToolCall) ExtractedInfo {
+	return e.extractor.Extract(call.Name, call.Arguments)
+}
+
 func (e *Engine) EvaluateJSON(toolName string, argsJSON string) MatchResult {
 	return e.Evaluate(ToolCall{
 		Name:      toolName,
@@ -803,6 +830,15 @@ func CountLockedBuiltinRules() int {
 		}
 	}
 	return count
+}
+
+// SetPostChecker sets (or replaces) the post-checker function.
+// This is useful when the post-checker depends on state created after
+// the engine (e.g., a plugin registry).
+func (e *Engine) SetPostChecker(fn func(call ToolCall, info ExtractedInfo) *MatchResult) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.postChecker = fn
 }
 
 // Close releases resources held by the engine (e.g. the PowerShell worker

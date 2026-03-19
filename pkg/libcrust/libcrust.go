@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/BakeLens/crust/internal/logger"
 	"github.com/BakeLens/crust/internal/plugin"
@@ -95,6 +96,26 @@ func Init(userRulesDir string) error {
 	}
 	pluginReg = reg
 
+	// Wire plugins as a PostChecker so ALL evaluation paths (HTTP proxy,
+	// MCP/ACP wrap, hook, etc.) automatically consult plugins after rules allow.
+	e.SetPostChecker(func(call rules.ToolCall, info rules.ExtractedInfo) *rules.MatchResult {
+		mu.RLock()
+		r := pluginReg
+		mu.RUnlock()
+		if r == nil {
+			return nil
+		}
+		req := buildPluginRequest(e, call, info)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		pluginResult := r.Evaluate(ctx, req)
+		if pluginResult == nil {
+			return nil
+		}
+		m := rules.NewMatch(pluginResult.RuleName, pluginResult.Severity, pluginResult.Action, pluginResult.Message)
+		return &m
+	})
+
 	return nil
 }
 
@@ -134,16 +155,42 @@ func Evaluate(toolName string, argsJSON string) string {
 		return `{"matched":false,"error":"` + errNotInitialized + `"}`
 	}
 
-	result := e.Evaluate(rules.ToolCall{
+	call := rules.ToolCall{
 		Name:      toolName,
 		Arguments: json.RawMessage(argsJSON),
-	})
+	}
+	// Engine.Evaluate now calls plugins via PostChecker automatically,
+	// so no separate plugin call is needed here.
+	result := e.Evaluate(call)
 
 	out, err := json.Marshal(result)
 	if err != nil {
 		return `{"matched":false,"error":"marshal failed"}`
 	}
 	return string(out)
+}
+
+// buildPluginRequest constructs a plugin.Request from a tool call and extracted info.
+func buildPluginRequest(e *rules.Engine, call rules.ToolCall, info rules.ExtractedInfo) plugin.Request {
+	// Build rule snapshots for plugin context.
+	engineRules := e.GetRules()
+	snapshots := make([]plugin.RuleSnapshot, len(engineRules))
+	for i := range engineRules {
+		snapshots[i] = plugin.SnapshotRule(&engineRules[i])
+	}
+
+	return plugin.Request{
+		ToolName:   call.Name,
+		Arguments:  call.Arguments,
+		Operation:  info.Operation,
+		Operations: info.Operations,
+		Command:    info.Command,
+		Paths:      info.Paths,
+		Hosts:      info.Hosts,
+		Content:    info.Content,
+		Evasive:    info.Evasive,
+		Rules:      snapshots,
+	}
 }
 
 // InterceptResponse filters tool calls from an LLM API response body.

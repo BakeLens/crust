@@ -9,9 +9,11 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/BakeLens/crust/internal/rules"
+	"github.com/gobwas/glob"
 )
 
 // ResourcePolicy defines resource limits for sandboxed processes.
@@ -154,8 +156,9 @@ func (r *ResourcePolicy) validate() error {
 	return nil
 }
 
-// Evaluate builds a sandbox policy from the request.
-// Returns nil (allow) — the policy is available for future exec-time wrapping.
+// Evaluate builds a sandbox policy from the request and checks for
+// interpreter evasion by extracting paths from the raw command string.
+// Returns nil (allow) if no evasion is detected.
 func (s *SandboxPlugin) Evaluate(ctx context.Context, req Request) *Result {
 	if req.Command == "" {
 		return nil // not an executable tool call
@@ -170,6 +173,28 @@ func (s *SandboxPlugin) Evaluate(ctx context.Context, req Request) *Result {
 			Severity: rules.SeverityHigh,
 			Action:   rules.ActionBlock,
 			Message:  fmt.Sprintf("failed to build sandbox policy: %v", err),
+		}
+	}
+
+	// Extract paths from the raw command (catches interpreter evasion).
+	// Only check if the command invokes an interpreter — avoids false
+	// positives on normal commands like "ls /usr/bin".
+	if isInterpreterCommand(req.Command) {
+		rawPaths := extractPathsFromCommand(req.Command)
+		for _, rule := range policy.Rules {
+			if len(rule.Patterns) == 0 {
+				continue
+			}
+			for _, path := range rawPaths {
+				if matchesDenyRule(rule, path) {
+					return &Result{
+						RuleName: "sandbox:" + rule.Name,
+						Severity: rules.SeverityCritical,
+						Action:   rules.ActionBlock,
+						Message:  fmt.Sprintf("Blocked: path %q matched sandbox deny rule %q (interpreter evasion)", path, rule.Name),
+					}
+				}
+			}
 		}
 	}
 
@@ -440,4 +465,103 @@ func operationsToStrings(ops []rules.Operation) []string {
 		}
 	}
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// Interpreter evasion detection
+// ---------------------------------------------------------------------------
+
+// interpreterBinaries is the set of interpreter names that can wrap arbitrary
+// commands inside code strings (e.g., python3 -c "os.system('cat /etc/shadow')").
+var interpreterBinaries = map[string]bool{
+	"python":  true,
+	"python2": true,
+	"python3": true,
+	"node":    true,
+	"ruby":    true,
+	"perl":    true,
+	"lua":     true,
+	"php":     true,
+}
+
+// isInterpreterCommand returns true if the command starts with a known
+// interpreter binary. This gates evasion detection to avoid false positives
+// on normal commands (e.g., "ls /usr/bin/python3" should not trigger).
+func isInterpreterCommand(command string) bool {
+	// Extract first token (the binary name).
+	fields := strings.Fields(command)
+	if len(fields) == 0 {
+		return false
+	}
+	bin := fields[0]
+	// Strip directory prefix: /usr/bin/python3 → python3
+	if idx := strings.LastIndex(bin, "/"); idx >= 0 {
+		bin = bin[idx+1:]
+	}
+	return interpreterBinaries[bin]
+}
+
+// pathRe matches absolute paths, tilde paths, and $HOME paths embedded
+// anywhere in a string. It intentionally avoids matching short tokens
+// like "/" alone.
+var pathRe = regexp.MustCompile(`(?:/[a-zA-Z0-9._-][a-zA-Z0-9._/-]*|~/[a-zA-Z0-9._/-]+|\$HOME/[a-zA-Z0-9._/-]+)`)
+
+// extractPathsFromCommand scans a raw command string for path-like patterns.
+// This catches paths hidden inside interpreter strings that the rule engine
+// can't extract via shell parsing (e.g., python3 -c "os.system('cat /etc/shadow')").
+//
+// Returns deduplicated paths. Does NOT return the interpreter binary path
+// itself (e.g., /usr/bin/python3) because the first token is the command,
+// not a target path.
+func extractPathsFromCommand(command string) []string {
+	matches := pathRe.FindAllString(command, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	// Deduplicate and skip the interpreter binary path (first field's path).
+	fields := strings.Fields(command)
+	interpreterPath := ""
+	if len(fields) > 0 {
+		interpreterPath = fields[0]
+	}
+
+	seen := make(map[string]bool, len(matches))
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if m == interpreterPath {
+			continue
+		}
+		if !seen[m] {
+			seen[m] = true
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// matchesDenyRule checks if a path matches any of the rule's deny patterns
+// and is not excluded by the rule's except patterns. Uses the same glob
+// library (gobwas/glob) as the rule engine's Matcher.
+func matchesDenyRule(rule DenyRule, path string) bool {
+	for _, pattern := range rule.Patterns {
+		g, err := glob.Compile(pattern, '/')
+		if err != nil {
+			continue
+		}
+		if g.Match(path) {
+			// Check exceptions.
+			for _, exc := range rule.Except {
+				eg, err := glob.Compile(exc, '/')
+				if err != nil {
+					continue
+				}
+				if eg.Match(path) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
 }
