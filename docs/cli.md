@@ -22,9 +22,9 @@ crust list-rules --reload                   # Force reload all rules
 
 # MCP / ACP Proxies (see [MCP setup guide](mcp.md), [ACP setup guide](acp.md))
 crust wrap [flags] -- <cmd...>              # Auto-detect MCP or ACP (stdio proxy)
-crust doctor                                # Diagnostics + MCP config scan
-crust wrap [flags] -- <cmd...>              # Auto-detect MCP or ACP (stdio)
+
 # Diagnostics
+crust doctor                                # Diagnostics + MCP config scan
 crust doctor [--timeout 5s] [--retries N]   # Check providers + scan for unguarded agents
 crust doctor --report                       # Generate sanitized report for GitHub issues
 

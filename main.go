@@ -5,15 +5,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
-	"os/signal"
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/BakeLens/crust/internal/earlyinit" // side-effect import: init() runs before bubbletea's via dependency order + lexicographic tie-breaking
@@ -31,9 +27,7 @@ import (
 	"github.com/BakeLens/crust/internal/mcpdiscover"
 	"github.com/BakeLens/crust/internal/mcpgateway"
 	"github.com/BakeLens/crust/internal/rules"
-	"github.com/BakeLens/crust/internal/security"
 	"github.com/BakeLens/crust/internal/selfprotect"
-	"github.com/BakeLens/crust/internal/telemetry"
 	"github.com/BakeLens/crust/internal/tui"
 	"github.com/BakeLens/crust/internal/tui/banner"
 	"github.com/BakeLens/crust/internal/tui/dashboard"
@@ -42,7 +36,6 @@ import (
 	"github.com/BakeLens/crust/internal/tui/rulelist"
 	"github.com/BakeLens/crust/internal/tui/spinner"
 	"github.com/BakeLens/crust/internal/tui/startup"
-	"github.com/BakeLens/crust/internal/types"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -269,43 +262,19 @@ func runStart(args []string) {
 	}
 
 	// Build args for daemon process
-	// SECURITY: Secrets (API key, DB key) are passed via environment variables only,
-	// not CLI args, to avoid exposure in ps/proc. See Daemonize() for env propagation.
-	daemonArgs := []string{
-		"start",
-		"--config", *configPath,
-	}
-	if startupCfg.EndpointURL != "" {
-		daemonArgs = append(daemonArgs, "--endpoint", startupCfg.EndpointURL)
-	}
-	if startupCfg.AutoMode {
-		daemonArgs = append(daemonArgs, "--auto")
-	}
-	if *logLevel != "" {
-		daemonArgs = append(daemonArgs, "--log-level", *logLevel)
-	}
-	if *noColor {
-		daemonArgs = append(daemonArgs, "--no-color")
-	}
-	if startupCfg.DisableBuiltinRules {
-		daemonArgs = append(daemonArgs, "--disable-builtin")
-	}
-	// Pass advanced options
-	if startupCfg.ProxyPort > 0 {
-		daemonArgs = append(daemonArgs, "--proxy-port", strconv.Itoa(startupCfg.ProxyPort))
-	}
-	if *listenAddr != "" {
-		daemonArgs = append(daemonArgs, "--listen-address", *listenAddr)
-	}
-	if startupCfg.TelemetryEnabled {
-		daemonArgs = append(daemonArgs, "--telemetry=true")
-	}
-	if startupCfg.RetentionDays > 0 {
-		daemonArgs = append(daemonArgs, "--retention-days", strconv.Itoa(startupCfg.RetentionDays))
-	}
-	if *blockMode != "" {
-		daemonArgs = append(daemonArgs, "--block-mode", *blockMode)
-	}
+	daemonArgs := daemon.StartArgs{
+		ConfigPath:     *configPath,
+		EndpointURL:    startupCfg.EndpointURL,
+		AutoMode:       startupCfg.AutoMode,
+		LogLevel:       *logLevel,
+		NoColor:        *noColor,
+		DisableBuiltin: startupCfg.DisableBuiltinRules,
+		ProxyPort:      startupCfg.ProxyPort,
+		ListenAddr:     *listenAddr,
+		Telemetry:      startupCfg.TelemetryEnabled,
+		RetentionDays:  startupCfg.RetentionDays,
+		BlockMode:      *blockMode,
+	}.BuildArgs()
 
 	// Persist secrets to keystore only when the user explicitly provided
 	// values via CLI flags or the TUI prompt. Auto-generated values (DB key)
@@ -381,252 +350,34 @@ func runStart(args []string) {
 	}
 }
 
-// runDaemon runs the actual server (called in daemon process)
+// runDaemon runs the actual server (called in daemon process).
+// It delegates to daemon.RunServer after configuring logger colors.
 func runDaemon(cfg *config.Config, logLevel string, disableBuiltin bool, endpoint, apiKey, dbKey string,
 	proxyPort int, listenAddr string, telemetryEnabled bool, retentionDays int, blockMode string, autoMode bool) {
-	// Write PID file
-	if err := daemon.WritePID(); err != nil {
-		tui.PrintError(fmt.Sprintf("Failed to write PID file: %v", err))
-		os.Exit(1)
-	}
-	defer daemon.CleanupPID()
-
-	// Configure logger
-	if logLevel != "" {
-		logger.SetGlobalLevelFromString(logLevel)
-	} else {
-		logger.SetGlobalLevelFromString(string(cfg.Server.LogLevel))
-	}
 	// Enable logger colors in foreground mode when stderr is a TTY.
 	// Daemon mode (re-executed process) writes to log files — no colors.
 	if !earlyinit.Foreground || !term.IsTerminal(int(os.Stderr.Fd())) { //nolint:gosec // Fd() fits int
 		logger.SetColored(false)
 	}
 
-	// Apply command-line overrides
-	if endpoint != "" {
-		cfg.Upstream.URL = endpoint
-	}
-	if apiKey != "" {
-		cfg.Upstream.APIKey = apiKey
-	}
-	if dbKey != "" {
-		cfg.Storage.EncryptionKey = dbKey
-	}
-	if disableBuiltin {
-		cfg.Rules.DisableBuiltin = true
-	}
-	// Apply advanced options
-	if proxyPort > 0 {
-		cfg.Server.Port = proxyPort
-	}
-	if telemetryEnabled {
-		cfg.Telemetry.Enabled = true
-	}
-	if retentionDays > 0 {
-		cfg.Telemetry.RetentionDays = retentionDays
-	}
-	if blockMode != "" {
-		parsed, err := types.ParseBlockMode(blockMode)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: invalid --block-mode %q: must be 'remove' or 'replace'\n", blockMode)
-			os.Exit(1)
-		}
-		cfg.Security.BlockMode = parsed
-	}
-
-	// Validate config AFTER all CLI overrides have been applied
-	if err := cfg.Validate(); err != nil {
-		tui.PrintError(fmt.Sprintf("Configuration error:\n%v", err))
-		os.Exit(1)
-	}
-
-	// Write port file so `crust wrap` can discover the proxy port
-	if err := daemon.WritePort(cfg.Server.Port); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write port file: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Patch known agent configs to point at the proxy (restored on shutdown).
-	// The defer ensures restoration on normal shutdown; if the daemon crashes
-	// before defers run, `crust stop` performs a best-effort restore.
-	daemon.PatchAgentConfigs(cfg.Server.Port)
-	defer daemon.RestoreAgentConfigs()
-
-	log.Info("Starting Crust daemon...")
-
-	// engineCtx controls the lifetime of worker subprocesses (shell, pwsh).
-	// Canceled at shutdown to ensure orphaned workers are cleaned up.
-	engineCtx, engineCancel := context.WithCancel(context.Background())
-	defer engineCancel()
-
-	// Initialize rules engine
-	var ruleWatcher *rules.Watcher
-	rulesDir := cfg.Rules.UserDir
-	if rulesDir == "" {
-		rulesDir = rules.DefaultUserRulesDir()
-	}
-
-	if cfg.Rules.Enabled {
-		engineCfg := rules.EngineConfig{
-			UserRulesDir:        rulesDir,
-			DisableBuiltin:      cfg.Rules.DisableBuiltin,
-			SubprocessIsolation: true,
-			PreChecker:          selfprotect.Check,
-		}
-
-		ruleEngine, err := rules.NewEngine(engineCtx, engineCfg)
-		if err != nil {
-			log.Error("Failed to initialize rules engine: %v", err)
-			os.Exit(1)
-		}
-
-		rules.SetGlobalEngine(ruleEngine)
-		log.Info("Rules engine: %d rules loaded", ruleEngine.RuleCount())
-
-		if cfg.Rules.Watch {
-			ruleWatcher, err = rules.NewWatcher(ruleEngine)
-			if err != nil {
-				log.Warn("Failed to create rule watcher: %v", err)
-			} else {
-				if err := ruleWatcher.Start(); err != nil {
-					log.Warn("Failed to start rule watcher: %v", err)
-				}
-			}
-		}
-
-	}
-
-	// Derive socket path for management API (unique per proxy port for multi-session)
-	socketPath := cfg.API.SocketPath
-	if socketPath == "" {
-		socketPath = daemon.SocketFile(cfg.Server.Port)
-	}
-
-	// Initialize manager
-	managerCfg := security.Config{
-		DBPath:          cfg.Storage.DBPath,
-		DBKey:           cfg.Storage.EncryptionKey,
-		SocketPath:      socketPath,
-		SecurityEnabled: cfg.Security.Enabled,
-		RetentionDays:   cfg.Telemetry.RetentionDays,
-		BufferStreaming: cfg.Security.BufferStreaming,
-		MaxBufferEvents: cfg.Security.MaxBufferEvents,
-		BufferTimeout:   cfg.Security.BufferTimeout,
-		BlockMode:       cfg.Security.BlockMode,
-	}
-
-	manager, err := security.Init(managerCfg)
-	if err != nil {
-		log.Error("Failed to initialize manager: %v", err)
-		os.Exit(1)
-	}
-	defer func() {
-		if ruleWatcher != nil {
-			_ = ruleWatcher.Stop()
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = manager.Shutdown(ctx)
-	}()
-
-	// Initialize telemetry
-	if cfg.Telemetry.Enabled {
-		telemetryCfg := telemetry.Config{
-			Enabled:     cfg.Telemetry.Enabled,
-			ServiceName: cfg.Telemetry.ServiceName,
-			SampleRate:  cfg.Telemetry.SampleRate,
-		}
-		tp, err := telemetry.Init(context.Background(), telemetryCfg)
-		if err != nil {
-			log.Error("Failed to initialize telemetry: %v", err)
-			os.Exit(1)
-		}
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = tp.Shutdown(ctx)
-		}()
-	}
-
-	// Create proxy
-	proxyHandler, err := httpproxy.NewProxy(cfg.Upstream.URL, cfg.Upstream.APIKey, time.Duration(cfg.Upstream.Timeout)*time.Second, cfg.Upstream.Providers, autoMode)
-	if err != nil {
-		log.Error("Failed to create proxy: %v", err)
-		os.Exit(1)
-	}
-
-	// Create HTTP server
-	mux := http.NewServeMux()
-	if listenAddr != "" && listenAddr != "127.0.0.1" && listenAddr != "localhost" {
-		// Expose management API on proxy port for remote access (Docker/container mode).
-		// On localhost, the Unix socket is used instead (more secure).
-		// Register only management API sub-paths so that /api/v1/... from
-		// LLM clients (e.g. IDE plugins) falls through to the proxy handler.
-		mgmtHandler := manager.APIHandler()
-		for _, prefix := range security.APIPrefixes() {
-			mux.Handle(prefix, mgmtHandler)
-		}
-	}
-	mux.Handle("/", proxyHandler)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
+	err := daemon.RunServer(daemon.ServerConfig{
+		Cfg:              cfg,
+		LogLevel:         logLevel,
+		DisableBuiltin:   disableBuiltin,
+		Endpoint:         endpoint,
+		APIKey:           apiKey,
+		DBKey:            dbKey,
+		ProxyPort:        proxyPort,
+		ListenAddr:       listenAddr,
+		TelemetryEnabled: telemetryEnabled,
+		RetentionDays:    retentionDays,
+		BlockMode:        blockMode,
+		AutoMode:         autoMode,
 	})
-
-	bindAddr := "127.0.0.1"
-	if listenAddr != "" {
-		bindAddr = listenAddr
+	if err != nil {
+		tui.PrintError(err.Error())
+		os.Exit(1)
 	}
-
-	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", bindAddr, cfg.Server.Port),
-		Handler: loggingMiddleware(mux),
-		// SECURITY FIX: Add ReadHeaderTimeout to prevent Slowloris attacks
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       time.Duration(cfg.Upstream.Timeout) * time.Second,
-		WriteTimeout:      0, // Must be 0 for SSE streaming (it's a deadline, not idle timeout)
-	}
-
-	log.Info("Crust listening on %s:%d", bindAddr, cfg.Server.Port)
-	if autoMode {
-		log.Info("  Mode: auto (provider resolved from model name)")
-		if cfg.Upstream.URL != "" {
-			log.Info("  Fallback upstream: %s", cfg.Upstream.URL)
-		}
-	} else {
-		log.Info("  Upstream: %s", cfg.Upstream.URL)
-	}
-	log.Info("  API: %s", socketPath)
-
-	// Register signal handler before starting the server to avoid a race
-	// where a signal arrives between ListenAndServe and signal.Notify.
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
-
-	// Start server
-	serverErr := make(chan error, 1)
-	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			serverErr <- err
-		}
-	}()
-	select {
-	case <-quit:
-	case err := <-serverErr:
-		log.Error("Server error: %v", err)
-	}
-
-	log.Info("Shutting down...")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		log.Error("Server forced to shutdown: %v", err)
-	}
-
-	log.Info("Crust stopped")
 }
 
 // runStop handles the stop subcommand
@@ -827,20 +578,6 @@ func runLogs(args []string) {
 	if err := logview.View(logFile, *lines, *follow); err != nil {
 		tui.PrintError("No logs found. Is crust running?")
 	}
-}
-
-func loggingMiddleware(next http.Handler) http.Handler {
-	httpLog := logger.New("http")
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		httpLog.Debug("%s %s from %s (%v)", r.Method, r.URL.Path, r.RemoteAddr, time.Since(start))
-	})
 }
 
 func printUsage() {
@@ -1190,44 +927,7 @@ func runMcpHTTP(args []string) {
 	}
 
 	engine := loadEngine("mcp http", cf, false)
-
-	gw, err := mcpgateway.NewHTTPGateway(*upstream, engine)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "crust mcp http: %v\n", err)
-		os.Exit(1)
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-	mux.Handle("/", gw)
-
-	srv := &http.Server{
-		Addr:              *listen,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	mcpLog := logger.New("mcp.http")
-	mcpLog.Info("Starting MCP HTTP gateway: listen=%s upstream=%s rules=%d",
-		*listen, *upstream, engine.RuleCount())
-
-	// Graceful shutdown on SIGINT/SIGTERM
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	go func() {
-		<-ctx.Done()
-		mcpLog.Info("Shutting down MCP HTTP gateway...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		//nolint:errcheck // best-effort shutdown
-		srv.Shutdown(shutdownCtx)
-	}()
-
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := mcpgateway.ServeHTTPGateway(*upstream, *listen, engine); err != nil {
 		fmt.Fprintf(os.Stderr, "crust mcp http: %v\n", err)
 		os.Exit(1)
 	}
@@ -1488,37 +1188,26 @@ func runDoctor(args []string) {
 	dryRun := doctorFlags.Bool("dry-run", false, "Diagnose without making changes")
 	_ = doctorFlags.Parse(args)
 
-	// Load config for user-defined providers (no daemon needed)
-	cfg, err := config.Load(*configPath)
-	if err != nil {
-		cfg = config.DefaultConfig()
-	}
-
-	var issuesFixed, issuesFound int
+	result := cli.RunDoctor(cli.DoctorOptions{
+		ConfigPath: *configPath,
+		DryRun:     *dryRun,
+	})
 
 	// --- Provider Diagnostics ---
 	fmt.Println()
 	fmt.Println(tui.Separator("Provider Diagnostics"))
 	fmt.Println()
 
-	results := httpproxy.RunDoctor(httpproxy.DoctorOptions{
-		Timeout:       5 * time.Second,
-		Retries:       1,
-		UserProviders: cfg.Upstream.Providers,
-	})
-
 	var okCount, warnCount, errCount int
-	for _, r := range results {
+	for _, r := range result.ProviderResults {
 		printDoctorResult(r)
 		switch r.Status {
 		case httpproxy.StatusOK:
 			okCount++
 		case httpproxy.StatusAuthError:
 			warnCount++
-			issuesFound++
 		case httpproxy.StatusPathError, httpproxy.StatusConnError, httpproxy.StatusOtherError:
 			errCount++
-			issuesFound++
 		}
 	}
 
@@ -1536,33 +1225,33 @@ func runDoctor(args []string) {
 	fmt.Println()
 	fmt.Println(tui.Separator("Agent Security Scan"))
 	fmt.Println()
-	scanAgentPorts(5 * time.Second)
+
+	var agentFound int
+	for _, ap := range result.AgentPorts {
+		if ap.Open {
+			agentFound++
+			tui.PrintWarning(fmt.Sprintf("%s detected on :%d — not guarded by Crust", ap.Name, ap.Port))
+			fmt.Printf("  → %s\n\n", ap.HintCmd)
+		}
+	}
+	if agentFound == 0 {
+		tui.PrintSuccess("No unguarded agent servers detected")
+	}
 
 	// --- Rule Linting ---
 	fmt.Println()
 	fmt.Println(tui.Separator("Rule Linting"))
 	fmt.Println()
 
-	rulesDir := cfg.Rules.UserDir
-	if rulesDir == "" {
-		rulesDir = rules.DefaultUserRulesDir()
-	}
-	loader := rules.NewLoader(rulesDir)
-	userRules, loadErr := loader.LoadUser()
-	if loadErr != nil {
-		tui.PrintWarning(fmt.Sprintf("Failed to load user rules: %v", loadErr))
-	}
-	if len(userRules) == 0 {
+	if result.UserRuleCount == 0 {
 		tui.PrintInfo("No user rules installed")
-	} else {
-		linter := rules.NewLinter()
-		lintResult := linter.LintRules(userRules)
-		if lintResult.Errors > 0 || lintResult.Warns > 0 {
-			fmt.Print(lintResult.FormatIssues(false))
-			issuesFound += lintResult.Errors + lintResult.Warns
-			tui.PrintWarning(fmt.Sprintf("%d error(s), %d warning(s) in user rules", lintResult.Errors, lintResult.Warns))
+	} else if result.LintResult != nil {
+		lr := result.LintResult
+		if lr.Errors > 0 || lr.Warns > 0 {
+			fmt.Print(lr.FormatIssues(false))
+			tui.PrintWarning(fmt.Sprintf("%d error(s), %d warning(s) in user rules", lr.Errors, lr.Warns))
 		} else {
-			tui.PrintSuccess(fmt.Sprintf("All %d user rules valid", len(userRules)))
+			tui.PrintSuccess(fmt.Sprintf("All %d user rules valid", result.UserRuleCount))
 		}
 	}
 
@@ -1571,47 +1260,31 @@ func runDoctor(args []string) {
 	fmt.Println(tui.Separator("MCP Config Scan"))
 	fmt.Println()
 
-	mcpResult := mcpdiscover.Discover()
-
-	if len(mcpResult.Servers) == 0 && len(mcpResult.Errors) == 0 {
+	if len(result.MCPServers) == 0 && len(result.MCPErrors) == 0 {
 		tui.PrintInfo("No MCP servers found in known client configs")
 	} else {
-		// Show status of each server
-		var unpatched int
-		for _, srv := range mcpResult.Servers {
+		for _, srv := range result.MCPServers {
 			status := tui.StyleWarning.Render("unpatched")
 			if srv.AlreadyWrapped {
 				status = tui.StyleSuccess.Render("patched")
 			} else if srv.Transport == mcpdiscover.TransportHTTP {
 				status = tui.StyleMuted.Render("http (skip)")
-			} else {
-				unpatched++
 			}
 			fmt.Printf("  %s  %s  %s\n", status, tui.StyleBold.Render(srv.Name), commandSummary(srv))
 		}
-		for _, e := range mcpResult.Errors {
+		for _, e := range result.MCPErrors {
 			tui.PrintWarning(fmt.Sprintf("%s: %v", e.ConfigPath, e.Err))
 		}
 		fmt.Println()
 
-		if unpatched > 0 {
-			issuesFound += unpatched
+		if result.MCPUnpatched > 0 {
 			if *dryRun {
-				tui.PrintInfo(fmt.Sprintf("%d unpatched MCP server(s) found (dry-run: no changes made)", unpatched))
-			} else {
-				crustBin := daemon.ResolveCrustBin()
-				if crustBin == "" {
-					tui.PrintError("Cannot resolve crust binary path — skipping MCP patch")
-				} else {
-					patchResult := mcpdiscover.PatchConfigs(crustBin)
-					if patchResult.Patched > 0 {
-						issuesFixed += patchResult.Patched
-						tui.PrintSuccess(fmt.Sprintf("Patched %d MCP server(s) to route through crust wrap", patchResult.Patched))
-					}
-					for _, e := range patchResult.Errors {
-						tui.PrintWarning(fmt.Sprintf("%s: %v", e.ConfigPath, e.Err))
-					}
-				}
+				tui.PrintInfo(fmt.Sprintf("%d unpatched MCP server(s) found (dry-run: no changes made)", result.MCPUnpatched))
+			} else if result.MCPPatched > 0 {
+				tui.PrintSuccess(fmt.Sprintf("Patched %d MCP server(s) to route through crust wrap", result.MCPPatched))
+			}
+			for _, e := range result.MCPPatchErrors {
+				tui.PrintWarning(fmt.Sprintf("%s: %v", e.ConfigPath, e.Err))
 			}
 		} else {
 			tui.PrintSuccess("All MCP servers already patched")
@@ -1622,14 +1295,14 @@ func runDoctor(args []string) {
 	fmt.Println()
 	fmt.Println(tui.Separator("Summary"))
 	fmt.Println()
-	if issuesFound == 0 {
+	if result.IssuesFound == 0 {
 		tui.PrintSuccess("All checks passed")
-	} else if issuesFixed > 0 {
-		tui.PrintSuccess(fmt.Sprintf("Fixed %d issue(s), %d remaining", issuesFixed, issuesFound-issuesFixed))
+	} else if result.IssuesFixed > 0 {
+		tui.PrintSuccess(fmt.Sprintf("Fixed %d issue(s), %d remaining", result.IssuesFixed, result.IssuesFound-result.IssuesFixed))
 	} else if *dryRun {
-		tui.PrintInfo(fmt.Sprintf("Found %d issue(s) (dry-run: no changes made)", issuesFound))
+		tui.PrintInfo(fmt.Sprintf("Found %d issue(s) (dry-run: no changes made)", result.IssuesFound))
 	} else {
-		tui.PrintWarning(fmt.Sprintf("Found %d issue(s)", issuesFound))
+		tui.PrintWarning(fmt.Sprintf("Found %d issue(s)", result.IssuesFound))
 	}
 }
 
@@ -1663,7 +1336,6 @@ func printDoctorResult(r httpproxy.DoctorResult) {
 		style = tui.StyleError
 	}
 
-	// Pad raw name before styling so column width counts visible chars, not ANSI codes.
 	name := r.Name
 	if r.IsUser {
 		name += " *"
@@ -1672,41 +1344,6 @@ func printDoctorResult(r httpproxy.DoctorResult) {
 	fmt.Printf("  %s %s %s\n", style.Render(icon), tui.StyleBold.Render(paddedName), tui.Faint(r.URL))
 	fmt.Printf("    %s  %s %s\n", style.Render(tag), r.Diagnosis, tui.Faint(latency))
 	fmt.Println()
-}
-
-// agentPort describes a well-known AI agent localhost server.
-type agentPort struct {
-	Port    int
-	Name    string
-	HintCmd string // suggested crust command
-}
-
-// knownAgentPorts lists common AI agent servers that expose localhost HTTP/WebSocket.
-var knownAgentPorts = []agentPort{
-	{3000, "OpenClaw", "crust mcp http --listen :3000 --upstream http://localhost:3001"},
-	{6274, "MCP Inspector", "crust mcp http --listen :6274 --upstream http://localhost:6275"},
-	{6277, "MCP Inspector (SSE)", "crust mcp http --listen :6277 --upstream http://localhost:6278"},
-}
-
-// scanAgentPorts checks if known agent servers are listening on localhost
-// without Crust protection, and warns the user.
-func scanAgentPorts(timeout time.Duration) {
-	dialer := &net.Dialer{Timeout: timeout}
-	var found int
-	for _, ap := range knownAgentPorts {
-		addr := fmt.Sprintf("127.0.0.1:%d", ap.Port)
-		conn, err := dialer.DialContext(context.Background(), "tcp", addr)
-		if err != nil {
-			continue // not listening
-		}
-		conn.Close()
-		found++
-		tui.PrintWarning(fmt.Sprintf("%s detected on :%d — not guarded by Crust", ap.Name, ap.Port))
-		fmt.Printf("  → %s\n\n", ap.HintCmd)
-	}
-	if found == 0 {
-		tui.PrintSuccess("No unguarded agent servers detected")
-	}
 }
 
 // runCompletion handles the completion subcommand
