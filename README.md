@@ -223,7 +223,7 @@ Mobile and desktop rules are unified using virtual paths (`mobile://`) — the s
 
 ### Built-in Rules
 
-Crust ships with **33 security rules** (30 locked, 3 user-disablable) and **46 DLP token-detection patterns** out of the box:
+Crust ships with **34 security rules** (31 locked, 3 user-disablable) and **46 DLP token-detection patterns** out of the box:
 
 | Category | What's Protected |
 |----------|-----------------|
@@ -244,7 +244,7 @@ Crust ships with **33 security rules** (30 locked, 3 user-disablable) and **46 D
 
 All rules are open source: [`internal/rules/builtin/security.yaml`](internal/rules/builtin/security.yaml) (path rules), [`internal/rules/dlp.go`](internal/rules/dlp.go) (DLP patterns), and [`internal/rules/dlp_crypto.go`](internal/rules/dlp_crypto.go) (crypto key detection)
 
-These defenses are validated against [**45 real-world CVEs**](docs/cve-tracker.md) affecting Cursor, GitHub Copilot, Claude Code, OpenAI Codex CLI, and other AI agents — including prompt injection, config hijacking, and token exfiltration attacks.
+These defenses are validated against [**50 real-world CVEs**](docs/cve-tracker.md) affecting Cursor, GitHub Copilot, Claude Code, OpenAI Codex CLI, and other AI agents — including prompt injection, config hijacking, env var poisoning, and token exfiltration attacks.
 
 ### Custom Rules
 

@@ -391,6 +391,21 @@ rules:
     severity: high
 
   # ===========================================================================
+  # 16b. ENVIRONMENT VARIABLE POISONING DETECTION
+  # Blocks setting security-sensitive environment variables that enable
+  # code injection through legitimate-looking command chains.
+  #
+  # CVE-2026-22708: Cursor Auto-Run bypass via export/typeset env poisoning
+  # Attack: export PERL5OPT="-Mbase;system('id');exit" → python3 → webbrowser → perl → RCE
+  # ===========================================================================
+  - name: detect-env-var-poisoning
+    locked: true
+    match:
+      content: "re:\\b(?:export|typeset|declare|readonly)\\s+(?:-[a-zA-Z]+\\s+)*(PERL5OPT|PYTHONWARNINGS|PYTHONSTARTUP|PYTHONPATH|RUBYOPT|NODE_OPTIONS|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_FRAMEWORK_PATH|GIT_SSH_COMMAND|BROWSER|EDITOR|VISUAL|PAGER|PROMPT_COMMAND|BASH_ENV|ENV|ZDOTDIR|FPATH)\\s*="
+    message: "Blocked: setting security-sensitive environment variables can enable code injection (CVE-2026-22708)."
+    severity: critical
+
+  # ===========================================================================
   # 17. SYSTEM CONFIGURATION PROTECTION
   # Protects critical OS config files from agent tampering.
   # Read is allowed (debugging); only writes/deletes are blocked.

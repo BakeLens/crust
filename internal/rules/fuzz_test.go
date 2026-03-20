@@ -329,6 +329,7 @@ func FuzzExtractBashCommand(f *testing.F) {
 // COVERS: protect-system-auth
 // COVERS: protect-system-config
 // COVERS: protect-persistence
+// COVERS: detect-env-var-poisoning
 // COVERS: detect-reverse-shell
 // COVERS: block-ssrf-metadata
 // COVERS: protect-agent-config
