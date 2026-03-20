@@ -5,9 +5,8 @@ package security
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
-
-	"github.com/gin-gonic/gin"
 
 	"github.com/BakeLens/crust/internal/agentdetect"
 	"github.com/BakeLens/crust/internal/api"
@@ -18,33 +17,25 @@ import (
 	"github.com/BakeLens/crust/internal/telemetry"
 )
 
-// APIServer handles HTTP API requests for security management and telemetry
+// APIServer handles HTTP API requests for security management and telemetry.
 type APIServer struct {
 	storage      *telemetry.Storage
 	interceptor  *Interceptor
 	engine       rules.RuleEvaluator
 	manager      *Manager
 	telemetryAPI *telemetry.APIHandler
-	router       *gin.Engine
+	mux          *http.ServeMux
 }
 
-// NewAPIServer creates a new API server
+// NewAPIServer creates a new API server.
 func NewAPIServer(storage *telemetry.Storage, interceptor *Interceptor, engine rules.RuleEvaluator, manager *Manager) *APIServer {
-	gin.SetMode(gin.ReleaseMode)
-	router := gin.New()
-
-	// Apply middleware in order
-	router.Use(gin.Recovery())
-	router.Use(api.SecurityHeadersMiddleware())
-	router.Use(api.BodySizeLimitMiddleware(api.MaxBodySize)) // Limit request body size
-
 	s := &APIServer{
 		storage:      storage,
 		interceptor:  interceptor,
 		engine:       engine,
 		manager:      manager,
 		telemetryAPI: telemetry.NewAPIHandler(storage),
-		router:       router,
+		mux:          http.NewServeMux(),
 	}
 
 	s.registerRoutes()
@@ -52,12 +43,9 @@ func NewAPIServer(storage *telemetry.Storage, interceptor *Interceptor, engine r
 }
 
 // Management API route group prefixes (relative to /api).
-// Used by both registerRoutes and APIPrefixes to stay in sync.
 var apiGroups = []string{"/security", "/telemetry", "/crust"}
 
 // APIPrefixes returns the top-level path prefixes registered under /api.
-// Used by the mux in main.go to register only management routes so that
-// /api/v1/... from LLM clients falls through to the proxy handler.
 func APIPrefixes() []string {
 	prefixes := make([]string, len(apiGroups))
 	for i, g := range apiGroups {
@@ -66,90 +54,80 @@ func APIPrefixes() []string {
 	return prefixes
 }
 
-// Handler returns the HTTP handler for the API
+// Handler returns the HTTP handler with middleware applied.
 func (s *APIServer) Handler() http.Handler {
-	return s.router
+	return api.Chain(s.mux, []func(http.Handler) http.Handler{
+		api.Recovery,
+		api.SecurityHeaders,
+		func(next http.Handler) http.Handler {
+			return api.BodySizeLimit(api.MaxBodySize, next)
+		},
+	})
 }
 
 func (s *APIServer) registerRoutes() {
 	// Health check
-	s.router.GET("/health", s.handleHealth)
+	s.mux.HandleFunc("GET /health", s.handleHealth)
 
-	// API routes
-	apiGroup := s.router.Group("/api")
-	{
-		// Security routes
-		security := apiGroup.Group(apiGroups[0])
-		{
-			security.GET("/logs", s.handleLogs)
-			security.GET("/stats", s.handleStats)
-			security.GET("/status", s.handleStatus)
-			security.GET("/events/stream", s.handleEventsStream)
-			security.GET("/changes/stream", s.handleChangesStream)
-			security.GET("/plugins", s.handlePlugins)
-			security.GET("/agents", s.handleAgents)
-		}
+	// Security routes
+	s.mux.HandleFunc("GET /api/security/logs", s.handleLogs)
+	s.mux.HandleFunc("GET /api/security/stats", s.handleStats)
+	s.mux.HandleFunc("GET /api/security/status", s.handleStatus)
+	s.mux.HandleFunc("GET /api/security/events/stream", s.handleEventsStream)
+	s.mux.HandleFunc("GET /api/security/changes/stream", s.handleChangesStream)
+	s.mux.HandleFunc("GET /api/security/plugins", s.handlePlugins)
+	s.mux.HandleFunc("GET /api/security/agents", s.handleAgents)
 
-		// Telemetry routes
-		telemetryGroup := apiGroup.Group(apiGroups[1])
-		{
-			telemetryGroup.GET("/traces", s.telemetryAPI.HandleTraces)
-			telemetryGroup.GET("/traces/:trace_id", s.telemetryAPI.HandleTrace)
-			telemetryGroup.GET("/stats", s.telemetryAPI.HandleStats)
-			telemetryGroup.GET("/sessions", s.telemetryAPI.HandleSessions)
-			telemetryGroup.GET("/sessions/:session_id/events", s.telemetryAPI.HandleSessionEvents)
+	// Telemetry routes
+	s.mux.HandleFunc("GET /api/telemetry/traces", s.telemetryAPI.HandleTraces)
+	s.mux.HandleFunc("GET /api/telemetry/traces/{trace_id}", s.telemetryAPI.HandleTrace)
+	s.mux.HandleFunc("GET /api/telemetry/stats", s.telemetryAPI.HandleStats)
+	s.mux.HandleFunc("GET /api/telemetry/sessions", s.telemetryAPI.HandleSessions)
+	s.mux.HandleFunc("GET /api/telemetry/sessions/{session_id}/events", s.telemetryAPI.HandleSessionEvents)
 
-			// Stats aggregation endpoints — plain net/http handlers via StatsService
-			statsHandlers := s.telemetryAPI.StatsAggHandlers()
-			telemetryGroup.GET("/stats/trend", gin.WrapF(statsHandlers.HandleBlockTrend))
-			telemetryGroup.GET("/stats/distribution", gin.WrapF(statsHandlers.HandleDistribution))
-			telemetryGroup.GET("/stats/coverage", gin.WrapF(statsHandlers.HandleCoverage))
-		}
+	// Stats aggregation — already net/http handlers
+	statsHandlers := s.telemetryAPI.StatsAggHandlers()
+	s.mux.HandleFunc("GET /api/telemetry/stats/trend", statsHandlers.HandleBlockTrend)
+	s.mux.HandleFunc("GET /api/telemetry/stats/distribution", statsHandlers.HandleDistribution)
+	s.mux.HandleFunc("GET /api/telemetry/stats/coverage", statsHandlers.HandleCoverage)
 
-		// Rules routes (if rule engine is available)
-		if eng, ok := s.engine.(*rules.Engine); ok && eng != nil {
-			rulesAPI := rules.NewAPIHandler(eng)
-			rulesGroup := apiGroup.Group(apiGroups[2] + "/rules")
-			{
-				rulesGroup.GET("", rulesAPI.HandleRules)
-				rulesGroup.GET("/builtin", rulesAPI.HandleBuiltinRules)
-				rulesGroup.GET("/user", rulesAPI.HandleUserRules)
-				rulesGroup.DELETE("/user/:filename", rulesAPI.HandleDeleteUserRuleFile)
-				rulesGroup.POST("/reload", rulesAPI.HandleReload)
-				rulesGroup.POST("/validate", rulesAPI.HandleValidate)
-				rulesGroup.GET("/files", rulesAPI.HandleListFiles)
-				rulesGroup.POST("/files", rulesAPI.HandleAddFile)
-			}
-		}
+	// Rules routes
+	if eng, ok := s.engine.(*rules.Engine); ok && eng != nil {
+		rulesAPI := rules.NewAPIHandler(eng)
+		s.mux.HandleFunc("GET /api/crust/rules", rulesAPI.HandleRules)
+		s.mux.HandleFunc("GET /api/crust/rules/builtin", rulesAPI.HandleBuiltinRules)
+		s.mux.HandleFunc("GET /api/crust/rules/user", rulesAPI.HandleUserRules)
+		s.mux.HandleFunc("DELETE /api/crust/rules/user/{filename}", rulesAPI.HandleDeleteUserRuleFile)
+		s.mux.HandleFunc("POST /api/crust/rules/reload", rulesAPI.HandleReload)
+		s.mux.HandleFunc("POST /api/crust/rules/validate", rulesAPI.HandleValidate)
+		s.mux.HandleFunc("GET /api/crust/rules/files", rulesAPI.HandleListFiles)
+		s.mux.HandleFunc("POST /api/crust/rules/files", rulesAPI.HandleAddFile)
 	}
 }
 
-// LogsQuery represents query parameters for logs endpoint
-type LogsQuery struct {
-	// SECURITY: Added max limits to prevent resource exhaustion
-	Minutes int `form:"minutes" binding:"omitempty,min=1,max=10080"` // max 7 days
-	Limit   int `form:"limit" binding:"omitempty,min=1,max=1000"`    // reduced from 10000
+func queryInt(r *http.Request, key string, defaultVal, maxVal int) int {
+	s := r.URL.Query().Get(key)
+	if s == "" {
+		return defaultVal
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 1 {
+		return defaultVal
+	}
+	if v > maxVal {
+		return maxVal
+	}
+	return v
 }
 
-// handleLogs handles GET /api/security/logs
-func (s *APIServer) handleLogs(c *gin.Context) {
-	var query LogsQuery
-	if err := c.ShouldBindQuery(&query); err != nil {
-		api.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
+// handleLogs handles GET /api/security/logs.
+func (s *APIServer) handleLogs(w http.ResponseWriter, r *http.Request) {
+	minutes := queryInt(r, "minutes", 60, 10080)
+	limit := queryInt(r, "limit", 100, 1000)
 
-	// Set defaults
-	if query.Minutes == 0 {
-		query.Minutes = 60
-	}
-	if query.Limit == 0 {
-		query.Limit = 100
-	}
-
-	logs, err := s.storage.GetRecentLogs(c.Request.Context(), query.Minutes, query.Limit)
+	logs, err := s.storage.GetRecentLogs(r.Context(), minutes, limit)
 	if err != nil {
-		api.Error(c, http.StatusInternalServerError, "Failed to get logs")
+		api.Error(w, http.StatusInternalServerError, "Failed to get logs")
 		return
 	}
 
@@ -157,16 +135,15 @@ func (s *APIServer) handleLogs(c *gin.Context) {
 		logs = []telemetry.ToolCallLog{}
 	}
 
-	api.Success(c, telemetry.SanitizeToolCallLogs(logs))
+	api.Success(w, telemetry.SanitizeToolCallLogs(logs))
 }
 
-// handleStats handles GET /api/security/stats
-// Returns in-memory metrics for the current daemon session (not DB totals).
-func (s *APIServer) handleStats(c *gin.Context) {
+// handleStats handles GET /api/security/stats.
+func (s *APIServer) handleStats(w http.ResponseWriter, _ *http.Request) {
 	m := eventlog.GetMetrics()
 	blocked := m.ProxyRequestBlocks.Load() + m.ProxyResponseBlocks.Load()
 
-	api.Success(c, gin.H{
+	api.Success(w, map[string]any{
 		"total_tool_calls":       m.TotalToolCalls.Load(),
 		"blocked_tool_calls":     blocked,
 		"allowed_tool_calls":     m.ProxyResponseAllowed.Load(),
@@ -176,8 +153,8 @@ func (s *APIServer) handleStats(c *gin.Context) {
 	})
 }
 
-// handleStatus handles GET /api/security/status
-func (s *APIServer) handleStatus(c *gin.Context) {
+// handleStatus handles GET /api/security/status.
+func (s *APIServer) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	ruleCount := 0
 	lockedCount := 0
 	if s.engine != nil {
@@ -192,7 +169,7 @@ func (s *APIServer) handleStatus(c *gin.Context) {
 		enabled = s.interceptor.IsEnabled()
 	}
 
-	api.Success(c, gin.H{
+	api.Success(w, map[string]any{
 		"enabled":            enabled,
 		"rules_count":        ruleCount,
 		"locked_rules_count": lockedCount,
@@ -200,30 +177,20 @@ func (s *APIServer) handleStatus(c *gin.Context) {
 	})
 }
 
-// handleEventsStream handles GET /api/security/events/stream.
-// Opens an SSE connection that pushes security events in real time.
-// Events are delivered best-effort: slow clients may miss events.
-// The connection closes when the client disconnects or the server shuts down.
-//
-// SSE frame format:
-//
-//	event: security-event
-//	data: {"tool_name":"bash","was_blocked":true,"blocked_by_rule":"...","layer":"..."}
-//
-// Returns 503 if the maximum number of concurrent subscribers is reached.
-func (s *APIServer) handleEventsStream(c *gin.Context) {
+// handleEventsStream handles GET /api/security/events/stream (SSE).
+func (s *APIServer) handleEventsStream(w http.ResponseWriter, r *http.Request) {
 	id, ch, err := eventlog.Subscribe(64)
 	if err != nil {
-		c.String(http.StatusServiceUnavailable, "too many event stream connections")
+		http.Error(w, "too many event stream connections", http.StatusServiceUnavailable)
 		return
 	}
 	defer eventlog.Unsubscribe(id)
 
-	if !initSSE(c) {
+	if !initSSE(w) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	ctx := r.Context()
 	keepalive := time.NewTicker(20 * time.Second)
 	defer keepalive.Stop()
 
@@ -232,13 +199,11 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 		case <-ctx.Done():
 			return
 		case <-keepalive.C:
-			if !sseKeepalive(c) {
+			if !sseKeepalive(w) {
 				return
 			}
 		case event := <-ch:
-			// Reuse the same field mapping as record.go → telemetry.ToolCallLog,
-			// but strip Arguments for security (same as SanitizeToolCallLogs).
-			data, err := json.Marshal(gin.H{
+			data, err := json.Marshal(map[string]any{
 				"tool_name":       event.ToolName,
 				"was_blocked":     event.WasBlocked,
 				"blocked_by_rule": event.RuleName,
@@ -256,7 +221,7 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 			if err != nil {
 				continue
 			}
-			if err := mcpgateway.WriteSSEEvent(c.Writer, mcpgateway.SSEEvent{
+			if err := mcpgateway.WriteSSEEvent(w, mcpgateway.SSEEvent{
 				Type: "security-event",
 				Data: string(data),
 			}); err != nil {
@@ -266,21 +231,17 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 	}
 }
 
-// handleChangesStream handles GET /api/security/changes/stream.
-// Opens an SSE connection that streams unified change events from the monitor
-// package. Each change is sent as an SSE event where the event type is the
-// change kind (agents, event, session, protect) and the data is the JSON payload.
-// The connection closes when the client disconnects or the server shuts down.
-func (s *APIServer) handleChangesStream(c *gin.Context) {
+// handleChangesStream handles GET /api/security/changes/stream (SSE).
+func (s *APIServer) handleChangesStream(w http.ResponseWriter, r *http.Request) {
 	mon := monitor.New()
 	mon.Start()
 	defer mon.Stop()
 
-	if !initSSE(c) {
+	if !initSSE(w) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	ctx := r.Context()
 	keepalive := time.NewTicker(20 * time.Second)
 	defer keepalive.Stop()
 
@@ -289,14 +250,14 @@ func (s *APIServer) handleChangesStream(c *gin.Context) {
 		case <-ctx.Done():
 			return
 		case <-keepalive.C:
-			if !sseKeepalive(c) {
+			if !sseKeepalive(w) {
 				return
 			}
 		case change, ok := <-mon.Changes():
 			if !ok {
 				return
 			}
-			if err := mcpgateway.WriteSSEEvent(c.Writer, mcpgateway.SSEEvent{
+			if err := mcpgateway.WriteSSEEvent(w, mcpgateway.SSEEvent{
 				Type: string(change.Kind),
 				Data: string(change.Payload),
 			}); err != nil {
@@ -306,59 +267,54 @@ func (s *APIServer) handleChangesStream(c *gin.Context) {
 	}
 }
 
-// initSSE sets SSE headers, sends the initial ":connected" comment, and flushes.
-// Returns false if the initial write fails (client already disconnected).
-func initSSE(c *gin.Context) bool {
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
-	c.Writer.WriteHeader(http.StatusOK)
-	if _, err := c.Writer.Write([]byte(":connected\n\n")); err != nil {
+// initSSE sets SSE headers and sends the initial ":connected" comment.
+func initSSE(w http.ResponseWriter) bool {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write([]byte(":connected\n\n")); err != nil {
 		return false
 	}
-	if f, ok := c.Writer.(http.Flusher); ok {
+	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
 	return true
 }
 
 // sseKeepalive sends an SSE comment to prevent idle connection drops.
-// Returns false if the write fails (client disconnected).
-func sseKeepalive(c *gin.Context) bool {
-	if _, err := c.Writer.Write([]byte(":keepalive\n\n")); err != nil {
+func sseKeepalive(w http.ResponseWriter) bool {
+	if _, err := w.Write([]byte(":keepalive\n\n")); err != nil {
 		return false
 	}
-	if f, ok := c.Writer.(http.Flusher); ok {
+	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
 	return true
 }
 
 // handlePlugins handles GET /api/security/plugins.
-// Returns health stats for all registered plugins (e.g., sandbox).
-func (s *APIServer) handlePlugins(c *gin.Context) {
+func (s *APIServer) handlePlugins(w http.ResponseWriter, _ *http.Request) {
 	if s.manager == nil {
-		api.Success(c, []gin.H{})
+		api.Success(w, []map[string]any{})
 		return
 	}
 	registry := s.manager.GetRegistry()
 	if registry == nil {
-		api.Success(c, []gin.H{})
+		api.Success(w, []map[string]any{})
 		return
 	}
-	stats := registry.Stats()
-	api.Success(c, stats)
+	api.Success(w, registry.Stats())
 }
 
 // handleAgents handles GET /api/security/agents.
-// Returns detected AI agent processes and their protection status.
-func (s *APIServer) handleAgents(c *gin.Context) {
+func (s *APIServer) handleAgents(w http.ResponseWriter, _ *http.Request) {
 	agents := agentdetect.Detect()
-	c.JSON(http.StatusOK, agents)
+	api.Success(w, agents)
 }
 
-// handleHealth handles GET /health
-func (s *APIServer) handleHealth(c *gin.Context) {
-	c.String(http.StatusOK, "OK")
+// handleHealth handles GET /health.
+func (s *APIServer) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	_, _ = w.Write([]byte("OK"))
 }

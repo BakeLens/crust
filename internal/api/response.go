@@ -3,17 +3,19 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
-
-	"github.com/gin-gonic/gin"
 )
 
-// Success sends a JSON success response
-func Success(c *gin.Context, data any) {
-	c.JSON(http.StatusOK, data)
+// Success sends a JSON success response.
+func Success(w http.ResponseWriter, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data) //nolint:errcheck // best-effort JSON response
 }
 
-// Error sends a JSON error response
-func Error(c *gin.Context, status int, message string) {
-	c.JSON(status, gin.H{"error": message})
+// Error sends a JSON error response.
+func Error(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": message}) //nolint:errcheck
 }

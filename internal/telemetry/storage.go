@@ -821,14 +821,14 @@ func (s *Storage) GetSessionEvents(ctx context.Context, sessionID types.SessionI
 		limit = 50
 	}
 
-	rows, err := s.conn.QueryContext(ctx, `
-		SELECT id, timestamp, trace_id, session_id, tool_name, tool_arguments,
+	rows, err := s.conn.QueryContext(ctx,
+		`SELECT id, timestamp, trace_id, session_id, tool_name, tool_arguments,
 		       api_type, was_blocked, blocked_by_rule, model, layer
 		FROM tool_call_logs
 		WHERE session_id = ?
 		ORDER BY timestamp DESC
-		LIMIT ?
-	`, sessionID.String(), int64(limit))
+		LIMIT ?`,
+		sessionID.String(), int64(limit))
 	if err != nil {
 		return nil, fmt.Errorf("failed to query session events: %w", err)
 	}

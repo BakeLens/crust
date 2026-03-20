@@ -4,87 +4,19 @@ package telemetry
 
 import (
 	"net/http"
-
-	"github.com/gin-gonic/gin"
+	"strconv"
 
 	"github.com/BakeLens/crust/internal/api"
 	"github.com/BakeLens/crust/internal/types"
 )
 
-// SessionsQuery represents query parameters for the sessions endpoint.
-type SessionsQuery struct {
-	Minutes int `form:"minutes" binding:"omitempty,min=1,max=10080"`
-	Limit   int `form:"limit" binding:"omitempty,min=1,max=200"`
-}
-
-// SessionEventsQuery represents query parameters for the session events endpoint.
-type SessionEventsQuery struct {
-	Limit int `form:"limit" binding:"omitempty,min=1,max=200"`
-}
-
-// HandleSessions handles GET /api/telemetry/sessions
-// Returns sessions aggregated from tool_call_logs grouped by session_id.
-// Stats are per-session only — not mixed with aggregate in-memory metrics.
-func (h *APIHandler) HandleSessions(c *gin.Context) {
-	var query SessionsQuery
-	if err := c.ShouldBindQuery(&query); err != nil {
-		api.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
-	if query.Minutes == 0 {
-		query.Minutes = 60
-	}
-	if query.Limit == 0 {
-		query.Limit = 50
-	}
-
-	sessions, err := h.storage.GetSessions(c.Request.Context(), query.Minutes, query.Limit)
-	if err != nil {
-		api.Error(c, http.StatusInternalServerError, "Failed to get sessions")
-		return
-	}
-	if sessions == nil {
-		sessions = []SessionSummary{}
-	}
-	api.Success(c, sessions)
-}
-
-// HandleSessionEvents handles GET /api/telemetry/sessions/:session_id/events
-// Returns the most recent tool call events for a single session, newest-first.
-func (h *APIHandler) HandleSessionEvents(c *gin.Context) {
-	sessionID := c.Param("session_id")
-	if sessionID == "" {
-		api.Error(c, http.StatusBadRequest, "Session ID required")
-		return
-	}
-
-	var query SessionEventsQuery
-	if err := c.ShouldBindQuery(&query); err != nil {
-		api.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
-	if query.Limit == 0 {
-		query.Limit = 50
-	}
-
-	events, err := h.storage.GetSessionEvents(c.Request.Context(), types.SessionID(sessionID), query.Limit)
-	if err != nil {
-		api.Error(c, http.StatusInternalServerError, "Failed to get session events")
-		return
-	}
-	if events == nil {
-		events = []ToolCallLog{}
-	}
-	api.Success(c, SanitizeToolCallLogs(events))
-}
-
-// APIHandler handles HTTP API requests for telemetry
+// APIHandler handles HTTP API requests for telemetry.
 type APIHandler struct {
 	storage *Storage
 	stats   *StatsService
 }
 
-// NewAPIHandler creates a new telemetry API handler
+// NewAPIHandler creates a new telemetry API handler.
 func NewAPIHandler(storage *Storage) *APIHandler {
 	return &APIHandler{
 		storage: storage,
@@ -92,27 +24,70 @@ func NewAPIHandler(storage *Storage) *APIHandler {
 	}
 }
 
-// TracesQuery represents query parameters for traces endpoint
-type TracesQuery struct {
-	Limit int `form:"limit" binding:"omitempty,min=1,max=1000"` // SECURITY: reduced max
+// StatsAggHandlers returns the StatsService for registering its net/http handlers.
+func (h *APIHandler) StatsAggHandlers() *StatsService {
+	return h.stats
 }
 
-// HandleTraces handles GET /api/telemetry/traces
-func (h *APIHandler) HandleTraces(c *gin.Context) {
-	var query TracesQuery
-	if err := c.ShouldBindQuery(&query); err != nil {
-		api.Error(c, http.StatusBadRequest, err.Error())
+func queryInt(r *http.Request, key string, defaultVal, maxVal int) int {
+	s := r.URL.Query().Get(key)
+	if s == "" {
+		return defaultVal
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 1 {
+		return defaultVal
+	}
+	if v > maxVal {
+		return maxVal
+	}
+	return v
+}
+
+// HandleSessions handles GET /api/telemetry/sessions.
+func (h *APIHandler) HandleSessions(w http.ResponseWriter, r *http.Request) {
+	minutes := queryInt(r, "minutes", 60, 10080)
+	limit := queryInt(r, "limit", 50, 200)
+
+	sessions, err := h.storage.GetSessions(r.Context(), minutes, limit)
+	if err != nil {
+		api.Error(w, http.StatusInternalServerError, "Failed to get sessions")
+		return
+	}
+	if sessions == nil {
+		sessions = []SessionSummary{}
+	}
+	api.Success(w, sessions)
+}
+
+// HandleSessionEvents handles GET /api/telemetry/sessions/{session_id}/events.
+func (h *APIHandler) HandleSessionEvents(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("session_id")
+	if sessionID == "" {
+		api.Error(w, http.StatusBadRequest, "Session ID required")
 		return
 	}
 
-	// Set defaults
-	if query.Limit == 0 {
-		query.Limit = 100
-	}
+	limit := queryInt(r, "limit", 50, 200)
 
-	traces, err := h.storage.ListRecentTraces(c.Request.Context(), query.Limit)
+	events, err := h.storage.GetSessionEvents(r.Context(), types.SessionID(sessionID), limit)
 	if err != nil {
-		api.Error(c, http.StatusInternalServerError, "Failed to list traces")
+		api.Error(w, http.StatusInternalServerError, "Failed to get session events")
+		return
+	}
+	if events == nil {
+		events = []ToolCallLog{}
+	}
+	api.Success(w, SanitizeToolCallLogs(events))
+}
+
+// HandleTraces handles GET /api/telemetry/traces.
+func (h *APIHandler) HandleTraces(w http.ResponseWriter, r *http.Request) {
+	limit := queryInt(r, "limit", 100, 1000)
+
+	traces, err := h.storage.ListRecentTraces(r.Context(), limit)
+	if err != nil {
+		api.Error(w, http.StatusInternalServerError, "Failed to list traces")
 		return
 	}
 
@@ -120,7 +95,6 @@ func (h *APIHandler) HandleTraces(c *gin.Context) {
 		traces = []Trace{}
 	}
 
-	// Enrich with span counts
 	type TraceWithStats struct {
 		Trace
 		SpanCount   int   `json:"span_count"`
@@ -130,7 +104,7 @@ func (h *APIHandler) HandleTraces(c *gin.Context) {
 
 	result := make([]TraceWithStats, 0, len(traces))
 	for _, trace := range traces {
-		spans, err := h.storage.GetTraceSpans(c.Request.Context(), trace.TraceID)
+		spans, err := h.storage.GetTraceSpans(r.Context(), trace.TraceID)
 		if err != nil {
 			log.Debug("Failed to get spans for trace %s: %v", trace.TraceID, err)
 		}
@@ -152,41 +126,36 @@ func (h *APIHandler) HandleTraces(c *gin.Context) {
 		})
 	}
 
-	api.Success(c, result)
+	api.Success(w, result)
 }
 
-// HandleTrace handles GET /api/telemetry/traces/:trace_id
-func (h *APIHandler) HandleTrace(c *gin.Context) {
-	traceID := c.Param("trace_id")
+// HandleTrace handles GET /api/telemetry/traces/{trace_id}.
+func (h *APIHandler) HandleTrace(w http.ResponseWriter, r *http.Request) {
+	traceID := r.PathValue("trace_id")
 	if traceID == "" {
-		api.Error(c, http.StatusBadRequest, "Trace ID required")
+		api.Error(w, http.StatusBadRequest, "Trace ID required")
 		return
 	}
 
-	// Get spans for this trace
-	spans, err := h.storage.GetTraceSpans(c.Request.Context(), types.TraceID(traceID))
+	spans, err := h.storage.GetTraceSpans(r.Context(), types.TraceID(traceID))
 	if err != nil {
-		api.Error(c, http.StatusInternalServerError, "Failed to get spans")
+		api.Error(w, http.StatusInternalServerError, "Failed to get spans")
 		return
 	}
 
 	if spans == nil {
-		api.Error(c, http.StatusNotFound, "Trace not found")
+		api.Error(w, http.StatusNotFound, "Trace not found")
 		return
 	}
 
-	// Calculate totals from raw spans (token counts are not sensitive).
 	var totalInputTokens, totalOutputTokens int64
 	for _, span := range spans {
 		totalInputTokens += span.InputTokens
 		totalOutputTokens += span.OutputTokens
 	}
 
-	// Sanitize spans to strip sensitive attributes (input/output values,
-	// tool parameters) before returning via the management API.
 	sanitizedSpans := SanitizeSpans(spans)
 
-	// Find root span (no parent)
 	var rootSpan *Span
 	for i := range sanitizedSpans {
 		if sanitizedSpans[i].ParentSpanID.IsEmpty() {
@@ -200,7 +169,7 @@ func (h *APIHandler) HandleTrace(c *gin.Context) {
 		latencyMs = rootSpan.EndTime.Sub(rootSpan.StartTime).Milliseconds()
 	}
 
-	response := gin.H{
+	response := map[string]any{
 		"trace_id":            traceID,
 		"spans":               sanitizedSpans,
 		"span_count":          len(spans),
@@ -215,21 +184,16 @@ func (h *APIHandler) HandleTrace(c *gin.Context) {
 		response["root_span_kind"] = rootSpan.SpanKind
 	}
 
-	api.Success(c, response)
+	api.Success(w, response)
 }
 
-// HandleStats handles GET /api/telemetry/stats
-func (h *APIHandler) HandleStats(c *gin.Context) {
-	stats, err := h.storage.GetTraceStats(c.Request.Context())
+// HandleStats handles GET /api/telemetry/stats.
+func (h *APIHandler) HandleStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.storage.GetTraceStats(r.Context())
 	if err != nil {
-		api.Error(c, http.StatusInternalServerError, "Failed to get stats")
+		api.Error(w, http.StatusInternalServerError, "Failed to get stats")
 		return
 	}
 
-	api.Success(c, stats)
-}
-
-// StatsAggHandlers returns the StatsService for registering its net/http handlers.
-func (h *APIHandler) StatsAggHandlers() *StatsService {
-	return h.stats
+	api.Success(w, stats)
 }

@@ -196,11 +196,17 @@ linters:
         linters: [gosec]
         text: "G705"
 
-      # G703: os.Remove on a path returned by os.CreateTemp — the path is from
-      # the stdlib, not user input; taint analysis is overly conservative here.
-      - path: internal/rules/pwsh/
+      # G703: os.Remove / os.Lstat on validated paths — taint analysis is overly
+      # conservative; paths are validated by ValidatePathInDirectory or os.CreateTemp.
+      - path: internal/rules/
         linters: [gosec]
         text: "G703"
+
+      # G701: SQL queries with runtime-constructed strings — these use parameterized
+      # queries (?), not string interpolation; gosec taint analysis can't distinguish.
+      - path: internal/telemetry/
+        linters: [gosec]
+        text: "G701"
 
       # G117: struct fields named APIKey — these are user-provided configuration
       # fields, not hardcoded credentials; the name follows the API's own convention.

@@ -283,7 +283,7 @@ func TestForceNonStreaming(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			out := forceNonStreaming([]byte(tc.input))
+			out := ForceNonStreaming([]byte(tc.input))
 			var m map[string]json.RawMessage
 			if err := json.Unmarshal(out, &m); err != nil {
 				t.Fatalf("invalid JSON output: %v", err)
@@ -297,7 +297,7 @@ func TestForceNonStreaming(t *testing.T) {
 
 func TestForceNonStreaming_InvalidJSON(t *testing.T) {
 	input := []byte("not json")
-	out := forceNonStreaming(input)
+	out := ForceNonStreaming(input)
 	if string(out) != string(input) {
 		t.Errorf("expected unchanged input on parse error")
 	}
