@@ -22,24 +22,32 @@ var (
 
 // initPlainMode auto-detects plain mode from environment on first call.
 // Precedence: NO_COLOR > TTY detection > terminal capability detection.
+//
+// Synchronization: plainOnce gates one-time initialization. The actual
+// read/write of plainMode is protected by plainMu (acquired outside Do
+// in both initPlainMode and SetPlainMode to avoid asymmetric locking).
 func initPlainMode() {
 	plainOnce.Do(func() {
-		plainMu.Lock()
-		defer plainMu.Unlock()
 		// NO_COLOR wins — https://no-color.org
 		if _, ok := os.LookupEnv("NO_COLOR"); ok {
+			plainMu.Lock()
 			plainMode = true
+			plainMu.Unlock()
 			return
 		}
 		// Not a terminal (piped, redirected, daemon) → plain mode
 		if !term.IsTerminal(int(os.Stdout.Fd())) { //nolint:gosec // Fd() fits in int on all supported platforms
+			plainMu.Lock()
 			plainMode = true
+			plainMu.Unlock()
 			return
 		}
 		// Unknown terminal with no detected capabilities → plain mode.
 		// Known emulators and terminals with COLORTERM=truecolor get TUI.
 		if terminal.Detect().Caps == terminal.CapNone {
+			plainMu.Lock()
 			plainMode = true
+			plainMu.Unlock()
 		}
 	})
 }
@@ -47,11 +55,11 @@ func initPlainMode() {
 // SetPlainMode explicitly enables or disables plain mode.
 // Call this early (e.g. when parsing --no-color flag) before any TUI output.
 func SetPlainMode(plain bool) {
+	// Mark as initialized so auto-detect doesn't override.
+	plainOnce.Do(func() {})
 	plainMu.Lock()
 	defer plainMu.Unlock()
 	plainMode = plain
-	// Mark as initialized so auto-detect doesn't override
-	plainOnce.Do(func() {})
 }
 
 // IsPlainMode returns true if TUI styling is disabled.

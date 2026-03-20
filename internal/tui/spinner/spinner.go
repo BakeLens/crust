@@ -144,5 +144,7 @@ func RunWithSpinner(message string, successMsg string, fn func() error) error {
 		return nil
 	}
 
+	// Wait for fn goroutine to complete before returning to prevent a leak.
+	fnDone.Wait()
 	return fnErr
 }

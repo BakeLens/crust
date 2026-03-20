@@ -106,10 +106,13 @@ func RunProxy(engine rules.RuleEvaluator, cmd []string, stdin io.ReadCloser, std
 	})
 
 	// Goroutine 2: Outbound (child subprocess -> client/IDE)
+	// Error responses for blocked outbound messages go to clientWriter (the
+	// client is waiting for a response), not childWriter (the child's stdin
+	// doesn't expect error responses).
 	wg.Go(func() {
 		defer stdoutR.Close()
 		if cfg.Outbound.Convert != nil {
-			PipeInspect(log, engine, stdoutR, clientWriter, childWriter,
+			PipeInspect(log, engine, stdoutR, clientWriter, clientWriter,
 				cfg.Outbound.Convert, cfg.Outbound.Protocol, cfg.Outbound.Label)
 		} else {
 			PipePassthrough(log, stdoutR, clientWriter, cfg.Outbound.Label)

@@ -42,7 +42,9 @@ func ServeHTTPGateway(upstream, listen string, engine rules.RuleEvaluator) error
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		<-ctx.Done()
 		mcpLog.Info("Shutting down MCP HTTP gateway...")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -54,5 +56,6 @@ func ServeHTTPGateway(upstream, listen string, engine rules.RuleEvaluator) error
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}
+	<-shutdownDone
 	return nil
 }

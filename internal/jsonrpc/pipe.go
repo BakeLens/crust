@@ -52,6 +52,16 @@ const (
 	resultWriteErr                       // write error; caller should abort
 )
 
+// Writers bundles the two directional writers used by the JSON-RPC pipe.
+// Using a struct instead of two *LockedWriter params prevents accidentally
+// swapping the forward and error writers (which are the same Go type).
+type Writers struct {
+	// Forward sends allowed messages toward the destination (server or client).
+	Forward *LockedWriter
+	// Error sends JSON-RPC error responses back to the sender (on block/DLP).
+	Error *LockedWriter
+}
+
 // scanDLP checks a JSON-RPC field for leaked secrets. Returns true if blocked.
 // If id is non-empty, sends a JSON-RPC error response to errWriter.
 // For notifications (no ID), the message is dropped silently.
@@ -95,22 +105,22 @@ func forwardLine(log *logger.Logger, w *LockedWriter, data []byte, label string)
 // processMessage inspects a single JSON-RPC message and either forwards or blocks it.
 // This is the core inspection logic, reused by both the main loop and batch handler.
 func processMessage(log *logger.Logger, engine rules.RuleEvaluator, line []byte, msg *Message,
-	fwdWriter, errWriter *LockedWriter, convert MethodConverter, protocol, label string) processResult {
+	w Writers, convert MethodConverter, protocol, label string) processResult {
 
 	// Response (no method): DLP-scan only.
 	if !msg.IsRequest() && !msg.IsNotification() {
-		if scanDLP(log, engine, msg.Result, msg.ID, fwdWriter, protocol, "response") ||
-			scanDLP(log, engine, msg.Error, msg.ID, fwdWriter, protocol, "error response") {
+		if scanDLP(log, engine, msg.Result, msg.ID, w.Error, protocol, "response") ||
+			scanDLP(log, engine, msg.Error, msg.ID, w.Error, protocol, "error response") {
 			return resultBlocked
 		}
-		return forwardLine(log, fwdWriter, line, label)
+		return forwardLine(log, w.Forward, line, label)
 	}
 
 	// Notification: DLP-scan params for leaked secrets, then fall through
 	// to converter + rule evaluation (notifications with security-relevant
 	// methods like tools/call must still be inspected).
 	if msg.IsNotification() {
-		if scanDLP(log, engine, msg.Params, nil, fwdWriter, protocol,
+		if scanDLP(log, engine, msg.Params, nil, w.Error, protocol,
 			"notification method="+msg.Method) {
 			return resultBlocked
 		}
@@ -119,7 +129,7 @@ func processMessage(log *logger.Logger, engine rules.RuleEvaluator, line []byte,
 	// Request or notification with a method: convert and evaluate rules.
 	toolCall, err := convert(msg.Method, msg.Params)
 	if toolCall == nil && err == nil {
-		return forwardLine(log, fwdWriter, line, label)
+		return forwardLine(log, w.Forward, line, label)
 	}
 	if err != nil {
 		log.Warn("Blocked %s %s: %v", protocol, msg.Method, err)
@@ -135,7 +145,7 @@ func processMessage(log *logger.Logger, engine rules.RuleEvaluator, line []byte,
 		})
 
 		if msg.IsRequest() {
-			SendBlockError(log, errWriter, msg.ID, message.FormatProtocolError("malformed params for "+msg.Method))
+			SendBlockError(log, w.Error, msg.ID, message.FormatProtocolError("malformed params for "+msg.Method))
 		}
 		return resultBlocked
 	}
@@ -159,7 +169,7 @@ func processMessage(log *logger.Logger, engine rules.RuleEvaluator, line []byte,
 		log.Warn("Blocked %s %s (tool=%s): rule=%s message=%s",
 			protocol, msg.Method, toolCall.Name, result.RuleName, result.Message)
 		if msg.IsRequest() {
-			SendBlockError(log, errWriter, msg.ID,
+			SendBlockError(log, w.Error, msg.ID,
 				message.FormatJSONRPCBlock(result.RuleName, result.Message))
 		}
 		return resultBlocked
@@ -170,24 +180,24 @@ func processMessage(log *logger.Logger, engine rules.RuleEvaluator, line []byte,
 			protocol, msg.Method, toolCall.Name, result.RuleName)
 	}
 
-	return forwardLine(log, fwdWriter, line, label)
+	return forwardLine(log, w.Forward, line, label)
 }
 
 // processBatch handles a JSON-RPC batch array by inspecting each element
 // individually. Each allowed element is forwarded as an individual JSONL line.
 // MCP stdio transport is JSONL, so splitting batches is correct behavior.
 func processBatch(log *logger.Logger, engine rules.RuleEvaluator, line []byte,
-	fwdWriter, errWriter *LockedWriter, convert MethodConverter, protocol, label string) processResult {
+	w Writers, convert MethodConverter, protocol, label string) processResult {
 
 	var batch []json.RawMessage
 	if err := json.Unmarshal(line, &batch); err != nil {
 		// Not a valid JSON array — forward as-is (same as invalid JSON)
 		log.Debug("%s batch parse error: %v", label, err)
-		return forwardLine(log, fwdWriter, line, label)
+		return forwardLine(log, w.Forward, line, label)
 	}
 
 	if len(batch) == 0 {
-		return forwardLine(log, fwdWriter, line, label)
+		return forwardLine(log, w.Forward, line, label)
 	}
 
 	log.Debug("%s processing batch of %d messages", label, len(batch))
@@ -196,13 +206,13 @@ func processBatch(log *logger.Logger, engine rules.RuleEvaluator, line []byte,
 		var msg Message
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			// Element is not valid JSON-RPC — forward individually
-			if forwardLine(log, fwdWriter, raw, label) == resultWriteErr {
+			if forwardLine(log, w.Forward, raw, label) == resultWriteErr {
 				return resultWriteErr
 			}
 			continue
 		}
 
-		if processMessage(log, engine, raw, &msg, fwdWriter, errWriter, convert, protocol, label) == resultWriteErr {
+		if processMessage(log, engine, raw, &msg, w, convert, protocol, label) == resultWriteErr {
 			return resultWriteErr
 		}
 	}
@@ -222,13 +232,15 @@ func processBatch(log *logger.Logger, engine rules.RuleEvaluator, line []byte,
 func PipeInspect(log *logger.Logger, engine rules.RuleEvaluator, src io.Reader,
 	fwdWriter, errWriter *LockedWriter, convert MethodConverter, protocol, label string) {
 
+	w := Writers{Forward: fwdWriter, Error: errWriter}
+
 	scanner := bufio.NewScanner(src)
 	scanner.Buffer(make([]byte, 0, 64*1024), MaxScannerBuf)
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
-			if err := fwdWriter.WriteLine(line); err != nil {
+			if err := w.Forward.WriteLine(line); err != nil {
 				log.Debug("%s write error: %v", label, err)
 				return
 			}
@@ -239,7 +251,7 @@ func PipeInspect(log *logger.Logger, engine rules.RuleEvaluator, src io.Reader,
 		// are JSON arrays. Without this check, arrays fail to unmarshal into
 		// the Message struct and are forwarded unexamined (security bypass).
 		if line[0] == '[' {
-			if processBatch(log, engine, line, fwdWriter, errWriter, convert, protocol, label) == resultWriteErr {
+			if processBatch(log, engine, line, w, convert, protocol, label) == resultWriteErr {
 				return
 			}
 			continue
@@ -247,14 +259,14 @@ func PipeInspect(log *logger.Logger, engine rules.RuleEvaluator, src io.Reader,
 
 		var msg Message
 		if err := json.Unmarshal(line, &msg); err != nil {
-			if err := fwdWriter.WriteLine(line); err != nil {
+			if err := w.Forward.WriteLine(line); err != nil {
 				log.Debug("%s write error: %v", label, err)
 				return
 			}
 			continue
 		}
 
-		if processMessage(log, engine, line, &msg, fwdWriter, errWriter, convert, protocol, label) == resultWriteErr {
+		if processMessage(log, engine, line, &msg, w, convert, protocol, label) == resultWriteErr {
 			return
 		}
 	}

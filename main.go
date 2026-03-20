@@ -1049,7 +1049,12 @@ func commandSummary(srv mcpdiscover.MCPServer) string {
 
 // runUninstall handles the uninstall subcommand
 func runUninstall() {
-	binaryPath := "/usr/local/bin/crust"
+	// Resolve the actual binary path instead of hardcoding /usr/local/bin/crust.
+	// This handles custom install locations (e.g. ~/.local/bin, ~/go/bin).
+	binaryPath, err := os.Executable()
+	if err != nil {
+		binaryPath = "/usr/local/bin/crust"
+	}
 	dataDir := daemon.DataDir()
 
 	tui.PrintWarning("This will remove:")
@@ -1083,8 +1088,10 @@ func runUninstall() {
 	tui.PrintInfo("Removing binary...")
 	if err := os.Remove(binaryPath); err != nil {
 		if os.IsPermission(err) {
-			// Try with sudo
-			cmd := exec.CommandContext(context.Background(), "sudo", "rm", "-f", binaryPath)
+			// Try with sudo (30s timeout to avoid hanging on sudo prompt)
+			sudoCtx, sudoCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer sudoCancel()
+			cmd := exec.CommandContext(sudoCtx, "sudo", "rm", "-f", binaryPath)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			cmd.Stdin = os.Stdin

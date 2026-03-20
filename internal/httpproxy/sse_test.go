@@ -126,28 +126,31 @@ func FuzzParseSSEEventData(f *testing.F) {
 		// Must not panic
 		eventType, data := parseSSEEventData(event)
 
-		// INVARIANT 1: If the last "event:" line (per SSE spec, last value wins)
-		// has a non-empty value, eventType must be non-empty.
+		// Single-pass extraction of reference values for all invariants.
+		// Previous implementation iterated 3 times — under CPU contention
+		// this made individual fuzz iterations slow enough to race the
+		// Go fuzz framework's deadline timer (causing spurious failures).
 		var lastEventValue []byte
+		hasDataLine := false
 		for line := range bytes.SplitSeq(event, []byte("\n")) {
 			line = bytes.TrimSuffix(line, []byte("\r"))
 			if bytes.HasPrefix(line, []byte("event:")) {
 				lastEventValue = bytes.TrimSpace(bytes.TrimPrefix(line[len("event:"):], []byte(" ")))
 			}
+			if bytes.HasPrefix(line, []byte("data:")) {
+				hasDataLine = true
+			}
 		}
+
+		// INVARIANT 1: If the last "event:" line has a non-empty value,
+		// eventType must be non-empty.
 		if len(lastEventValue) > 0 && eventType == "" {
 			t.Errorf("last 'event:' line has value %q but eventType is empty", lastEventValue)
 		}
 
 		// INVARIANT 2: If any line starts with "data:", data must be non-nil.
-		for line := range bytes.SplitSeq(event, []byte("\n")) {
-			line = bytes.TrimSuffix(line, []byte("\r"))
-			if bytes.HasPrefix(line, []byte("data:")) {
-				if data == nil {
-					t.Error("input has 'data:' line but data is nil")
-				}
-				break // only need to find one
-			}
+		if hasDataLine && data == nil {
+			t.Error("input has 'data:' line but data is nil")
 		}
 
 		// INVARIANT 3: eventType must not have leading/trailing whitespace.
@@ -156,14 +159,6 @@ func FuzzParseSSEEventData(f *testing.F) {
 		}
 
 		// INVARIANT 4: If no "data:" line exists, data must be nil.
-		hasDataLine := false
-		for line := range bytes.SplitSeq(event, []byte("\n")) {
-			line = bytes.TrimSuffix(line, []byte("\r"))
-			if bytes.HasPrefix(line, []byte("data:")) {
-				hasDataLine = true
-				break
-			}
-		}
 		if !hasDataLine && data != nil {
 			t.Errorf("no 'data:' line in input but data is non-nil: %q", data)
 		}

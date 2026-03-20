@@ -219,15 +219,8 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 	}
 	defer eventlog.Unsubscribe(id)
 
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
-	c.Writer.WriteHeader(http.StatusOK)
-	// Send initial comment so clients can confirm connection is live.
-	_, _ = c.Writer.Write([]byte(":connected\n\n"))
-	if f, ok := c.Writer.(http.Flusher); ok {
-		f.Flush()
+	if !initSSE(c) {
+		return
 	}
 
 	ctx := c.Request.Context()
@@ -239,12 +232,8 @@ func (s *APIServer) handleEventsStream(c *gin.Context) {
 		case <-ctx.Done():
 			return
 		case <-keepalive.C:
-			// SSE comment keepalive — prevents idle connection drops by proxies/firewalls.
-			if _, err := c.Writer.Write([]byte(":keepalive\n\n")); err != nil {
+			if !sseKeepalive(c) {
 				return
-			}
-			if f, ok := c.Writer.(http.Flusher); ok {
-				f.Flush()
 			}
 		case event := <-ch:
 			// Reuse the same field mapping as record.go → telemetry.ToolCallLog,
@@ -287,15 +276,8 @@ func (s *APIServer) handleChangesStream(c *gin.Context) {
 	mon.Start()
 	defer mon.Stop()
 
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
-	c.Writer.WriteHeader(http.StatusOK)
-	// Send initial comment so clients can confirm connection is live.
-	_, _ = c.Writer.Write([]byte(":connected\n\n"))
-	if f, ok := c.Writer.(http.Flusher); ok {
-		f.Flush()
+	if !initSSE(c) {
+		return
 	}
 
 	ctx := c.Request.Context()
@@ -307,12 +289,8 @@ func (s *APIServer) handleChangesStream(c *gin.Context) {
 		case <-ctx.Done():
 			return
 		case <-keepalive.C:
-			// SSE comment keepalive — prevents idle connection drops by proxies/firewalls.
-			if _, err := c.Writer.Write([]byte(":keepalive\n\n")); err != nil {
+			if !sseKeepalive(c) {
 				return
-			}
-			if f, ok := c.Writer.(http.Flusher); ok {
-				f.Flush()
 			}
 		case change, ok := <-mon.Changes():
 			if !ok {
@@ -326,6 +304,35 @@ func (s *APIServer) handleChangesStream(c *gin.Context) {
 			}
 		}
 	}
+}
+
+// initSSE sets SSE headers, sends the initial ":connected" comment, and flushes.
+// Returns false if the initial write fails (client already disconnected).
+func initSSE(c *gin.Context) bool {
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
+	c.Writer.WriteHeader(http.StatusOK)
+	if _, err := c.Writer.Write([]byte(":connected\n\n")); err != nil {
+		return false
+	}
+	if f, ok := c.Writer.(http.Flusher); ok {
+		f.Flush()
+	}
+	return true
+}
+
+// sseKeepalive sends an SSE comment to prevent idle connection drops.
+// Returns false if the write fails (client disconnected).
+func sseKeepalive(c *gin.Context) bool {
+	if _, err := c.Writer.Write([]byte(":keepalive\n\n")); err != nil {
+		return false
+	}
+	if f, ok := c.Writer.(http.Flusher); ok {
+		f.Flush()
+	}
+	return true
 }
 
 // handlePlugins handles GET /api/security/plugins.

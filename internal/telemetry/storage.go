@@ -179,7 +179,7 @@ func (s *Storage) GetLayerCounts(ctx context.Context) ([]LayerCount, error) {
 	for rows.Next() {
 		var lc LayerCount
 		if err := rows.Scan(&lc.Layer, &lc.Blocked, &lc.Count); err != nil {
-			continue
+			return counts, fmt.Errorf("scan layer count: %w", err)
 		}
 		counts = append(counts, lc)
 	}

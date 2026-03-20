@@ -28,11 +28,9 @@ func resetAll() {
 	GetMetrics().Reset()
 	globalSink = globalSinkZero // clear sink
 	// Clear all subscribers
-	subscribers.Range(func(key, _ any) bool {
-		subscribers.Delete(key)
-		return true
-	})
-	subCount.Store(0)
+	subMu.Lock()
+	clear(subscribers)
+	subMu.Unlock()
 }
 
 // globalSinkZero is the zero value used to clear the atomic.Value.
@@ -529,8 +527,11 @@ func TestSubscribeUnsubscribeRace(t *testing.T) {
 	wg.Wait()
 
 	// Verify all subscribers were cleaned up
-	if cnt := subCount.Load(); cnt != 0 {
-		t.Errorf("subCount after race test = %d, want 0", cnt)
+	subMu.Lock()
+	cnt := len(subscribers)
+	subMu.Unlock()
+	if cnt != 0 {
+		t.Errorf("subscriber count after race test = %d, want 0", cnt)
 	}
 }
 

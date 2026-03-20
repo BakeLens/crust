@@ -90,16 +90,23 @@ func (g *HTTPGateway) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	log.Info("WebSocket proxied to %s (origin validated)", upURL.Host)
 
 	// Bidirectional copy — when either side closes, the other follows.
+	// Each direction's io.Copy unblocks when the source connection is closed
+	// by the other direction, preventing deadlocks.
 	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		// upstream → client: flush any buffered data from response reader first.
 		if upBuf.Buffered() > 0 {
 			//nolint:errcheck // best-effort flush
 			io.CopyN(clientConn, upBuf, int64(upBuf.Buffered()))
 		}
 		_, _ = io.Copy(clientConn, upConn)
-		clientConn.Close()
-		close(done)
+		// Half-close client to unblock the other direction's io.Copy.
+		if tc, ok := clientConn.(*net.TCPConn); ok {
+			tc.CloseWrite() //nolint:errcheck // best-effort half-close
+		} else {
+			clientConn.Close()
+		}
 	}()
 
 	// client → upstream: flush any buffered data from the hijacked reader.
@@ -111,8 +118,17 @@ func (g *HTTPGateway) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		upConn.Write(buffered)
 	}
 	_, _ = io.Copy(upConn, clientConn)
-	upConn.Close()
+	// Half-close upstream to unblock the goroutine's io.Copy.
+	if tc, ok := upConn.(*net.TCPConn); ok {
+		tc.CloseWrite() //nolint:errcheck // best-effort half-close
+	} else {
+		upConn.Close()
+	}
 	<-done
+
+	// Ensure both connections are fully closed.
+	clientConn.Close()
+	upConn.Close()
 }
 
 // isWebSocketUpgrade checks if the request is a WebSocket upgrade.

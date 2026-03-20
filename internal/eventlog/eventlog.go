@@ -202,9 +202,9 @@ const MaxSubscribers = 16
 var ErrTooManySubscribers = errors.New("too many event subscribers")
 
 var (
-	subscribers sync.Map // map[uint64]chan Event
+	subMu       sync.Mutex                    // protects subscribers map and count atomically
+	subscribers = make(map[uint64]chan Event) // guarded by subMu
 	nextSubID   atomic.Uint64
-	subCount    atomic.Int32
 )
 
 // Subscribe registers a live event listener. Events are delivered on the returned
@@ -214,22 +214,18 @@ var (
 // bufSize controls the channel buffer (clamped to minimum 1, recommended: 64).
 // Returns ErrTooManySubscribers if MaxSubscribers is reached.
 func Subscribe(bufSize int) (id uint64, ch <-chan Event, err error) {
-	// Atomic CAS loop to prevent TOCTOU race on subscriber count.
-	for {
-		cur := subCount.Load()
-		if cur >= int32(MaxSubscribers) {
-			return 0, nil, ErrTooManySubscribers
-		}
-		if subCount.CompareAndSwap(cur, cur+1) {
-			break
-		}
-	}
 	if bufSize < 1 {
 		bufSize = 1
 	}
 	c := make(chan Event, bufSize)
 	id = nextSubID.Add(1)
-	subscribers.Store(id, c)
+
+	subMu.Lock()
+	defer subMu.Unlock()
+	if len(subscribers) >= MaxSubscribers {
+		return 0, nil, ErrTooManySubscribers
+	}
+	subscribers[id] = c
 	return id, c, nil
 }
 
@@ -237,21 +233,30 @@ func Subscribe(bufSize int) (id uint64, ch <-chan Event, err error) {
 // send-on-closed-channel races with broadcast(). Callers should use context
 // cancellation to signal the subscriber goroutine to stop reading.
 func Unsubscribe(id uint64) {
-	if _, ok := subscribers.LoadAndDelete(id); ok {
-		subCount.Add(-1)
-	}
+	subMu.Lock()
+	defer subMu.Unlock()
+	delete(subscribers, id)
 }
 
 // broadcast sends an event to all subscribers. Slow subscribers are skipped
 // (non-blocking send) to prevent Record() from blocking.
 func broadcast(event Event) {
-	subscribers.Range(func(_, v any) bool {
+	subMu.Lock()
+	// Copy subscriber channels under lock, then release before sending.
+	// This keeps the critical section short and avoids holding the lock
+	// during potentially blocking channel operations.
+	subs := make([]chan Event, 0, len(subscribers))
+	for _, ch := range subscribers {
+		subs = append(subs, ch)
+	}
+	subMu.Unlock()
+
+	for _, ch := range subs {
 		select {
-		case v.(chan Event) <- event:
+		case ch <- event:
 		default: // drop if subscriber is slow
 		}
-		return true
-	})
+	}
 }
 
 // Record logs a security event to in-memory metrics and the configured sink.
