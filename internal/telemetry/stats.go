@@ -88,7 +88,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v) //nolint:errcheck
 }
 
-func writeError(w http.ResponseWriter, status int, msg string) {
+func writeError(w http.ResponseWriter, status int, msg string) { //nolint:unparam // status kept for API consistency with writeJSON
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
