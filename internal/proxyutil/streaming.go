@@ -1,4 +1,4 @@
-package libcrust
+package proxyutil
 
 import (
 	"bytes"

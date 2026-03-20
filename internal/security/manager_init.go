@@ -11,7 +11,6 @@ import (
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
 	"github.com/BakeLens/crust/internal/types"
-	"github.com/BakeLens/crust/pkg/libcrust"
 )
 
 // Config holds daemon manager configuration.
@@ -53,7 +52,7 @@ func Init(cfg Config) (*Manager, error) {
 	// Plugin registry + wire PostChecker so plugins are evaluated on every tool call.
 	registry := plugin.InitDefaultRegistry()
 	if eng, ok := cfg.Engine.(*rules.Engine); ok && eng != nil {
-		libcrust.WirePluginPostChecker(eng, registry)
+		plugin.WirePluginPostChecker(eng, registry)
 	}
 
 	// Interceptor

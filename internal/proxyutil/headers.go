@@ -1,4 +1,6 @@
-package libcrust
+// Package httputil provides shared HTTP utilities used by both the daemon
+// proxy and the libcrust mobile proxy.
+package proxyutil
 
 import (
 	"net/http"

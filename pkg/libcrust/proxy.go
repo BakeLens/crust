@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BakeLens/crust/internal/proxyutil"
+
 	"github.com/BakeLens/crust/internal/security"
 	"github.com/BakeLens/crust/internal/types"
 )
@@ -212,7 +214,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	// If streaming, force non-streaming upfront — no need to send the
 	// streaming request first just to discard it.
 	if reqBody.Stream {
-		bodyBytes = ForceNonStreaming(bodyBytes)
+		bodyBytes = proxyutil.ForceNonStreaming(bodyBytes)
 	}
 
 	// Build upstream request.
@@ -223,8 +225,8 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Copy headers, strip hop-by-hop.
-	CopyHeaders(upReq.Header, r.Header)
-	StripHopByHopHeaders(upReq.Header)
+	proxyutil.CopyHeaders(upReq.Header, r.Header)
+	proxyutil.StripHopByHopHeaders(upReq.Header)
 	upReq.ContentLength = int64(len(bodyBytes))
 	upReq.Host = target.Host
 
@@ -284,8 +286,8 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Write response back to client.
-	CopyHeaders(w.Header(), resp.Header)
-	StripHopByHopHeaders(w.Header()) // strip hop-by-hop from response too
+	proxyutil.CopyHeaders(w.Header(), resp.Header)
+	proxyutil.StripHopByHopHeaders(w.Header()) // strip hop-by-hop from response too
 	// Update Content-Length since body may have changed.
 	w.Header().Set("Content-Length", strconv.Itoa(len(respBody)))
 	w.WriteHeader(resp.StatusCode)

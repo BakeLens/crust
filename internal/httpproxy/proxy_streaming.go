@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/BakeLens/crust/internal/proxyutil"
 	"github.com/BakeLens/crust/internal/security"
 	"github.com/BakeLens/crust/internal/telemetry"
-	"github.com/BakeLens/crust/pkg/libcrust"
 )
 
 // handleStreamingRequest handles SSE streaming requests
@@ -321,5 +321,5 @@ func (p *Proxy) retryAsNonStreaming(ctx *RequestContext) (responseBody json.RawM
 
 // forceNonStreaming delegates to the shared implementation in libcrust.
 func forceNonStreaming(body []byte) []byte {
-	return libcrust.ForceNonStreaming(body)
+	return proxyutil.ForceNonStreaming(body)
 }

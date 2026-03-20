@@ -282,7 +282,7 @@ If a `ProcessPlugin`'s external process crashes or times out during IPC, it is k
 
 ## Integration
 
-The plugin registry is created via `plugin.InitDefaultRegistry()` and wired into the engine by `libcrust.WirePluginPostChecker()`. Both the daemon (`security.Init`) and the mobile library (`libcrust.Init`) use this shared path. After the engine's 14-step pipeline allows a tool call, plugins enforce additional policy at exec time (e.g., OS-level sandboxing).
+The plugin registry is created via `plugin.InitDefaultRegistry()` and wired into the engine by `plugin.WirePluginPostChecker()`. Both the daemon (`security.Init`) and the mobile library (`libcrust.Init`) use this shared path. After the engine's 14-step pipeline allows a tool call, plugins enforce additional policy at exec time (e.g., OS-level sandboxing).
 
 ```text
 Tool Call ──▶ [Steps 1-14: Engine Pipeline] ──▶ allowed? ──▶ [PostChecker] ──▶ Result
@@ -293,7 +293,7 @@ Tool Call ──▶ [Steps 1-14: Engine Pipeline] ──▶ allowed? ──▶ [
 
 ### Current wiring
 
-Plugins are wired into the engine via `PostChecker` — a callback that runs after the 14-step pipeline allows a tool call. Registry creation and wiring are shared between the daemon and libcrust via `plugin.InitDefaultRegistry()` and `libcrust.WirePluginPostChecker()`:
+Plugins are wired into the engine via `PostChecker` — a callback that runs after the 14-step pipeline allows a tool call. Both functions live in `internal/plugin/`:
 
 ```go
 // internal/plugin/registry.go — InitDefaultRegistry()
@@ -306,10 +306,10 @@ func InitDefaultRegistry() *Registry {
     return reg
 }
 
-// pkg/libcrust/plugins.go — WirePluginPostChecker()
-func WirePluginPostChecker(engine *rules.Engine, registry *plugin.Registry) {
+// internal/plugin/wire.go — WirePluginPostChecker()
+func WirePluginPostChecker(engine *rules.Engine, registry *Registry) {
     engine.SetPostChecker(func(call rules.ToolCall, info rules.ExtractedInfo) *rules.MatchResult {
-        req := buildPluginRequest(engine, call, info)
+        req := BuildPluginRequest(engine, call, info)
         ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
         defer cancel()
         result := registry.Evaluate(ctx, req)

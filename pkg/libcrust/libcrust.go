@@ -82,7 +82,7 @@ func Init(userRulesDir string) error {
 		pluginReg.Close()
 	}
 	pluginReg = plugin.InitDefaultRegistry()
-	WirePluginPostChecker(e, pluginReg)
+	plugin.WirePluginPostChecker(e, pluginReg)
 
 	return nil
 }
