@@ -11,7 +11,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gobwas/glob v0.2.3
-	github.com/klauspost/compress v1.18.4
+	github.com/klauspost/compress v1.18.5
 	github.com/muesli/termenv v0.16.0
 	github.com/mutecomm/go-sqlcipher/v4 v4.4.2
 	github.com/posener/complete/v2 v2.1.0
