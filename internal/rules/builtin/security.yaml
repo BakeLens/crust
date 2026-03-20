@@ -508,6 +508,14 @@ rules:
       - "**/.cursor/mcp.json"
       # Project-level MCP consent bypass (CVE-2026-21852)
       - "**/.mcp.json"
+      # Cursor CLI config (CVE-2025-61592)
+      - "**/.cursor/cli.json"
+      # Codex CLI config (CVE-2025-61260)
+      - "**/.codex/config.toml"
+      - "$HOME/.codex/config.toml"
+      # Roo Code config (CVE-2025-53536)
+      - "**/.roo/mcp.json"
+      - "**/.roo/settings.json"
       # Zed agent config (CVE-2025-55012)
       - "$HOME/.config/zed/settings.json"
       - "$HOME/.config/zed/tasks.json"
@@ -530,8 +538,10 @@ rules:
       - "**/.vscode/settings.json"
       - "**/.vscode/launch.json"
       - "**/.vscode/tasks.json"
+      # Workspace files can override VS Code settings (CVE-2025-61590)
+      - "**/*.code-workspace"
     actions: [write, delete]
-    message: "Blocked: .vscode config files can be abused to auto-approve commands, specify malicious executables, or define arbitrary shell tasks (CVE-2025-53773, CVE-2025-54130, CVE-2025-64660). Disable this rule if your agent needs to edit VS Code settings."
+    message: "Blocked: .vscode config and workspace files can be abused to auto-approve commands, specify malicious executables, or define arbitrary shell tasks (CVE-2025-53773, CVE-2025-54130, CVE-2025-64660, CVE-2025-61590). Disable this rule if your agent needs to edit VS Code settings."
     severity: high
 
   # ===========================================================================
