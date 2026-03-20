@@ -246,7 +246,11 @@ func normalizeIPHost(host string) string {
 				break
 			}
 			if i < len(parts)-1 {
-				octets[i] = byte(n) //nolint:gosec // n is validated ≤255 above; intentional uint64→byte for IP octet
+				if n > 255 { // explicit guard for static analysis (maxVal handles this too)
+					valid = false
+					break
+				}
+				octets[i] = byte(n)
 			}
 		}
 		if valid {

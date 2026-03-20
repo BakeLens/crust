@@ -1,15 +1,1 @@
 name: "Crust CodeQL Configuration"
-
-# Suppress known false positives from CodeQL's taint analysis.
-# These patterns are architecturally safe by design:
-#
-# 1. SSE streaming writes JSON (json.Marshal output) to text/event-stream
-#    responses — not HTML. No browser renders this as HTML content.
-#
-# 2. File utility functions (SecureWriteFile, etc.) receive paths that are
-#    validated by callers (ValidatePathInDirectory, filepath.Abs + HasPrefix).
-#    Adding filepath.Clean is defense-in-depth.
-
-paths-ignore:
-  # SSE buffer writes are JSON protocol frames, not reflected HTML
-  - internal/httpproxy/sse_buffer.go

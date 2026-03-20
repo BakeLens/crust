@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -74,7 +75,7 @@ type SSERequestContext struct {
 
 // BufferedSSEWriter buffers SSE events for security evaluation before sending to client
 type BufferedSSEWriter struct {
-	underlying http.ResponseWriter
+	underlying io.Writer // io.Writer (not http.ResponseWriter) — content is SSE/JSON, not HTML
 	flusher    http.Flusher
 	parser     *SSEParser
 
@@ -106,6 +107,10 @@ type BufferedSSEWriter struct {
 func NewBufferedSSEWriter(w http.ResponseWriter, cfg SSEBufferConfig, ctx SSERequestContext) *BufferedSSEWriter {
 	flusher, _ := w.(http.Flusher)
 
+	// SSE responses are JSON protocol frames, not HTML — set Content-Type
+	// so downstream writers (and static analysis) know this is not reflectable.
+	w.Header().Set("Content-Type", "text/event-stream")
+
 	// Build tool lookup map
 	toolMap := make(map[string]AvailableTool)
 	for _, t := range ctx.Tools {
@@ -113,7 +118,7 @@ func NewBufferedSSEWriter(w http.ResponseWriter, cfg SSEBufferConfig, ctx SSEReq
 	}
 
 	return &BufferedSSEWriter{
-		underlying:      w,
+		underlying:      io.Writer(w),
 		flusher:         flusher,
 		parser:          NewSSEParser(true), // Enable sanitization
 		events:          make([]SSEEvent, 0, 100),

@@ -50,7 +50,7 @@ var dlpPatterns = []dlpPattern{
 	},
 	{
 		name:    "builtin:dlp-slack-webhook",
-		re:      regexp.MustCompile(`https://hooks\.slack\.com/services/T[A-Z0-9]{8,}/B[A-Z0-9]{8,}/[a-zA-Z0-9]{20,}`),
+		re:      regexp.MustCompile(`(?:^|\b)https://hooks\.slack\.com/services/T[A-Z0-9]{8,}/B[A-Z0-9]{8,}/[a-zA-Z0-9]{20,}`),
 		message: "Cannot write Slack webhook URL — potential credential leak",
 	},
 
