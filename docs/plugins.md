@@ -282,40 +282,44 @@ If a `ProcessPlugin`'s external process crashes or times out during IPC, it is k
 
 ## Integration
 
-The plugin registry is created and managed by the **security manager**. After the engine's 14-step pipeline allows a tool call, plugins enforce additional policy at exec time (e.g., OS-level sandboxing).
+The plugin registry is created via `plugin.InitDefaultRegistry()` and wired into the engine by `libcrust.WirePluginPostChecker()`. Both the daemon (`security.Init`) and the mobile library (`libcrust.Init`) use this shared path. After the engine's 14-step pipeline allows a tool call, plugins enforce additional policy at exec time (e.g., OS-level sandboxing).
 
 ```text
-Tool Call ──▶ [Steps 1-14: Engine Pipeline] ──▶ allowed? ──▶ [PostChecker: PostChecker] ──▶ Result
-                                                    │                   │
-                                                 ↓ BLOCK         plugin.Evaluate()
-                                              (engine)          (sandbox, rate-limiter, etc.)
+Tool Call ──▶ [Steps 1-14: Engine Pipeline] ──▶ allowed? ──▶ [PostChecker] ──▶ Result
+                                                    │              │
+                                                 ↓ BLOCK    plugin.Evaluate()
+                                              (engine)     (sandbox, rate-limiter, etc.)
 ```
 
 ### Current wiring
 
-Plugins are wired into the engine via `PostChecker` — a callback that runs after the 14-step pipeline allows a tool call. This is set during `libcrust.Init()`:
+Plugins are wired into the engine via `PostChecker` — a callback that runs after the 14-step pipeline allows a tool call. Registry creation and wiring are shared between the daemon and libcrust via `plugin.InitDefaultRegistry()` and `libcrust.WirePluginPostChecker()`:
 
 ```go
-// pkg/libcrust/libcrust.go — Init()
-pool := plugin.NewPool(0, 0)
-reg := plugin.NewRegistry(pool)
-if sp, err := plugin.NewSandboxPlugin(); err == nil {
-    reg.Register(sp, nil)
-}
-pluginReg = reg
-
-// Wire as PostChecker so ALL evaluation paths get plugin coverage.
-engine.SetPostChecker(func(call rules.ToolCall, info rules.ExtractedInfo) *rules.MatchResult {
-    req := buildPluginRequest(engine, call, info)
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-    pluginResult := pluginReg.Evaluate(ctx, req)
-    if pluginResult == nil {
-        return nil // plugins allow
+// internal/plugin/registry.go — InitDefaultRegistry()
+func InitDefaultRegistry() *Registry {
+    pool := NewPool(0, 0)
+    reg := NewRegistry(pool)
+    if sp, err := NewSandboxPlugin(); err == nil {
+        reg.Register(sp, nil)
     }
-    m := rules.NewMatch(pluginResult.RuleName, pluginResult.Severity, pluginResult.Action, pluginResult.Message)
-    return &m
-})
+    return reg
+}
+
+// pkg/libcrust/plugins.go — WirePluginPostChecker()
+func WirePluginPostChecker(engine *rules.Engine, registry *plugin.Registry) {
+    engine.SetPostChecker(func(call rules.ToolCall, info rules.ExtractedInfo) *rules.MatchResult {
+        req := buildPluginRequest(engine, call, info)
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        result := registry.Evaluate(ctx, req)
+        if result == nil {
+            return nil
+        }
+        m := rules.NewMatch(result.RuleName, result.Severity, result.Action, result.Message)
+        return &m
+    })
+}
 ```
 
 Because PostChecker is inside `Engine.Evaluate()`, **all callers** automatically get plugin evaluation — the HTTP proxy interceptor, MCP/ACP wrap pipe, PreToolUse hook, and direct `Evaluate()` calls.

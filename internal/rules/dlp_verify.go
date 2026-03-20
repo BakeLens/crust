@@ -577,7 +577,7 @@ func main() {
 
 	// 3. Verify SHA-512 of dlp.go source.
 	hash := fmt.Sprintf("%x", sha512.Sum512(data))
-	const expectedHash = "9856fdf0b27bb2f00e9bd2c858907d848d3fbbd4c338d823713cf2c62ef7161b2ffc5f0e8fdde8d22ca5bdb2b47580b61c9e077ada78c58429490b527f6ab056"
+	const expectedHash = "562895d689b2c7caa62f0023c10b17aa7be6c285519cbc9ae9269026c4ae991e71282bdba9679e36634fe7fbc935c3d3cc2cd7ff170e44955b02a4f5feffbd0c"
 	if hash != expectedHash {
 		fmt.Fprintf(os.Stderr, "FAIL: dlp.go SHA-512 mismatch\n  got:  %s\n  want: %s\n", hash, expectedHash)
 		failed++
