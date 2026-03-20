@@ -6,6 +6,14 @@ import (
 	"testing"
 )
 
+// testHopByHopHeaders mirrors the shared list in libcrust for test assertions.
+var testHopByHopHeaders = map[string]bool{
+	"Connection": true, "Keep-Alive": true, "Proxy-Authenticate": true,
+	"Proxy-Authorization": true, "Te": true, "Trailer": true,
+	"Transfer-Encoding": true, "Upgrade": true, "Host": true,
+	"Origin": true, "Referer": true,
+}
+
 func TestCopyHeaders_Basic(t *testing.T) {
 	src := http.Header{
 		"Content-Type":   []string{"application/json"},
@@ -37,14 +45,14 @@ func TestCopyHeaders_AllStaticHopByHop(t *testing.T) {
 		"Content-Type": []string{"application/json"},
 	}
 	// Add all static hop-by-hop headers
-	for k := range hopByHopHeaders {
+	for k := range testHopByHopHeaders {
 		src.Set(k, "should-be-stripped")
 	}
 	dst := http.Header{}
 
 	copyHeaders(dst, src)
 
-	for k := range hopByHopHeaders {
+	for k := range testHopByHopHeaders {
 		if dst.Get(k) != "" {
 			t.Errorf("hop-by-hop header %q leaked to dst", k)
 		}
@@ -191,7 +199,7 @@ func FuzzCopyHeaders(f *testing.F) {
 		}
 
 		// All static hop-by-hop must never appear
-		for k := range hopByHopHeaders {
+		for k := range testHopByHopHeaders {
 			if dst.Get(k) != "" {
 				t.Errorf("hop-by-hop %q leaked to dst", k)
 			}
@@ -216,7 +224,7 @@ func FuzzStripHopByHopHeaders(f *testing.F) {
 		stripHopByHopHeaders(h)
 
 		// All static hop-by-hop must be gone
-		for k := range hopByHopHeaders {
+		for k := range testHopByHopHeaders {
 			if h.Get(k) != "" {
 				t.Errorf("hop-by-hop %q not stripped", k)
 			}

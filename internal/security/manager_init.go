@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/plugin"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
 	"github.com/BakeLens/crust/internal/types"
+	"github.com/BakeLens/crust/pkg/libcrust"
 )
 
 // Config holds daemon manager configuration.
@@ -36,15 +36,10 @@ func Init(cfg Config) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize storage: %w", err)
 	}
-	// Seed metrics from persistent storage
+	// Seed in-memory metrics from persisted events (last 24h).
 	seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer seedCancel()
-	if counts, err := storage.GetLayerCounts(seedCtx); err == nil {
-		em := eventlog.GetMetrics()
-		for _, lc := range counts {
-			em.Seed(lc.Layer, lc.Blocked, lc.Count)
-		}
-	}
+	telemetry.SeedMetrics(seedCtx, storage)
 
 	// Initial cleanup
 	if cfg.RetentionDays > 0 {
@@ -55,17 +50,10 @@ func Init(cfg Config) (*Manager, error) {
 		}
 	}
 
-	// Plugin registry
-	pool := plugin.NewPool(0, 0)
-	registry := plugin.NewRegistry(pool)
-	if sp, err := plugin.NewSandboxPlugin(); err == nil {
-		if regErr := registry.Register(sp, nil); regErr != nil {
-			log.Warn("sandbox plugin registration failed: %v", regErr)
-		} else {
-			log.Info("sandbox plugin registered (binary: %s)", sp.BinaryPath())
-		}
-	} else {
-		log.Info("sandbox plugin not available: %v", err)
+	// Plugin registry + wire PostChecker so plugins are evaluated on every tool call.
+	registry := plugin.InitDefaultRegistry()
+	if eng, ok := cfg.Engine.(*rules.Engine); ok && eng != nil {
+		libcrust.WirePluginPostChecker(eng, registry)
 	}
 
 	// Interceptor

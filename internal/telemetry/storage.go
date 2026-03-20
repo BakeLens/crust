@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/telemetry/db"
 	"github.com/BakeLens/crust/internal/types"
 	_ "github.com/mutecomm/go-sqlcipher/v4" // SQLCipher driver for encrypted SQLite
@@ -184,6 +185,21 @@ func (s *Storage) GetLayerCounts(ctx context.Context) ([]LayerCount, error) {
 		counts = append(counts, lc)
 	}
 	return counts, rows.Err()
+}
+
+// SeedMetrics loads persisted event counts (last 24h) into the in-memory
+// eventlog metrics so that stats survive process restarts. Shared by both
+// the daemon (security.Init) and libcrust (InitStorage).
+func SeedMetrics(ctx context.Context, s *Storage) {
+	counts, err := s.GetLayerCounts(ctx)
+	if err != nil {
+		log.Debug("seed metrics: %v", err)
+		return
+	}
+	m := eventlog.GetMetrics()
+	for _, lc := range counts {
+		m.Seed(lc.Layer, lc.Blocked, lc.Count)
+	}
 }
 
 // Stats24h holds aggregated counts for the last 24 hours from SQLite.

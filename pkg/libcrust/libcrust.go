@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/BakeLens/crust/internal/logger"
 	"github.com/BakeLens/crust/internal/plugin"
@@ -82,38 +81,8 @@ func Init(userRulesDir string) error {
 	if pluginReg != nil {
 		pluginReg.Close()
 	}
-	pool := plugin.NewPool(0, 0)
-	reg := plugin.NewRegistry(pool)
-	if sp, err := plugin.NewSandboxPlugin(); err == nil {
-		if regErr := reg.Register(sp, nil); regErr != nil {
-			plog.Warn("sandbox plugin registration failed: %v", regErr)
-		} else {
-			plog.Info("sandbox plugin registered (binary: %s)", sp.BinaryPath())
-		}
-	} else {
-		plog.Info("sandbox plugin not available: %v", err)
-	}
-	pluginReg = reg
-
-	// Wire plugins as a PostChecker so ALL evaluation paths (HTTP proxy,
-	// MCP/ACP wrap, hook, etc.) automatically consult plugins after rules allow.
-	e.SetPostChecker(func(call rules.ToolCall, info rules.ExtractedInfo) *rules.MatchResult {
-		mu.RLock()
-		r := pluginReg
-		mu.RUnlock()
-		if r == nil {
-			return nil
-		}
-		req := buildPluginRequest(e, call, info)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		pluginResult := r.Evaluate(ctx, req)
-		if pluginResult == nil {
-			return nil
-		}
-		m := rules.NewMatch(pluginResult.RuleName, pluginResult.Severity, pluginResult.Action, pluginResult.Message)
-		return &m
-	})
+	pluginReg = plugin.InitDefaultRegistry()
+	WirePluginPostChecker(e, pluginReg)
 
 	return nil
 }
@@ -167,29 +136,6 @@ func Evaluate(toolName string, argsJSON string) string {
 		return `{"matched":false,"error":"marshal failed"}`
 	}
 	return string(out)
-}
-
-// buildPluginRequest constructs a plugin.Request from a tool call and extracted info.
-func buildPluginRequest(e *rules.Engine, call rules.ToolCall, info rules.ExtractedInfo) plugin.Request {
-	// Build rule snapshots for plugin context.
-	engineRules := e.GetRules()
-	snapshots := make([]plugin.RuleSnapshot, len(engineRules))
-	for i := range engineRules {
-		snapshots[i] = plugin.SnapshotRule(&engineRules[i])
-	}
-
-	return plugin.Request{
-		ToolName:   call.Name,
-		Arguments:  call.Arguments,
-		Operation:  info.Operation,
-		Operations: info.Operations,
-		Command:    info.Command,
-		Paths:      info.Paths,
-		Hosts:      info.Hosts,
-		Content:    info.Content,
-		Evasive:    info.Evasive,
-		Rules:      snapshots,
-	}
 }
 
 // InterceptResponse filters tool calls from an LLM API response body.
@@ -437,10 +383,8 @@ func parseAPIType(s string) types.APIType {
 }
 
 func parseBlockMode(s string) types.BlockMode {
-	switch s {
-	case "replace":
-		return types.BlockModeReplace
-	default:
-		return types.BlockModeRemove
+	if m, err := types.ParseBlockMode(s); err == nil {
+		return m
 	}
+	return types.BlockModeRemove
 }

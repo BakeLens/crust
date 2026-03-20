@@ -212,7 +212,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	// If streaming, force non-streaming upfront — no need to send the
 	// streaming request first just to discard it.
 	if reqBody.Stream {
-		bodyBytes = forceNonStreaming(bodyBytes)
+		bodyBytes = ForceNonStreaming(bodyBytes)
 	}
 
 	// Build upstream request.
@@ -223,8 +223,8 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Copy headers, strip hop-by-hop.
-	copyHeaders(upReq.Header, r.Header)
-	stripHopByHop(upReq.Header)
+	CopyHeaders(upReq.Header, r.Header)
+	StripHopByHopHeaders(upReq.Header)
 	upReq.ContentLength = int64(len(bodyBytes))
 	upReq.Host = target.Host
 
@@ -284,8 +284,8 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Write response back to client.
-	copyHeaders(w.Header(), resp.Header)
-	stripHopByHop(w.Header()) // strip hop-by-hop from response too
+	CopyHeaders(w.Header(), resp.Header)
+	StripHopByHopHeaders(w.Header()) // strip hop-by-hop from response too
 	// Update Content-Length since body may have changed.
 	w.Header().Set("Content-Length", strconv.Itoa(len(respBody)))
 	w.WriteHeader(resp.StatusCode)
@@ -346,26 +346,6 @@ func injectProxyAuth(h http.Header, apiKey string, at types.APIType) {
 	}
 }
 
-// copyHeaders copies headers from src to dst (without replacing existing).
-func copyHeaders(dst, src http.Header) {
-	for k, vs := range src {
-		for _, v := range vs {
-			dst.Add(k, v)
-		}
-	}
-}
-
-// stripHopByHop removes hop-by-hop headers per RFC 7230.
-func stripHopByHop(h http.Header) {
-	for _, k := range []string{
-		"Connection", "Keep-Alive", "Proxy-Authenticate",
-		"Proxy-Authorization", "Te", "Trailers",
-		"Transfer-Encoding", "Upgrade",
-	} {
-		h.Del(k)
-	}
-}
-
 // singleJoinSlash joins base and extra paths without doubling slashes.
 func singleJoinSlash(base, extra string) string {
 	baseSlash := strings.HasSuffix(base, "/")
@@ -377,25 +357,6 @@ func singleJoinSlash(base, extra string) string {
 		return base + "/" + extra
 	}
 	return base + extra
-}
-
-// forceNonStreaming returns a copy of the JSON body with "stream" set to false.
-// Preserves all other fields byte-for-byte via json.RawMessage.
-func forceNonStreaming(body []byte) []byte {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(body, &raw); err != nil || raw == nil {
-		return body // best-effort: return unchanged on parse failure
-	}
-	raw["stream"] = json.RawMessage("false")
-	// Also remove stream_options to avoid upstream errors.
-	delete(raw, "stream_options")
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(raw); err != nil {
-		return body
-	}
-	return bytes.TrimRight(buf.Bytes(), "\n")
 }
 
 // decompressGzip decompresses a gzip'd byte slice.

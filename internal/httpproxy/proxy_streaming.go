@@ -12,6 +12,7 @@ import (
 
 	"github.com/BakeLens/crust/internal/security"
 	"github.com/BakeLens/crust/internal/telemetry"
+	"github.com/BakeLens/crust/pkg/libcrust"
 )
 
 // handleStreamingRequest handles SSE streaming requests
@@ -318,21 +319,7 @@ func (p *Proxy) retryAsNonStreaming(ctx *RequestContext) (responseBody json.RawM
 	return
 }
 
-// forceNonStreaming returns a copy of the JSON body with "stream" set to false.
-// Preserves all other fields byte-for-byte via json.RawMessage.
-// Uses SetEscapeHTML(false) so characters like & < > are not mangled.
+// forceNonStreaming delegates to the shared implementation in libcrust.
 func forceNonStreaming(body []byte) []byte {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(body, &raw); err != nil || raw == nil {
-		return body // best-effort: return unchanged on parse failure or JSON null
-	}
-	raw["stream"] = json.RawMessage("false")
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(raw); err != nil {
-		return body
-	}
-	b := buf.Bytes()
-	return b[:len(b)-1] // strip trailing newline added by json.Encoder
+	return libcrust.ForceNonStreaming(body)
 }

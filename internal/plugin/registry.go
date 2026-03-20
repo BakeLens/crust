@@ -318,3 +318,21 @@ func (r *Registry) Len() int {
 	defer r.mu.RUnlock()
 	return len(r.states)
 }
+
+// InitDefaultRegistry creates a plugin registry with a default worker pool
+// and registers the sandbox plugin if available. This is the shared init
+// logic used by both the daemon (security.Init) and libcrust (libcrust.Init).
+func InitDefaultRegistry() *Registry {
+	pool := NewPool(0, 0)
+	reg := NewRegistry(pool)
+	if sp, err := NewSandboxPlugin(); err == nil {
+		if regErr := reg.Register(sp, nil); regErr != nil {
+			log.Warn("sandbox plugin registration failed: %v", regErr)
+		} else {
+			log.Info("sandbox plugin registered (binary: %s)", sp.BinaryPath())
+		}
+	} else {
+		log.Info("sandbox plugin not available: %v", err)
+	}
+	return reg
+}
