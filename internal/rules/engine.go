@@ -129,26 +129,6 @@ var _ RuleEvaluator = (*Engine)(nil)
 // ReloadCallback is called after rules are reloaded
 type ReloadCallback func(rules []Rule)
 
-// SECURITY FIX: Use mutex to prevent race conditions on global engine access
-var (
-	globalEngine   *Engine
-	globalEngineMu sync.RWMutex
-)
-
-// SetGlobalEngine sets the global rule engine instance
-func SetGlobalEngine(e *Engine) {
-	globalEngineMu.Lock()
-	defer globalEngineMu.Unlock()
-	globalEngine = e
-}
-
-// GetGlobalEngine returns the global rule engine instance
-func GetGlobalEngine() *Engine {
-	globalEngineMu.RLock()
-	defer globalEngineMu.RUnlock()
-	return globalEngine
-}
-
 // NewEngine creates a new path-based rule engine.
 // The context controls the lifetime of worker subprocesses (shell, pwsh);
 // canceling it terminates those subprocesses.

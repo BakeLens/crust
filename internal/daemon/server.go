@@ -130,7 +130,6 @@ func RunServer(scfg ServerConfig) error {
 			return fmt.Errorf("failed to initialize rules engine: %w", err)
 		}
 
-		rules.SetGlobalEngine(ruleEngine) // TODO: remove once libcrust is refactored
 		log.Info("Rules engine: %d rules loaded", ruleEngine.RuleCount())
 
 		if cfg.Rules.Watch {

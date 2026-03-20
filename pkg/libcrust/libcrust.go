@@ -75,7 +75,6 @@ func Init(userRulesDir string) error {
 		return fmt.Errorf("engine init: %w", err)
 	}
 	engine = e
-	rules.SetGlobalEngine(e)
 
 	interceptor = security.NewInterceptor(e, telemetry.NopRecorder{})
 
