@@ -26,7 +26,7 @@ func Run(engine rules.RuleEvaluator, cmd []string) int {
 		Log:          log,
 		ProcessLabel: "Subprocess",
 		Inbound:      jsonrpc.PipeConfig{Label: "Inbound", Protocol: "MCP", Convert: mcpgateway.MCPMethodToToolCall},
-		Outbound:     jsonrpc.PipeConfig{Label: "Outbound", Protocol: "Stdio", Convert: BothMethodToToolCall},
+		Outbound:     jsonrpc.PipeConfig{Label: "Outbound", Protocol: "Stdio", Convert: BothMethodToToolCall, ErrToClient: true},
 		ExtraLogLines: []string{
 			"Auto-detect mode: inspecting both ACP and MCP methods",
 		},

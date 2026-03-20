@@ -17,6 +17,6 @@ func Run(engine rules.RuleEvaluator, serverCmd []string) int {
 		Log:          log,
 		ProcessLabel: "MCP server",
 		Inbound:      jsonrpc.PipeConfig{Label: "Client->Server", Protocol: "MCP", Convert: MCPMethodToToolCall},
-		Outbound:     jsonrpc.PipeConfig{Label: "Server->Client", Protocol: "MCP", Convert: MCPMethodToToolCall},
+		Outbound:     jsonrpc.PipeConfig{Label: "Server->Client", Protocol: "MCP", Convert: MCPMethodToToolCall, ErrToClient: true},
 	})
 }

@@ -20,6 +20,13 @@ type PipeConfig struct {
 	Protocol string
 	// Convert is the method converter. If nil, this direction is passthrough-only.
 	Convert MethodConverter
+	// ErrToClient controls where JSON-RPC error responses for blocked messages
+	// are sent. If true, errors go to the client/IDE (correct for MCP outbound
+	// where the client is waiting for a response). If false, errors go to the
+	// child subprocess (correct for ACP outbound where the agent initiates
+	// tool calls and the client didn't request them).
+	// Inbound direction always sends errors to the client regardless of this flag.
+	ErrToClient bool
 }
 
 // ProxyConfig describes how to run the stdio proxy.
@@ -106,13 +113,17 @@ func RunProxy(engine rules.RuleEvaluator, cmd []string, stdin io.ReadCloser, std
 	})
 
 	// Goroutine 2: Outbound (child subprocess -> client/IDE)
-	// Error responses for blocked outbound messages go to clientWriter (the
-	// client is waiting for a response), not childWriter (the child's stdin
-	// doesn't expect error responses).
+	// errWriter direction depends on the protocol:
+	// - MCP: client sends requests, server responds → errors go to client (ErrToClient=true)
+	// - ACP: agent initiates tool calls → client didn't request → errors go to child (ErrToClient=false)
+	outboundErrWriter := childWriter
+	if cfg.Outbound.ErrToClient {
+		outboundErrWriter = clientWriter
+	}
 	wg.Go(func() {
 		defer stdoutR.Close()
 		if cfg.Outbound.Convert != nil {
-			PipeInspect(log, engine, stdoutR, clientWriter, clientWriter,
+			PipeInspect(log, engine, stdoutR, clientWriter, outboundErrWriter,
 				cfg.Outbound.Convert, cfg.Outbound.Protocol, cfg.Outbound.Label)
 		} else {
 			PipePassthrough(log, stdoutR, clientWriter, cfg.Outbound.Label)
