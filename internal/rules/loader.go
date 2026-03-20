@@ -292,55 +292,64 @@ func (l *Loader) ValidatePathInDirectory(filename string) (string, error) {
 		return "", err
 	}
 
-	// Construct the full path
+	// Construct the full path and resolve to absolute + clean form.
 	fullPath := filepath.Join(l.userDir, safeFilename)
 
-	// Get absolute paths, normalized to forward slashes so HasPathPrefix
-	// comparisons are consistent regardless of platform-native separator.
-	absPathRaw, err := filepath.Abs(fullPath)
+	absPath, err := filepath.Abs(fullPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve path: %w", err)
 	}
-	fs := pathutil.DefaultFS()
-	absPath := fs.Lower(pathutil.ToSlash(absPathRaw))
+	cleanPath := filepath.Clean(absPath)
 
-	absUserDirRaw, err := filepath.Abs(l.userDir)
+	absUserDir, err := filepath.Abs(l.userDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve user dir: %w", err)
 	}
-	absUserDir := fs.Lower(pathutil.ToSlash(absUserDirRaw))
+	cleanUserDir := filepath.Clean(absUserDir)
 
-	// Ensure the path is within the user directory.
-	// HasPathPrefix handles trailing separator to prevent prefix issues
-	// (e.g., /rules vs /rules-backup).
-	if !pathutil.HasPathPrefix(absPath, absUserDir) {
-		return "", fmt.Errorf("path traversal detected: %s is outside %s", absPath, absUserDir)
+	// Primary containment check: filepath.Rel produces a relative path
+	// without leading ".." iff cleanPath is inside cleanUserDir.
+	rel, err := filepath.Rel(cleanUserDir, cleanPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path traversal detected: %s is outside %s", cleanPath, cleanUserDir)
+	}
+
+	// Secondary check: case-insensitive comparison on case-insensitive FS
+	// (macOS HFS+/APFS, Windows NTFS) to block case-variation bypasses.
+	pfs := pathutil.DefaultFS()
+	if !pathutil.HasPathPrefix(
+		pfs.Lower(pathutil.ToSlash(cleanPath)),
+		pfs.Lower(pathutil.ToSlash(cleanUserDir)),
+	) {
+		return "", fmt.Errorf("path traversal detected: %s is outside %s", cleanPath, cleanUserDir)
 	}
 
 	// If file exists, also check resolved symlinks
-	if _, err := os.Lstat(filepath.Clean(fullPath)); err == nil {
-		realPath, err := filepath.EvalSymlinks(fullPath)
+	if _, err := os.Lstat(cleanPath); err == nil {
+		realPath, err := filepath.EvalSymlinks(cleanPath)
 		if err == nil {
-			absRealPathRaw, err := filepath.Abs(realPath)
+			absRealPath, err := filepath.Abs(realPath)
 			if err != nil {
 				return "", fmt.Errorf("failed to resolve symlink: %w", err)
 			}
 			// Resolve symlinks on userDir too (e.g., macOS /var → /private/var)
 			// so both sides use the same canonical base.
-			realUserDir := l.userDir
-			if rd, err := filepath.EvalSymlinks(l.userDir); err == nil {
+			realUserDir := cleanUserDir
+			if rd, err := filepath.EvalSymlinks(cleanUserDir); err == nil {
 				if ad, err := filepath.Abs(rd); err == nil {
 					realUserDir = ad
 				}
 			}
-			absRealUserDir := fs.Lower(pathutil.ToSlash(realUserDir))
-			if !pathutil.HasPathPrefix(fs.Lower(pathutil.ToSlash(absRealPathRaw)), absRealUserDir) {
+			if !pathutil.HasPathPrefix(
+				pfs.Lower(pathutil.ToSlash(absRealPath)),
+				pfs.Lower(pathutil.ToSlash(realUserDir)),
+			) {
 				return "", errors.New("symlink points outside rules directory")
 			}
 		}
 	}
 
-	return fullPath, nil
+	return cleanPath, nil
 }
 
 // RemoveRuleFile removes a rule file from the user rules directory
