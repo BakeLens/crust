@@ -415,6 +415,13 @@ func (e *Engine) Evaluate(call ToolCall) MatchResult {
 		return m
 	}
 
+	// Step 4b: Check for dangerous environment variable assignments.
+	if len(info.EnvVars) > 0 {
+		if result := e.checkDangerousEnvVars(info); result != nil {
+			return *result
+		}
+	}
+
 	// Steps 5-9: Content validation (Unicode, null bytes, evasion, obfuscation, DLP).
 	if m := e.validateContent(&info); m != nil {
 		return *m
@@ -437,6 +444,29 @@ func (e *Engine) Evaluate(call ToolCall) MatchResult {
 	}
 
 	return result
+}
+
+// checkDangerousEnvVars checks if any env var assignments in info.EnvVars
+// correspond to known dangerous environment variables from the env var database.
+func (e *Engine) checkDangerousEnvVars(info ExtractedInfo) *MatchResult {
+	for name := range info.EnvVars {
+		entry, ok := LookupDangerousEnv(name)
+		if !ok {
+			continue
+		}
+		// Check OS filter
+		if entry.OS != "all" && entry.OS != runtime.GOOS {
+			continue
+		}
+		m := NewMatch(
+			"builtin:block-dangerous-env",
+			SeverityCritical,
+			ActionBlock,
+			fmt.Sprintf("Blocked: setting %s is dangerous — %s", name, entry.Chain),
+		)
+		return &m
+	}
+	return nil
 }
 
 // validateContent runs content validation (steps 4-8): Unicode normalization,

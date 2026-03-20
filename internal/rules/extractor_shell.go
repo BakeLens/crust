@@ -135,6 +135,20 @@ func (e *Extractor) extractBashCommand(info *ExtractedInfo) {
 			shellRes := e.runShellFile(file, nil)
 			parsed, symtab, panicked = shellRes.cmds, shellRes.sym, shellRes.panicked
 		}
+		// Populate info.EnvVars from symtab diff (new/changed vars vs process env).
+		for k, v := range symtab {
+			if orig, exists := e.env[k]; !exists || orig != v {
+				if info.EnvVars == nil {
+					info.EnvVars = make(map[string]string)
+				}
+				info.EnvVars[k] = v
+			}
+		}
+
+		// Also extract inline prefix assignments (VAR=val cmd) from the AST.
+		// These are set only for the subprocess and are NOT in the runner's symtab.
+		extractInlineAssigns(file, info)
+
 		if len(parsed) > 0 {
 			e.extractFromParsedCommandsDepth(info, parsed, 0, symtab)
 		} else if panicked || astHasSubst(file) {
@@ -171,6 +185,12 @@ func (e *Extractor) extractBashCommand(info *ExtractedInfo) {
 
 	// Build canonical info.Command from AST-printed representations
 	info.Command = strings.Join(printed, ";")
+
+	// Extract PowerShell env var assignments ($env:VAR = ...) from raw commands.
+	// This runs for all commands since $env: syntax is unambiguous.
+	for _, cmd := range cmds {
+		extractPSEnvVars(cmd, info)
+	}
 
 	// NOTE: unparseable commands are NOT flagged evasive. OS sandboxing
 	// provides the ultimate enforcement layer, and blocking parse failures
@@ -447,6 +467,24 @@ func (e *Extractor) extractFromParsedCommandsDepth(info *ExtractedInfo, commands
 			}
 			if val := extractFlagValue(pc.Args, "--arg-file"); val != "" {
 				info.Paths = append(info.Paths, val)
+			}
+		}
+
+		// Extract env vars from "env VAR=val cmd" and inline "VAR=val" assignments
+		// before resolveCommand strips them away.
+		if origCmdBase == "env" {
+			for _, arg := range pc.Args {
+				if strings.HasPrefix(arg, "-") {
+					continue
+				}
+				if k, v, ok := strings.Cut(arg, "="); ok && k != "" {
+					if info.EnvVars == nil {
+						info.EnvVars = make(map[string]string)
+					}
+					info.EnvVars[k] = v
+				} else {
+					break // first non-assignment is the command
+				}
 			}
 		}
 
@@ -1204,6 +1242,34 @@ func deduplicateStrings(items []string) []string {
 		}
 	}
 	return result
+}
+
+// extractInlineAssigns walks the AST and populates info.EnvVars with
+// inline prefix assignments (VAR=val cmd). These set env vars only for
+// the subprocess and are NOT captured by extractRunnerSymtab.
+// Also captures standalone assignments (VAR=val without a command).
+func extractInlineAssigns(file *syntax.File, info *ExtractedInfo) {
+	syntax.Walk(file, func(node syntax.Node) bool {
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Assigns) == 0 {
+			return true
+		}
+		for _, assign := range call.Assigns {
+			if assign.Name == nil {
+				continue
+			}
+			name := assign.Name.Value
+			val := ""
+			if assign.Value != nil {
+				val = wordToLiteral(assign.Value)
+			}
+			if info.EnvVars == nil {
+				info.EnvVars = make(map[string]string)
+			}
+			info.EnvVars[name] = val
+		}
+		return true
+	})
 }
 
 // nopCloser implements io.ReadWriteCloser as a no-op.

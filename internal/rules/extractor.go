@@ -22,8 +22,9 @@ type ExtractedInfo struct {
 	Content       string // Content being written (for Write/Edit tools); may be overwritten by extractors
 	RawJSON       string // Full re-marshaled JSON of all args (never overwritten by extractors)
 	RawArgs       map[string]any
-	Evasive       bool   // true if command uses shell tricks that prevent static analysis
-	EvasiveReason string // human-readable reason for evasion detection
+	EnvVars       map[string]string // env vars set by the command (name → value)
+	Evasive       bool              // true if command uses shell tricks that prevent static analysis
+	EvasiveReason string            // human-readable reason for evasion detection
 }
 
 // addOperation adds op to info.Operations (deduplicated) and upgrades

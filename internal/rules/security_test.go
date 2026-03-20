@@ -128,7 +128,6 @@ func TestLockedRulesSurviveDisableBuiltin(t *testing.T) {
 		"protect-mobile-hardware",
 		"protect-mobile-biometric",
 		"protect-mobile-purchases",
-		"detect-env-var-poisoning",
 	}
 	unlockedNames := []string{
 		"detect-private-key-write",

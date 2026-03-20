@@ -82,6 +82,42 @@ var winCmdEnvPathRe = regexp.MustCompile(`%[A-Z_][A-Z_0-9]*%(?:\\[a-zA-Z0-9_.~-]
 // psVarAssignRe matches PowerShell-style variable assignments: $varName = "value" or $varName = value
 var psVarAssignRe = regexp.MustCompile(`\$([a-zA-Z_]\w*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s;|]+))`)
 
+// psEnvVarAssignRe matches PowerShell env var assignments: $env:VAR = "value"
+var psEnvVarAssignRe = regexp.MustCompile(`\$env:([a-zA-Z_]\w*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s;|]+))`)
+
+// psSetEnvMethodRe matches [Environment]::SetEnvironmentVariable("VAR", "value")
+var psSetEnvMethodRe = regexp.MustCompile(`\[(?:System\.)?Environment\]::SetEnvironmentVariable\(\s*["']([^"']+)["']\s*,`)
+
+// extractPSEnvVars extracts env var assignments from PowerShell commands.
+// Catches $env:VAR = ... and [Environment]::SetEnvironmentVariable("VAR", ...).
+func extractPSEnvVars(cmd string, info *ExtractedInfo) {
+	// $env:VAR = value
+	for _, m := range psEnvVarAssignRe.FindAllStringSubmatch(cmd, -1) {
+		name := m[1]
+		var value string
+		switch {
+		case m[2] != "":
+			value = m[2]
+		case m[3] != "":
+			value = m[3]
+		default:
+			value = m[4]
+		}
+		if info.EnvVars == nil {
+			info.EnvVars = make(map[string]string)
+		}
+		info.EnvVars[name] = value
+	}
+
+	// [Environment]::SetEnvironmentVariable("VAR", ...)
+	for _, m := range psSetEnvMethodRe.FindAllStringSubmatch(cmd, -1) {
+		if info.EnvVars == nil {
+			info.EnvVars = make(map[string]string)
+		}
+		info.EnvVars[m[1]] = "" // value is complex to extract; name is enough for envDB lookup
+	}
+}
+
 // looksLikePowerShell returns true if the command string appears to contain
 // PowerShell syntax: Verb-Noun cmdlets, PS-style $var= assignments,
 // the call operator (&), or .NET static method calls ([System.).

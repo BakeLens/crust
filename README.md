@@ -32,7 +32,7 @@
 <p align="center">
   <a href="https://github.com/BakeLens/crust/blob/main/SECURITY.md"><img src="https://img.shields.io/badge/Security%20Policy-Responsible%20Disclosure-green" alt="Security Policy" /></a>
   <img src="https://img.shields.io/badge/SAST-gosec%20%7C%20semgrep-blueviolet" alt="SAST" />
-  <img src="https://img.shields.io/badge/Fuzz%20Tested-44%20targets-orange" alt="Fuzz Tested" />
+  <img src="https://img.shields.io/badge/Fuzz%20Tested-45%20targets-orange" alt="Fuzz Tested" />
   <img src="https://img.shields.io/badge/Secrets-govulncheck%20%7C%20gitleaks-critical" alt="Secret Scanning" />
 </p>
 
@@ -217,13 +217,13 @@ let urlCheck = engine.validateURL("tel:+1234567890") // blocked URL schemes
 
 For release builds, `Libcrust.xcframework.zip` is attached to each [GitHub release](https://github.com/BakeLens/crust/releases) with a SHA-256 checksum for use as a remote SPM binary target.
 
-Mobile and desktop rules are unified using virtual paths (`mobile://`) — the same YAML file protects both platforms. See [`internal/rules/builtin/security.yaml`](internal/rules/builtin/security.yaml) for all 33 rules.
+Mobile and desktop rules are unified using virtual paths (`mobile://`) — the same YAML file protects both platforms. See [`internal/rules/builtin/security.yaml`](internal/rules/builtin/security.yaml) for all 30 rules.
 
 ## Protection
 
 ### Built-in Rules
 
-Crust ships with **34 security rules** (31 locked, 3 user-disablable) and **46 DLP token-detection patterns** out of the box:
+Crust ships with **33 security rules** (30 locked, 3 user-disablable) and **46 DLP token-detection patterns** out of the box:
 
 | Category | What's Protected |
 |----------|-----------------|
