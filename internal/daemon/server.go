@@ -178,16 +178,19 @@ func RunServer(scfg ServerConfig) error {
 	}()
 
 	// Initialize telemetry
+	var tp *telemetry.Provider
 	if cfg.Telemetry.Enabled {
 		telemetryCfg := telemetry.Config{
 			Enabled:     cfg.Telemetry.Enabled,
 			ServiceName: cfg.Telemetry.ServiceName,
 			SampleRate:  cfg.Telemetry.SampleRate,
 		}
-		tp, err := telemetry.Init(context.Background(), telemetryCfg)
+		var err error
+		tp, err = telemetry.Init(context.Background(), telemetryCfg)
 		if err != nil {
 			return fmt.Errorf("failed to initialize telemetry: %w", err)
 		}
+		tp.SetStorage(manager.GetStorage())
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -196,7 +199,7 @@ func RunServer(scfg ServerConfig) error {
 	}
 
 	// Create proxy
-	proxyHandler, err := httpproxy.NewProxy(cfg.Upstream.URL, cfg.Upstream.APIKey, time.Duration(cfg.Upstream.Timeout)*time.Second, cfg.Upstream.Providers, scfg.AutoMode, manager.GetInterceptor(), manager.InterceptionCfg())
+	proxyHandler, err := httpproxy.NewProxy(cfg.Upstream.URL, cfg.Upstream.APIKey, time.Duration(cfg.Upstream.Timeout)*time.Second, cfg.Upstream.Providers, scfg.AutoMode, manager.GetInterceptor(), manager.InterceptionCfg(), tp)
 	if err != nil {
 		return fmt.Errorf("failed to create proxy: %w", err)
 	}

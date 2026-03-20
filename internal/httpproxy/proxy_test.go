@@ -428,7 +428,7 @@ func TestStripLeadingVersion(t *testing.T) {
 // setupTestProxy creates a proxy pointed at the given upstream, with security enabled.
 func setupTestProxy(t *testing.T, upstream *httptest.Server) *Proxy {
 	t.Helper()
-	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{})
+	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{}, nil)
 	if err != nil {
 		t.Fatalf("NewProxy: %v", err)
 	}
@@ -438,7 +438,7 @@ func setupTestProxy(t *testing.T, upstream *httptest.Server) *Proxy {
 // setupTestProxyWithInterceptor creates a proxy with an injected interceptor for security tests.
 func setupTestProxyWithInterceptor(t *testing.T, upstream *httptest.Server, interceptor *security.Interceptor) *Proxy {
 	t.Helper()
-	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, interceptor, security.InterceptionConfig{})
+	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, interceptor, security.InterceptionConfig{}, nil)
 	if err != nil {
 		t.Fatalf("NewProxy: %v", err)
 	}
@@ -1310,7 +1310,7 @@ func TestRetryAsNonStreaming_IndependentOfClientContext(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	proxy, err := NewProxy(upstream.URL, "", 30*time.Second, nil, false, nil, security.InterceptionConfig{})
+	proxy, err := NewProxy(upstream.URL, "", 30*time.Second, nil, false, nil, security.InterceptionConfig{}, nil)
 	if err != nil {
 		t.Fatalf("NewProxy: %v", err)
 	}
@@ -1365,7 +1365,7 @@ func TestRetryAsNonStreaming_ErrorStatusCodes(t *testing.T) {
 			}))
 			defer upstream.Close()
 
-			proxy, err := NewProxy(upstream.URL, "", 30*time.Second, nil, false, nil, security.InterceptionConfig{})
+			proxy, err := NewProxy(upstream.URL, "", 30*time.Second, nil, false, nil, security.InterceptionConfig{}, nil)
 			if err != nil {
 				t.Fatalf("NewProxy: %v", err)
 			}
@@ -1530,7 +1530,7 @@ func TestBug_BufferedStreamingLosesNon200StatusCode(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{})
+	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1676,7 +1676,7 @@ func TestAgent_ClaudeCode_BufferedStreaming_MultiDataLine(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{})
+	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1773,7 +1773,7 @@ func TestAgent_OpenAI_BufferOverflow_RetriesNonStreaming(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{})
+	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1951,7 +1951,7 @@ func TestBufferedStreaming_CRLFSeparators(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{})
+	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2013,7 +2013,7 @@ func TestBufferedStreaming_TrailingEvent(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{})
+	p, err := NewProxy(upstream.URL, "test-key", 30*time.Second, nil, false, nil, security.InterceptionConfig{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

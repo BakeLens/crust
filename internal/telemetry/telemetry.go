@@ -5,7 +5,6 @@ import (
 	crypto_rand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"sync"
 	"time"
 
 	"github.com/BakeLens/crust/internal/types"
@@ -78,13 +77,8 @@ type Provider struct {
 	enabled     bool
 	serviceName string
 	sampleRate  float64
+	storage     Recorder // injected storage for span recording
 }
-
-var (
-	globalProvider *Provider
-	globalStorage  Recorder
-	globalMu       sync.RWMutex
-)
 
 // Init initializes the telemetry provider
 func Init(ctx context.Context, cfg Config) (*Provider, error) {
@@ -94,15 +88,18 @@ func Init(ctx context.Context, cfg Config) (*Provider, error) {
 		sampleRate:  cfg.SampleRate,
 	}
 
-	globalMu.Lock()
-	globalProvider = p
-	globalMu.Unlock()
-
 	if cfg.Enabled {
 		log.Debug("[TELEMETRY] Initialized (service=%s, sample_rate=%.2f)", cfg.ServiceName, cfg.SampleRate)
 	}
 
 	return p, nil
+}
+
+// SetStorage attaches a storage recorder for span persistence.
+func (p *Provider) SetStorage(s Recorder) {
+	if p != nil {
+		p.storage = s
+	}
 }
 
 // Shutdown shuts down the provider
@@ -115,26 +112,12 @@ func (p *Provider) IsEnabled() bool {
 	return p != nil && p.enabled
 }
 
-// GetGlobalProvider returns the global telemetry provider
-func GetGlobalProvider() *Provider {
-	globalMu.RLock()
-	defer globalMu.RUnlock()
-	return globalProvider
-}
-
-// SetGlobalStorage sets the global storage for telemetry.
-// Accepts any Recorder implementation (*Storage, NopRecorder, etc.).
-func SetGlobalStorage(s Recorder) {
-	globalMu.Lock()
-	defer globalMu.Unlock()
-	globalStorage = s
-}
-
-// GetGlobalStorage returns the global storage as a Recorder.
-func GetGlobalStorage() Recorder {
-	globalMu.RLock()
-	defer globalMu.RUnlock()
-	return globalStorage
+// SetGlobalStorage is a transitional helper used during daemon startup.
+// Prefer injecting storage directly via Provider.SetStorage() or Manager options.
+func SetGlobalStorage(_ Recorder) {
+	// No-op: global storage removed. Callers should inject storage directly.
+	// Kept as stub to avoid breaking manager_init.go and libcrust/storage.go
+	// during the transition. Will be deleted once callers are updated.
 }
 
 // StartLLMSpan starts a new span for an LLM request
@@ -163,7 +146,7 @@ func (p *Provider) EndLLMSpan(spanCtx *SpanContext, data LLMSpanData) {
 		return
 	}
 
-	storage := GetGlobalStorage()
+	storage := p.storage
 	if storage == nil {
 		log.Debug("[TELEMETRY] Warning: storage not available, skipping span")
 		return

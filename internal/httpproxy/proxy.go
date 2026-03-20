@@ -95,10 +95,11 @@ type Proxy struct {
 	autoMode      bool                             // true = resolve provider from model name; false = always use upstreamURL
 	interceptor   *security.Interceptor            // injected; nil disables security scanning
 	secCfg        security.InterceptionConfig      // injected security configuration
+	telemetry     *telemetry.Provider              // injected; nil disables telemetry spans
 }
 
 // NewProxy creates a new proxy
-func NewProxy(upstreamURL string, apiKey string, timeout time.Duration, userProviders map[string]config.ProviderConfig, autoMode bool, interceptor *security.Interceptor, secCfg security.InterceptionConfig) (*Proxy, error) {
+func NewProxy(upstreamURL string, apiKey string, timeout time.Duration, userProviders map[string]config.ProviderConfig, autoMode bool, interceptor *security.Interceptor, secCfg security.InterceptionConfig, tp *telemetry.Provider) (*Proxy, error) {
 	u, err := url.Parse(upstreamURL)
 	if err != nil {
 		return nil, err
@@ -107,6 +108,7 @@ func NewProxy(upstreamURL string, apiKey string, timeout time.Duration, userProv
 	return &Proxy{
 		upstreamURL:   u,
 		apiKey:        apiKey,
+		telemetry:     tp,
 		userProviders: userProviders,
 		autoMode:      autoMode,
 		interceptor:   interceptor,
@@ -239,7 +241,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start telemetry span
-	tp := telemetry.GetGlobalProvider()
+	tp := p.telemetry
 	var spanCtx *telemetry.SpanContext
 	var ctx context.Context
 
