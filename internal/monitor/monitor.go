@@ -23,6 +23,7 @@ const changeBufSize = 256
 //	    handle(change)
 //	}
 type Monitor struct {
+	storage   storageProvider // injected; nil disables session tracking
 	changes   chan Change
 	stop      chan struct{}
 	startOnce sync.Once
@@ -31,11 +32,16 @@ type Monitor struct {
 }
 
 // New creates a new Monitor. Call Start() to begin monitoring.
-func New() *Monitor {
-	return &Monitor{
+// storage may be nil (session tracking disabled until set).
+func New(storage ...storageProvider) *Monitor {
+	m := &Monitor{
 		changes: make(chan Change, changeBufSize),
 		stop:    make(chan struct{}),
 	}
+	if len(storage) > 0 {
+		m.storage = storage[0]
+	}
+	return m
 }
 
 // Start launches all monitoring goroutines. It emits initial state
@@ -55,7 +61,7 @@ func (m *Monitor) Start() {
 		// state changes between Start() and goroutine startup are detected.
 		agentPrev := snapshotAgents(detectCurrentAgents())
 		protectPrev := takeProtectSnapshot()
-		sessionPrev := sessionIDs(getCurrentSessions())
+		sessionPrev := sessionIDs(m.getCurrentSessions())
 
 		m.wg.Add(4)
 		go m.runAgentScanner(agentPrev)
@@ -107,6 +113,6 @@ func (m *Monitor) emitInitialState() {
 	status := getProtectSnapshot()
 	m.emit(ChangeProtect, status)
 
-	sessions := getCurrentSessions()
+	sessions := m.getCurrentSessions()
 	m.emit(ChangeSession, sessions)
 }

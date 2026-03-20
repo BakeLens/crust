@@ -37,12 +37,8 @@ func LibcrustStartMonitor() {
 		return protect.running, protect.port
 	})
 
-	// Wire storage for session tracking.
-	if s := getStorage(); s != nil {
-		monitor.SetStorage(s)
-	}
-
-	m := monitor.New()
+	// Pass storage for session tracking (nil if not initialized).
+	m := monitor.New(getStorage())
 	m.Start()
 	monitorState.m = m
 }

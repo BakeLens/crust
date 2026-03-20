@@ -36,8 +36,6 @@ func Init(cfg Config) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize storage: %w", err)
 	}
-	telemetry.SetGlobalStorage(storage)
-
 	// Seed metrics from persistent storage
 	seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer seedCancel()

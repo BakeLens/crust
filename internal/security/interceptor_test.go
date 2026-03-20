@@ -692,8 +692,7 @@ func TestInterceptToolCalls_RoutesToCorrectHandler(t *testing.T) {
 // TestInterceptOpenAIResponse_NilEngine tests handling nil engine
 func TestInterceptOpenAIResponse_NilEngine(t *testing.T) {
 	interceptor := &Interceptor{
-		engine:  nil,
-		storage: nil,
+		engine: nil,
 	}
 	interceptor.enabled.Store(true)
 
@@ -993,8 +992,7 @@ rules:
 // TestInterceptAnthropicResponse_NilEngine tests nil engine handling for Anthropic
 func TestInterceptAnthropicResponse_NilEngine(t *testing.T) {
 	interceptor := &Interceptor{
-		engine:  nil,
-		storage: nil,
+		engine: nil,
 	}
 	interceptor.enabled.Store(true)
 

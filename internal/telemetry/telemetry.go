@@ -112,14 +112,6 @@ func (p *Provider) IsEnabled() bool {
 	return p != nil && p.enabled
 }
 
-// SetGlobalStorage is a transitional helper used during daemon startup.
-// Prefer injecting storage directly via Provider.SetStorage() or Manager options.
-func SetGlobalStorage(_ Recorder) {
-	// No-op: global storage removed. Callers should inject storage directly.
-	// Kept as stub to avoid breaking manager_init.go and libcrust/storage.go
-	// during the transition. Will be deleted once callers are updated.
-}
-
 // StartLLMSpan starts a new span for an LLM request
 func (p *Provider) StartLLMSpan(ctx context.Context, operationName string, traceID types.TraceID, spanName string) (context.Context, *SpanContext) {
 	if p == nil || !p.enabled {

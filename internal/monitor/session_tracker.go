@@ -4,7 +4,6 @@ import (
 	"context"
 	"sort"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/BakeLens/crust/internal/telemetry"
@@ -16,27 +15,6 @@ const sessionTrackInterval = 10 * time.Second
 // Using an interface allows testing without a real database.
 type storageProvider interface {
 	GetSessions(ctx context.Context, minutes int, limit int) ([]telemetry.SessionSummary, error)
-}
-
-// globalStorage is set by SetStorage to provide session queries.
-// nil means session tracking is disabled (no DB initialized).
-// Access via atomic.Value for concurrent safety.
-var globalStorageVal atomic.Value // stores storageProvider
-
-// SetStorage sets the storage provider for session tracking.
-// Called during initialization when telemetry.Storage is available.
-// Safe to call from any goroutine.
-func SetStorage(s storageProvider) {
-	globalStorageVal.Store(s)
-}
-
-// loadStorage returns the current storage provider, or nil.
-func loadStorage() storageProvider {
-	v := globalStorageVal.Load()
-	if v == nil {
-		return nil
-	}
-	return v.(storageProvider)
 }
 
 // runSessionTracker polls for session changes every 10 seconds.
@@ -51,7 +29,7 @@ func (m *Monitor) runSessionTracker(prev string) {
 		case <-m.stop:
 			return
 		case <-ticker.C:
-			sessions := getCurrentSessions()
+			sessions := m.getCurrentSessions()
 			curr := sessionIDs(sessions)
 			if curr != prev {
 				m.emit(ChangeSession, sessions)
@@ -63,14 +41,13 @@ func (m *Monitor) runSessionTracker(prev string) {
 
 // getCurrentSessions returns recent sessions from storage.
 // Returns nil if storage is not available.
-func getCurrentSessions() []telemetry.SessionSummary {
-	s := loadStorage()
-	if s == nil {
+func (m *Monitor) getCurrentSessions() []telemetry.SessionSummary {
+	if m.storage == nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	sessions, err := s.GetSessions(ctx, 5, 50)
+	sessions, err := m.storage.GetSessions(ctx, 5, 50)
 	if err != nil {
 		log.Debug("session query failed: %v", err)
 		return nil

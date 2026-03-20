@@ -25,16 +25,18 @@ func dlpRedact(msg string) string { return "[REDACTED by Crust: " + msg + "]" }
 
 // Interceptor handles tool call interception and response modification
 type Interceptor struct {
-	engine  rules.RuleEvaluator
-	storage telemetry.Recorder
-	enabled atomic.Bool
+	engine     rules.RuleEvaluator
+	storageVal atomic.Value // stores telemetry.Recorder; safe for concurrent read/write
+	enabled    atomic.Bool
 }
 
 // NewInterceptor creates a new interceptor
 func NewInterceptor(engine rules.RuleEvaluator, storage telemetry.Recorder) *Interceptor {
 	i := &Interceptor{
-		engine:  engine,
-		storage: storage,
+		engine: engine,
+	}
+	if storage != nil {
+		i.storageVal.Store(storage)
 	}
 	i.enabled.Store(true)
 	return i
@@ -55,14 +57,20 @@ func (i *Interceptor) GetEngine() rules.RuleEvaluator {
 	return i.engine
 }
 
-// GetStorage returns the storage recorder
+// GetStorage returns the storage recorder (safe for concurrent use).
 func (i *Interceptor) GetStorage() telemetry.Recorder {
-	return i.storage
+	v := i.storageVal.Load()
+	if v == nil {
+		return nil
+	}
+	return v.(telemetry.Recorder)
 }
 
-// SetStorage replaces the storage recorder (e.g. after late initialization).
+// SetStorage replaces the storage recorder (safe for concurrent use).
 func (i *Interceptor) SetStorage(s telemetry.Recorder) {
-	i.storage = s
+	if s != nil {
+		i.storageVal.Store(s)
+	}
 }
 
 // InterceptionResult contains the result of intercepting tool calls
