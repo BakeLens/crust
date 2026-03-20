@@ -318,7 +318,7 @@ func (l *Loader) ValidatePathInDirectory(filename string) (string, error) {
 	}
 
 	// If file exists, also check resolved symlinks
-	if _, err := os.Lstat(fullPath); err == nil {
+	if _, err := os.Lstat(filepath.Clean(fullPath)); err == nil {
 		realPath, err := filepath.EvalSymlinks(fullPath)
 		if err == nil {
 			absRealPathRaw, err := filepath.Abs(realPath)
