@@ -969,6 +969,24 @@ func TestCVE_2026_22708_EnvVarPoisoning(t *testing.T) {
 				"command": `PERL5OPT="-Mbase;system('id');exit" python3 -c pass`,
 			}),
 		},
+		{
+			"sh -c export PERL5OPT (recursive shell)",
+			makeToolCall("Bash", map[string]any{
+				"command": `sh -c "export PERL5OPT=-Mevil && python3 -c pass"`,
+			}),
+		},
+		{
+			"sh -c export NODE_OPTIONS (recursive shell)",
+			makeToolCall("Bash", map[string]any{
+				"command": `sh -c "export NODE_OPTIONS=evil && echo done"`,
+			}),
+		},
+		{
+			"eval export BASH_ENV",
+			makeToolCall("Bash", map[string]any{
+				"command": `eval "export BASH_ENV=/tmp/evil.sh"`,
+			}),
+		},
 	}
 
 	for _, tc := range attacks {

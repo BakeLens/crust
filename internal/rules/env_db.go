@@ -15,8 +15,21 @@ const (
 // EnvVarEntry describes a dangerous environment variable.
 type EnvVarEntry struct {
 	Risk  EnvVarRisk
-	OS    string // "all", "linux", "darwin", "windows", "freebsd"
+	OS    string // comma-separated: "all", "linux,freebsd", "darwin", "windows", "linux,darwin,freebsd"
 	Chain string // one-line attack chain description
+}
+
+// matchesOS returns true if the entry applies to the given GOOS value.
+func (e EnvVarEntry) matchesOS(goos string) bool {
+	if e.OS == "all" {
+		return true
+	}
+	for os := range strings.SplitSeq(e.OS, ",") {
+		if os == goos {
+			return true
+		}
+	}
+	return false
 }
 
 // dangerousEnvVars maps uppercase env var names to their risk entries.
@@ -74,10 +87,10 @@ var dangerousEnvVars = map[string]EnvVarEntry{
 
 	// ── Tier 2: Library injection (always block) ───────────────────────
 
-	// Linux/FreeBSD dynamic linker
-	"LD_PRELOAD":      {EnvRiskLibInject, "linux", "injects shared library into every process"},
-	"LD_AUDIT":        {EnvRiskLibInject, "linux", "rtld-audit interface loads auditing library"},
-	"LD_LIBRARY_PATH": {EnvRiskPathHijack, "linux", "hijacks shared library search order"},
+	// Linux/FreeBSD dynamic linker (ELF ld.so)
+	"LD_PRELOAD":      {EnvRiskLibInject, "linux,freebsd", "injects shared library into every process"},
+	"LD_AUDIT":        {EnvRiskLibInject, "linux,freebsd", "rtld-audit interface loads auditing library"},
+	"LD_LIBRARY_PATH": {EnvRiskPathHijack, "linux,freebsd", "hijacks shared library search order"},
 
 	// macOS dynamic linker
 	"DYLD_INSERT_LIBRARIES":      {EnvRiskLibInject, "darwin", "injects dylib into every process"},
@@ -86,11 +99,12 @@ var dangerousEnvVars = map[string]EnvVarEntry{
 	"DYLD_FALLBACK_LIBRARY_PATH": {EnvRiskPathHijack, "darwin", "hijacks fallback dylib search"},
 	"DYLD_FORCE_FLAT_NAMESPACE":  {EnvRiskLibInject, "darwin", "forces flat namespace enabling symbol interposition"},
 
-	// .NET profiler injection (Windows)
+	// .NET profiler injection
+	// COR_PROFILER is Windows-only (.NET Framework); CORECLR is cross-platform (.NET Core)
 	"COR_PROFILER":          {EnvRiskLibInject, "windows", ".NET Framework loads profiler COM DLL"},
 	"COR_PROFILER_PATH":     {EnvRiskLibInject, "windows", ".NET Framework profiler DLL path"},
-	"CORECLR_PROFILER":      {EnvRiskLibInject, "windows", ".NET Core loads profiler COM DLL"},
-	"CORECLR_PROFILER_PATH": {EnvRiskLibInject, "windows", ".NET Core profiler DLL path"},
+	"CORECLR_PROFILER":      {EnvRiskLibInject, "all", ".NET Core loads profiler shared library"},
+	"CORECLR_PROFILER_PATH": {EnvRiskLibInject, "all", ".NET Core profiler library path"},
 }
 
 // dangerousEnvVarsLower is the case-folded lookup table, built once at init.

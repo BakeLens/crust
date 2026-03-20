@@ -455,7 +455,7 @@ func (e *Engine) checkDangerousEnvVars(info ExtractedInfo) *MatchResult {
 			continue
 		}
 		// Check OS filter
-		if entry.OS != "all" && entry.OS != runtime.GOOS {
+		if !entry.matchesOS(runtime.GOOS) {
 			continue
 		}
 		m := NewMatch(

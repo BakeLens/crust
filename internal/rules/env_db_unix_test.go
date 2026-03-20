@@ -21,11 +21,11 @@ func TestEnvDB_UnixLinkerVars(t *testing.T) {
 	tests := []struct {
 		name      string
 		cmd       string
-		blockedOn string // "linux", "darwin", or "all"
+		blockedOn string // comma-separated GOOS values, or "all"
 	}{
-		{"LD_PRELOAD", `export LD_PRELOAD=/tmp/evil.so`, "linux"},
-		{"LD_AUDIT", `export LD_AUDIT=/tmp/audit.so`, "linux"},
-		{"LD_LIBRARY_PATH", `export LD_LIBRARY_PATH=/tmp/evil`, "linux"},
+		{"LD_PRELOAD", `export LD_PRELOAD=/tmp/evil.so`, "linux,freebsd"},
+		{"LD_AUDIT", `export LD_AUDIT=/tmp/audit.so`, "linux,freebsd"},
+		{"LD_LIBRARY_PATH", `export LD_LIBRARY_PATH=/tmp/evil`, "linux,freebsd"},
 		{"DYLD_INSERT_LIBRARIES", `export DYLD_INSERT_LIBRARIES=/tmp/evil.dylib`, "darwin"},
 		{"DYLD_LIBRARY_PATH", `export DYLD_LIBRARY_PATH=/tmp/evil`, "darwin"},
 		{"DYLD_FRAMEWORK_PATH", `export DYLD_FRAMEWORK_PATH=/tmp/evil`, "darwin"},
@@ -37,7 +37,7 @@ func TestEnvDB_UnixLinkerVars(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			args, _ := json.Marshal(map[string]string{"command": tc.cmd})
 			result := engine.Evaluate(ToolCall{Name: "Bash", Arguments: args})
-			shouldBlock := tc.blockedOn == "all" || tc.blockedOn == runtime.GOOS
+			shouldBlock := (EnvVarEntry{OS: tc.blockedOn}).matchesOS(runtime.GOOS)
 			if shouldBlock && (!result.Matched || result.RuleName != "builtin:block-dangerous-env") {
 				t.Errorf("%s should be blocked on %s", tc.name, runtime.GOOS)
 			}
@@ -60,7 +60,7 @@ func TestEnvDB_WindowsVarsSkippedOnUnix(t *testing.T) {
 	windowsOnly := []string{
 		`export COR_PROFILER="{CLSID}"`,
 		`export COR_PROFILER_PATH="C:\evil.dll"`,
-		`export CORECLR_PROFILER="{CLSID}"`,
+		// CORECLR_PROFILER is now "all" (.NET Core is cross-platform)
 		`export COMSPEC="C:\evil.exe"`,
 	}
 

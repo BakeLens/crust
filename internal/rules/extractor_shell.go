@@ -567,6 +567,9 @@ func (e *Extractor) handleShellInterpreter(info *ExtractedInfo, commands []parse
 		// Parse and expand inner command with propagated symtab
 		parsed, resolvedSymtab := e.parseShellCommandsExpand(innerCmd, innerSymtab)
 		if len(parsed) > 0 {
+			// Propagate env vars from inner shell back to info.EnvVars
+			// so checkDangerousEnvVars catches e.g. sh -c "export PERL5OPT=..."
+			mergeEnvVarsFromSymtab(info, resolvedSymtab, innerSymtab)
 			e.extractFromParsedCommandsDepth(info, parsed, depth+1, resolvedSymtab)
 			return true
 		}
@@ -645,6 +648,8 @@ func (e *Extractor) handleEvalCommand(info *ExtractedInfo, cmdName string, args 
 	innerSymtab := mergeEnvArgs(pcArgs, parentSymtab)
 	parsed, resolvedSymtab := e.parseShellCommandsExpand(innerCmd, innerSymtab)
 	if len(parsed) > 0 {
+		// Propagate env vars from eval'd code back to info.EnvVars
+		mergeEnvVarsFromSymtab(info, resolvedSymtab, innerSymtab)
 		e.extractFromParsedCommandsDepth(info, parsed, depth+1, resolvedSymtab)
 		return true
 	}
@@ -1242,6 +1247,20 @@ func deduplicateStrings(items []string) []string {
 		}
 	}
 	return result
+}
+
+// mergeEnvVarsFromSymtab propagates new/changed env vars from a recursive
+// shell's symtab back to info.EnvVars. This ensures that env vars set inside
+// "sh -c ..." or "eval ..." are visible to checkDangerousEnvVars.
+func mergeEnvVarsFromSymtab(info *ExtractedInfo, resolvedSymtab, inputSymtab map[string]string) {
+	for k, v := range resolvedSymtab {
+		if orig, exists := inputSymtab[k]; !exists || orig != v {
+			if info.EnvVars == nil {
+				info.EnvVars = make(map[string]string)
+			}
+			info.EnvVars[k] = v
+		}
+	}
 }
 
 // extractInlineAssigns walks the AST and populates info.EnvVars with
