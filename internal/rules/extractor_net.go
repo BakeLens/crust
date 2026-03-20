@@ -388,6 +388,7 @@ func looksLikeHost(s string) bool {
 var dnsCache = &dnsLRU{
 	entries: make(map[string]dnsCacheEntry),
 	maxSize: 256,
+	now:     time.Now,
 }
 
 type dnsCacheEntry struct {
@@ -399,6 +400,7 @@ type dnsLRU struct {
 	mu      sync.Mutex
 	entries map[string]dnsCacheEntry
 	maxSize int
+	now     func() time.Time // clock for TTL checks; defaults to time.Now
 }
 
 const dnsCacheTTL = 60 * time.Second
@@ -407,7 +409,7 @@ func (c *dnsLRU) get(host string) ([]netip.Addr, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.entries[host]
-	if !ok || time.Now().After(e.expires) {
+	if !ok || c.now().After(e.expires) {
 		return nil, false
 	}
 	return e.ips, true
@@ -430,7 +432,7 @@ func (c *dnsLRU) put(host string, ips []netip.Addr) {
 	}
 	c.entries[host] = dnsCacheEntry{
 		ips:     ips,
-		expires: time.Now().Add(dnsCacheTTL),
+		expires: c.now().Add(dnsCacheTTL),
 	}
 }
 

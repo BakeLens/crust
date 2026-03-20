@@ -16,17 +16,25 @@ const sessionTTL = 24 * time.Hour
 
 // SessionStore tracks active MCP sessions by their session IDs.
 type SessionStore struct {
-	mu       sync.RWMutex
-	sessions map[string]time.Time
-	stop     chan struct{}
-	once     sync.Once
+	mu           sync.RWMutex
+	sessions     map[string]time.Time
+	stop         chan struct{}
+	once         sync.Once
+	now          func() time.Time // clock for timestamps; defaults to time.Now
+	reapInterval time.Duration    // how often to check for expired sessions
 }
 
 // NewSessionStore creates a new session store with a background reaper.
 func NewSessionStore() *SessionStore {
+	return newSessionStore(time.Now, 5*time.Minute)
+}
+
+func newSessionStore(now func() time.Time, reapInterval time.Duration) *SessionStore {
 	s := &SessionStore{
-		sessions: make(map[string]time.Time),
-		stop:     make(chan struct{}),
+		sessions:     make(map[string]time.Time),
+		stop:         make(chan struct{}),
+		now:          now,
+		reapInterval: reapInterval,
 	}
 	go s.reapLoop()
 	return s
@@ -44,7 +52,7 @@ func (s *SessionStore) Track(id string) {
 	if _, exists := s.sessions[id]; !exists && len(s.sessions) >= maxSessions {
 		return
 	}
-	s.sessions[id] = time.Now()
+	s.sessions[id] = s.now()
 }
 
 // Remove deletes a session ID from the store.
@@ -69,7 +77,7 @@ func (s *SessionStore) Close() {
 
 // reapLoop periodically removes expired sessions.
 func (s *SessionStore) reapLoop() {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(s.reapInterval)
 	defer ticker.Stop()
 	for {
 		select {

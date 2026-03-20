@@ -49,8 +49,9 @@ type Stats struct {
 type Registry struct {
 	states  []*pluginState // pointer slice — append won't invalidate existing elements
 	pool    *Pool
-	mu      sync.RWMutex // protects states slice (Register/Close vs Evaluate)
-	closing atomic.Bool  // set during Close to reject new Evaluate calls
+	now     func() time.Time // clock for circuit breaker timing; defaults to time.Now
+	mu      sync.RWMutex     // protects states slice (Register/Close vs Evaluate)
+	closing atomic.Bool      // set during Close to reject new Evaluate calls
 }
 
 // NewRegistry creates a registry with the given worker pool.
@@ -58,7 +59,7 @@ func NewRegistry(pool *Pool) *Registry {
 	if pool == nil {
 		pool = NewPool(0, 0)
 	}
-	return &Registry{pool: pool}
+	return &Registry{pool: pool, now: time.Now}
 }
 
 // Register initializes and adds a plugin. Plugins are evaluated in
@@ -186,7 +187,7 @@ func (r *Registry) evaluateOne(ctx context.Context, s *pluginState, req Request)
 			return nil // permanently disabled
 		}
 		cooldown := cooldownFor(cycles)
-		elapsed := time.Duration(time.Now().UnixNano()-s.disabledAt.Load()) * time.Nanosecond
+		elapsed := time.Duration(r.now().UnixNano()-s.disabledAt.Load()) * time.Nanosecond
 		if elapsed < cooldown {
 			s.mu.Unlock()
 			return nil // still in cooldown
@@ -225,7 +226,7 @@ func (r *Registry) evaluateOne(ctx context.Context, s *pluginState, req Request)
 		}
 		if count >= int64(maxConsecutiveFailures) {
 			s.disabled.Store(true)
-			s.disabledAt.Store(time.Now().UnixNano())
+			s.disabledAt.Store(r.now().UnixNano())
 			s.disableCycles.Add(1)
 			log.Warn("plugin %q disabled after %d consecutive failures (cycle %d)",
 				s.name, count, s.disableCycles.Load())

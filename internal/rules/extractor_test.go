@@ -792,7 +792,7 @@ func TestResolvesToLoopback(t *testing.T) {
 
 func TestDNSCacheBounded(t *testing.T) {
 	// Fill cache beyond maxSize and verify it doesn't grow unbounded
-	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10}
+	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10, now: time.Now}
 	for i := range 20 {
 		host := "host" + strconv.Itoa(i) + ".example.com"
 		cache.put(host, nil)
@@ -803,7 +803,7 @@ func TestDNSCacheBounded(t *testing.T) {
 }
 
 func TestDNSCacheTTLExpiry(t *testing.T) {
-	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10}
+	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10, now: time.Now}
 	addr := netip.MustParseAddr("127.0.0.1")
 	cache.entries["test.example.com"] = dnsCacheEntry{
 		ips:     []netip.Addr{addr},
@@ -815,7 +815,7 @@ func TestDNSCacheTTLExpiry(t *testing.T) {
 }
 
 func TestDNSCacheHit(t *testing.T) {
-	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10}
+	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10, now: time.Now}
 	addr := netip.MustParseAddr("93.184.216.34")
 	cache.put("example.com", []netip.Addr{addr})
 
@@ -830,7 +830,7 @@ func TestDNSCacheHit(t *testing.T) {
 
 func TestDNSCacheNegative(t *testing.T) {
 	// Negative cache: lookup failure stores nil, prevents repeated DNS queries
-	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10}
+	cache := &dnsLRU{entries: make(map[string]dnsCacheEntry), maxSize: 10, now: time.Now}
 	cache.put("nxdomain.invalid", nil)
 
 	ips, ok := cache.get("nxdomain.invalid")
