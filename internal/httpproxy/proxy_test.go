@@ -761,11 +761,11 @@ func TestLayer0_NoContentEncodingAccepted(t *testing.T) {
 // Test: "Trailer" (not "Trailers") is in hop-by-hop header list.
 // RFC 7230 §4.1.2 defines the header as "Trailer" (singular).
 func TestHopByHopHeaders_TrailerSingular(t *testing.T) {
-	if !HopByHopHeaders["Trailer"] {
-		t.Error("HopByHopHeaders should contain 'Trailer' (singular per RFC 7230)")
+	if !hopByHopHeaders["Trailer"] {
+		t.Error("hopByHopHeaders should contain 'Trailer' (singular per RFC 7230)")
 	}
-	if HopByHopHeaders["Trailers"] {
-		t.Error("HopByHopHeaders should NOT contain 'Trailers' (plural is not a valid HTTP header)")
+	if hopByHopHeaders["Trailers"] {
+		t.Error("hopByHopHeaders should NOT contain 'Trailers' (plural is not a valid HTTP header)")
 	}
 }
 

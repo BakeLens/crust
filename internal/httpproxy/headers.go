@@ -9,8 +9,9 @@ import (
 // to avoid conflicts with actual content block indices.
 const WarningBlockIndex = 999
 
-// HopByHopHeaders are headers that should not be forwarded through the proxy.
-var HopByHopHeaders = map[string]bool{
+// hopByHopHeaders are headers that should not be forwarded through the proxy.
+// Unexported to prevent external mutation; use IsHopByHop() for lookups.
+var hopByHopHeaders = map[string]bool{
 	"Connection":          true,
 	"Keep-Alive":          true,
 	"Proxy-Authenticate":  true,
@@ -22,6 +23,12 @@ var HopByHopHeaders = map[string]bool{
 	"Host":                true,
 	"Origin":              true,
 	"Referer":             true,
+}
+
+// IsHopByHop reports whether a header name is a hop-by-hop header
+// that should not be forwarded through the proxy.
+func IsHopByHop(name string) bool {
+	return hopByHopHeaders[name]
 }
 
 // copyHeaders copies response headers from src to dst, stripping hop-by-hop
@@ -37,7 +44,7 @@ func copyHeaders(dst, src http.Header) {
 	}
 
 	for key, values := range src {
-		if HopByHopHeaders[key] || connHop[key] {
+		if hopByHopHeaders[key] || connHop[key] {
 			continue
 		}
 		for _, value := range values {
@@ -56,7 +63,7 @@ func stripHopByHopHeaders(h http.Header) {
 			h.Del(strings.TrimSpace(name))
 		}
 	}
-	for k := range HopByHopHeaders {
+	for k := range hopByHopHeaders {
 		h.Del(k)
 	}
 }

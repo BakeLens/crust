@@ -25,13 +25,17 @@ func ReadFileWithLock(path string) ([]byte, error) {
 // SECURITY: The file is opened without O_TRUNC, and truncated only after
 // acquiring the exclusive lock. This prevents a TOCTOU race where two
 // concurrent writers both truncate before either locks.
-func WriteFileWithLock(path string, data []byte) error {
+func WriteFileWithLock(path string, data []byte) (retErr error) {
 	f, err := OpenExclusive(path, os.O_WRONLY|os.O_CREATE)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	defer Unlock(f)
+	defer func() {
+		Unlock(f)
+		if closeErr := f.Close(); closeErr != nil && retErr == nil {
+			retErr = closeErr
+		}
+	}()
 
 	// Truncate and seek after lock — safe from concurrent writers.
 	if err := f.Truncate(0); err != nil {
@@ -57,10 +61,14 @@ func WriteFileExclusive(path string, data []byte) (bool, error) {
 		}
 		return false, err
 	}
-	defer f.Close()
 
 	if _, err := f.Write(data); err != nil {
+		f.Close()
 		os.Remove(path) // clean up partial write
+		return false, err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(path) // close failed — file may be incomplete
 		return false, err
 	}
 	return true, nil

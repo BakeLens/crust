@@ -104,7 +104,10 @@ func patchJSONField(configPath, urlKey, proxyURL string) error {
 		return err
 	}
 
-	original, _ := obj[urlKey].(string)
+	original, ok := obj[urlKey].(string)
+	if !ok {
+		original = "" // key absent or not a string — treat as empty
+	}
 	if original == proxyURL {
 		return nil // already pointing at Crust
 	}
