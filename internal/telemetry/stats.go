@@ -79,7 +79,7 @@ func (s *StatsService) GetCoverage(ctx context.Context, rangeStr string) ([]Cove
 }
 
 // =============================================================================
-// net/http handlers — no Gin dependency
+// net/http handlers
 // =============================================================================
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

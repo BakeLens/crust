@@ -15,7 +15,7 @@ import (
 // Manager coordinates security components.
 // Heavy dependencies (storage, API server, cleanup) are optional —
 // injected via functional options so that lightweight builds (mobile/GUI)
-// don't pull in gin, SQLite, or HTTP server code.
+// don't pull in SQLite or HTTP server code.
 type Manager struct {
 	interceptor *Interceptor
 	registry    *plugin.Registry
@@ -23,7 +23,7 @@ type Manager struct {
 
 	// Optional components — nil when running as library (mobile/GUI).
 	storage       telemetry.Recorder
-	apiHandler    http.Handler // abstracts *APIServer to avoid gin import
+	apiHandler    http.Handler // abstracts *APIServer via standard http.Handler
 	apiHTTPServer *http.Server
 	apiListener   net.Listener
 	socketPath    string
@@ -51,7 +51,7 @@ func WithStorage(storage telemetry.Recorder) Option {
 }
 
 // WithAPI attaches an HTTP API server on the given listener.
-// The handler is typically a gin router from NewAPIServer().
+// The handler is typically an http.Handler from NewAPIServer().
 func WithAPI(handler http.Handler, ln net.Listener, socketPath string) Option {
 	return func(m *Manager) {
 		m.apiHandler = handler

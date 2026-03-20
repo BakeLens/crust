@@ -43,7 +43,7 @@ All endpoints default to a sensible range if `range` is omitted (7d for trend, 3
 
 ### Architecture
 
-The endpoints use a framework-agnostic `StatsService` (`internal/telemetry/stats.go`) with plain `net/http` handlers. These are mounted in the Gin router via `gin.WrapF`. The service can also be used directly from Go code (CLI, TUI, tests) without any HTTP or Gin dependency.
+The endpoints use a framework-agnostic `StatsService` (`internal/telemetry/stats.go`) with plain `net/http` handlers. These are mounted in an `http.ServeMux` via `mux.HandleFunc()`. The service can also be used directly from Go code (CLI, TUI, tests) without any external HTTP framework dependency.
 
 ### TUI
 

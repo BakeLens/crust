@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// HopByHopHeaders are HTTP headers that must not be forwarded through a proxy
+// hopByHopHeaders maps HTTP headers that must not be forwarded through a proxy
 // per RFC 7230 §6.1. Immutable after init.
 var hopByHopHeaders = map[string]bool{
 	"Connection":          true,
