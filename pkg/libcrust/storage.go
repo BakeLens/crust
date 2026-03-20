@@ -10,7 +10,6 @@ import (
 
 	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/monitor"
-	"github.com/BakeLens/crust/internal/security"
 	"github.com/BakeLens/crust/internal/telemetry"
 )
 
@@ -105,8 +104,7 @@ func InitStorage(dbPath string, encryptionKey string) error {
 	eventlog.SetSink(storageSink{})
 
 	// Update the interceptor's storage if already initialized.
-	i := security.GetGlobalInterceptor()
-	if i != nil {
+	if i := getInterceptor(); i != nil {
 		i.SetStorage(db)
 	}
 

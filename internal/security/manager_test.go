@@ -1,80 +1,25 @@
 package security
 
 import (
-	"sync"
 	"testing"
 
 	"github.com/BakeLens/crust/internal/types"
 )
 
-func saveGlobalManager(t *testing.T) {
-	t.Helper()
-	orig := globalManager
-	t.Cleanup(func() {
-		globalManagerMu.Lock()
-		globalManager = orig
-		globalManagerMu.Unlock()
-	})
-}
-
-func TestGetInterceptionConfig_RaceFree(t *testing.T) {
-	saveGlobalManager(t)
-
-	SetGlobalManager(nil)
-
-	var wg sync.WaitGroup
-	const goroutines = 100
-
-	// Half the goroutines read the config
-	for range goroutines / 2 {
-		wg.Go(func() {
-			for range 1000 {
-				cfg := GetInterceptionConfig()
-				_ = cfg.BlockMode
-			}
-		})
-	}
-
-	// Half the goroutines write the manager
-	for range goroutines / 2 {
-		wg.Go(func() {
-			for range 1000 {
-				m := &Manager{
-					bufferStreaming: true,
-					maxBufferEvents: 500,
-					bufferTimeout:   30,
-					blockMode:       types.BlockModeReplace,
-					stopChan:        make(chan struct{}),
-				}
-				SetGlobalManager(m)
-				SetGlobalManager(nil)
-			}
-		})
-	}
-
-	wg.Wait()
-}
-
 func TestManager_ShutdownTwiceNoPanic(t *testing.T) {
-	m := &Manager{
-		stopChan: make(chan struct{}),
-	}
+	m := NewManagerForTest(nil)
 	ctx := t.Context()
-	// First shutdown should succeed
 	if err := m.Shutdown(ctx); err != nil {
 		t.Fatalf("first Shutdown: %v", err)
 	}
-	// Second shutdown must not panic (double close of stopChan)
 	if err := m.Shutdown(ctx); err != nil {
 		t.Fatalf("second Shutdown: %v", err)
 	}
 }
 
-func TestGetInterceptionConfig_NilManager(t *testing.T) {
-	saveGlobalManager(t)
-
-	SetGlobalManager(nil)
-	cfg := GetInterceptionConfig()
+func TestManager_NilInterceptionCfg(t *testing.T) {
+	var m *Manager
+	cfg := m.InterceptionCfg()
 	if cfg.BlockMode != types.BlockModeRemove {
 		t.Errorf("nil manager: BlockMode = %q, want %q", cfg.BlockMode, types.BlockModeRemove)
 	}
@@ -83,19 +28,13 @@ func TestGetInterceptionConfig_NilManager(t *testing.T) {
 	}
 }
 
-func TestGetInterceptionConfig_ReadsValues(t *testing.T) {
-	saveGlobalManager(t)
+func TestManager_InterceptionCfg(t *testing.T) {
+	m := NewManager(nil, nil, types.BlockModeReplace,
+		WithBuffering(true, 42, 99),
+	)
+	defer m.Shutdown(t.Context())
 
-	m := &Manager{
-		bufferStreaming: true,
-		maxBufferEvents: 42,
-		bufferTimeout:   99,
-		blockMode:       types.BlockModeReplace,
-		stopChan:        make(chan struct{}),
-	}
-	SetGlobalManager(m)
-
-	cfg := GetInterceptionConfig()
+	cfg := m.InterceptionCfg()
 	if !cfg.BufferStreaming {
 		t.Error("BufferStreaming should be true")
 	}
@@ -107,5 +46,18 @@ func TestGetInterceptionConfig_ReadsValues(t *testing.T) {
 	}
 	if cfg.BlockMode != types.BlockModeReplace {
 		t.Errorf("BlockMode = %q, want %q", cfg.BlockMode, types.BlockModeReplace)
+	}
+}
+
+func TestManager_NilAccessors(t *testing.T) {
+	var m *Manager
+	if m.GetInterceptor() != nil {
+		t.Error("nil manager: GetInterceptor should return nil")
+	}
+	if m.GetRegistry() != nil {
+		t.Error("nil manager: GetRegistry should return nil")
+	}
+	if m.GetStorage() != nil {
+		t.Error("nil manager: GetStorage should return nil")
 	}
 }

@@ -1,165 +1,121 @@
-//go:build !libcrust
-
 package security
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/plugin"
-	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
 	"github.com/BakeLens/crust/internal/types"
 )
 
-// Manager manages the security and telemetry module components
+// Manager coordinates security components.
+// Heavy dependencies (storage, API server, cleanup) are optional —
+// injected via functional options so that lightweight builds (mobile/GUI)
+// don't pull in gin, SQLite, or HTTP server code.
 type Manager struct {
+	interceptor *Interceptor
+	registry    *plugin.Registry
+	blockMode   types.BlockMode
+
+	// Optional components — nil when running as library (mobile/GUI).
 	storage       telemetry.Recorder
-	interceptor   *Interceptor
-	registry      *plugin.Registry
-	apiServer     *APIServer
+	apiHandler    http.Handler // abstracts *APIServer to avoid gin import
+	apiHTTPServer *http.Server
+	apiListener   net.Listener
+	socketPath    string
 	retentionDays int
 
 	// Streaming buffering settings
 	bufferStreaming bool
 	maxBufferEvents int
 	bufferTimeout   int
-	blockMode       types.BlockMode
 
-	apiHTTPServer *http.Server
-	apiListener   net.Listener
-	socketPath    string // Unix socket path or Windows pipe name (for cleanup)
-	stopChan      chan struct{}
-	stopOnce      sync.Once
-	wg            sync.WaitGroup
+	stopChan chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
 }
 
-// globalManager and globalManagerMu are in manager_common.go
+// Option configures optional Manager components.
+type Option func(*Manager)
 
-// Config holds manager configuration
-type Config struct {
-	DBPath          string
-	DBKey           string // Encryption key for SQLCipher
-	SocketPath      string // Unix socket path or Windows pipe identifier
-	SecurityEnabled bool
-	RetentionDays   int // Data retention in days, 0 = forever
-	// Streaming buffering settings
-	BufferStreaming bool                // Enable response buffering for streaming requests
-	MaxBufferEvents int                 // Maximum SSE events to buffer
-	BufferTimeout   int                 // Buffer timeout in seconds
-	BlockMode       types.BlockMode     // types.BlockModeRemove (default) or types.BlockModeReplace
-	Engine          rules.RuleEvaluator // Rule engine (required if SecurityEnabled)
+// WithStorage attaches telemetry storage and seeds in-memory metrics
+// from persisted events (last 24h) so stats survive daemon restarts.
+func WithStorage(storage telemetry.Recorder) Option {
+	return func(m *Manager) {
+		m.storage = storage
+	}
 }
 
-// Init initializes the manager
-func Init(cfg Config) (*Manager, error) {
-	// Initialize storage (with optional encryption)
-	storage, err := telemetry.NewStorage(cfg.DBPath, cfg.DBKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize storage: %w", err)
+// WithAPI attaches an HTTP API server on the given listener.
+// The handler is typically a gin router from NewAPIServer().
+func WithAPI(handler http.Handler, ln net.Listener, socketPath string) Option {
+	return func(m *Manager) {
+		m.apiHandler = handler
+		m.apiListener = ln
+		m.socketPath = socketPath
 	}
+}
 
-	// Set global storage for telemetry
-	telemetry.SetGlobalStorage(storage)
-
-	// Seed in-memory metrics from persisted events (last 24h) so stats
-	// survive daemon restarts.
-	seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer seedCancel()
-	if counts, err := storage.GetLayerCounts(seedCtx); err == nil {
-		m := eventlog.GetMetrics()
-		for _, lc := range counts {
-			m.Seed(lc.Layer, lc.Blocked, lc.Count)
-		}
+// WithRetention enables periodic data cleanup.
+func WithRetention(days int) Option {
+	return func(m *Manager) {
+		m.retentionDays = days
 	}
+}
 
-	// Default block mode to "remove" if not specified
-	blockMode := cfg.BlockMode
+// WithBuffering configures streaming response buffering.
+func WithBuffering(streaming bool, maxEvents, timeoutSec int) Option {
+	return func(m *Manager) {
+		m.bufferStreaming = streaming
+		m.maxBufferEvents = maxEvents
+		m.bufferTimeout = timeoutSec
+	}
+}
+
+// NewManager creates a Manager. By default it's lightweight (no storage,
+// no API, no cleanup). Use options to add daemon-specific features.
+func NewManager(interceptor *Interceptor, registry *plugin.Registry, blockMode types.BlockMode, opts ...Option) *Manager {
 	if blockMode == types.BlockModeUnset {
 		blockMode = types.BlockModeRemove
 	}
-
 	m := &Manager{
-		storage:         storage,
-		retentionDays:   cfg.RetentionDays,
-		bufferStreaming: cfg.BufferStreaming,
-		maxBufferEvents: cfg.MaxBufferEvents,
-		bufferTimeout:   cfg.BufferTimeout,
-		blockMode:       blockMode,
-		stopChan:        make(chan struct{}),
+		interceptor: interceptor,
+		registry:    registry,
+		blockMode:   blockMode,
+		stopChan:    make(chan struct{}),
 	}
-
-	// Run initial cleanup
-	if cfg.RetentionDays > 0 {
-		if deleted, err := storage.CleanupOldData(context.Background(), cfg.RetentionDays); err != nil {
-			log.Warn("Initial cleanup failed: %v", err)
-		} else if deleted > 0 {
-			log.Info("Initial cleanup: removed %d old records", deleted)
-		}
+	for _, opt := range opts {
+		opt(m)
 	}
-
-	// Initialize plugin registry and sandbox plugin.
-	pool := plugin.NewPool(0, 0)
-	m.registry = plugin.NewRegistry(pool)
-	if sp, err := plugin.NewSandboxPlugin(); err == nil {
-		if regErr := m.registry.Register(sp, nil); regErr != nil {
-			log.Warn("sandbox plugin registration failed: %v", regErr)
-		} else {
-			log.Info("sandbox plugin registered (binary: %s)", sp.BinaryPath())
-		}
-	} else {
-		log.Info("sandbox plugin not available: %v", err)
-	}
-
-	// Initialize interceptor if security is enabled and rules engine exists
-	if cfg.SecurityEnabled && cfg.Engine != nil {
-		m.interceptor = NewInterceptor(cfg.Engine, storage)
-	}
-
-	// Initialize API server with Unix domain socket (or named pipe on Windows)
-	m.apiServer = NewAPIServer(storage, m.interceptor, cfg.Engine, m)
-	m.socketPath = cfg.SocketPath
-
-	ln, err := apiListener(cfg.SocketPath)
-	if err != nil {
-		storage.Close()
-		return nil, fmt.Errorf("failed to create API listener: %w", err)
-	}
-	m.apiListener = ln
-	m.apiHTTPServer = &http.Server{
-		Handler:           m.apiServer.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	m.wg.Go(func() {
-		if err := m.apiHTTPServer.Serve(ln); err != nil && err != http.ErrServerClosed {
-			log.Error("API server error: %v", err)
-		}
-	})
-
-	// Start periodic cleanup if retention is enabled
-	if cfg.RetentionDays > 0 {
-		m.wg.Go(m.cleanupLoop)
-	}
-
-	globalManagerMu.Lock()
-	globalManager = m
-	globalManagerMu.Unlock()
-
-	// Register storage sink for event recording.
-	initEventSink(storage)
-
-	return m, nil
+	return m
 }
 
-// cleanupLoop runs periodic data cleanup
+// Start launches background goroutines (API server, cleanup loop).
+// No-op if no optional components are configured.
+func (m *Manager) Start() {
+	if m.apiHandler != nil && m.apiListener != nil {
+		m.apiHTTPServer = &http.Server{
+			Handler:           m.apiHandler,
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		m.wg.Go(func() {
+			if err := m.apiHTTPServer.Serve(m.apiListener); err != nil && err != http.ErrServerClosed {
+				log.Error("API server error: %v", err)
+			}
+		})
+	}
+
+	if m.retentionDays > 0 && m.storage != nil {
+		m.wg.Go(m.cleanupLoop)
+	}
+}
+
+// cleanupLoop runs periodic data cleanup.
 func (m *Manager) cleanupLoop() {
-	// Run cleanup every hour
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
@@ -179,7 +135,7 @@ func (m *Manager) cleanupLoop() {
 	}
 }
 
-// Shutdown shuts down the manager
+// Shutdown stops all background goroutines and releases resources.
 func (m *Manager) Shutdown(ctx context.Context) error {
 	if m == nil {
 		return nil
@@ -193,7 +149,6 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// Clean up socket file (no-op for Windows named pipes)
 	if m.socketPath != "" {
 		cleanupSocket(m.socketPath)
 	}
@@ -215,16 +170,9 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// APIHandler returns the management API HTTP handler.
-// Mounted on the proxy server when --listen-address is non-loopback (Docker mode).
-func (m *Manager) APIHandler() http.Handler {
-	if m == nil || m.apiServer == nil {
-		return http.NotFoundHandler()
-	}
-	return m.apiServer.Handler()
-}
+// --- Accessors ---
 
-// GetInterceptor returns the interceptor
+// GetInterceptor returns the interceptor.
 func (m *Manager) GetInterceptor() *Interceptor {
 	if m == nil {
 		return nil
@@ -232,7 +180,7 @@ func (m *Manager) GetInterceptor() *Interceptor {
 	return m.interceptor
 }
 
-// InterceptionCfg returns the security interception configuration for this manager instance.
+// InterceptionCfg returns the security interception configuration.
 func (m *Manager) InterceptionCfg() InterceptionConfig {
 	if m == nil {
 		return InterceptionConfig{BlockMode: types.BlockModeRemove}
@@ -245,7 +193,7 @@ func (m *Manager) InterceptionCfg() InterceptionConfig {
 	}
 }
 
-// GetRegistry returns the plugin registry
+// GetRegistry returns the plugin registry.
 func (m *Manager) GetRegistry() *plugin.Registry {
 	if m == nil {
 		return nil
@@ -253,7 +201,7 @@ func (m *Manager) GetRegistry() *plugin.Registry {
 	return m.registry
 }
 
-// GetStorage returns the storage recorder
+// GetStorage returns the storage recorder.
 func (m *Manager) GetStorage() telemetry.Recorder {
 	if m == nil {
 		return nil
@@ -261,35 +209,27 @@ func (m *Manager) GetStorage() telemetry.Recorder {
 	return m.storage
 }
 
-// GetGlobalManager returns the global manager
-func GetGlobalManager() *Manager {
-	globalManagerMu.RLock()
-	defer globalManagerMu.RUnlock()
-	return globalManager
+// SetAPI attaches an HTTP API server after construction.
+// Used when the API server needs a reference to the manager itself.
+func (m *Manager) SetAPI(handler http.Handler, ln net.Listener, socketPath string) {
+	m.apiHandler = handler
+	m.apiListener = ln
+	m.socketPath = socketPath
 }
 
-// NewManagerForTest creates a lightweight manager with an interceptor only.
-// No API server, no cleanup goroutines. Intended for unit tests.
+// APIHandler returns the management API HTTP handler.
+func (m *Manager) APIHandler() http.Handler {
+	if m == nil || m.apiHandler == nil {
+		return http.NotFoundHandler()
+	}
+	return m.apiHandler
+}
+
+// NewManagerForTest creates a lightweight manager for unit tests.
 func NewManagerForTest(interceptor *Interceptor) *Manager {
 	return &Manager{
 		interceptor: interceptor,
 		blockMode:   types.BlockModeRemove,
 		stopChan:    make(chan struct{}),
-	}
-}
-
-// GetInterceptionConfig returns the security interception configuration.
-func GetInterceptionConfig() InterceptionConfig {
-	globalManagerMu.RLock()
-	m := globalManager
-	globalManagerMu.RUnlock()
-	if m == nil {
-		return InterceptionConfig{BlockMode: types.BlockModeRemove}
-	}
-	return InterceptionConfig{
-		BufferStreaming: m.bufferStreaming,
-		MaxBufferEvents: m.maxBufferEvents,
-		BufferTimeout:   m.bufferTimeout,
-		BlockMode:       m.blockMode,
 	}
 }
