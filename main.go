@@ -14,7 +14,6 @@ import (
 
 	"github.com/BakeLens/crust/internal/earlyinit" // side-effect import: init() runs before bubbletea's via dependency order + lexicographic tie-breaking
 
-	"github.com/BakeLens/crust/internal/acpwrap"
 	"github.com/BakeLens/crust/internal/agentdetect"
 	"github.com/BakeLens/crust/internal/autowrap"
 	"github.com/BakeLens/crust/internal/cli"
@@ -77,9 +76,6 @@ func main() {
 		case "status":
 			runStatus(os.Args[2:])
 			return
-		case "agents":
-			runAgents(os.Args[2:])
-			return
 		case "logs":
 			runLogs(os.Args[2:])
 			return
@@ -92,17 +88,11 @@ func main() {
 		case "list-rules":
 			runListRules(os.Args[2:])
 			return
-		case "reload-rules":
-			runReloadRules(os.Args[2:])
-			return
 		case "lint-rules":
 			runLintRules(os.Args[2:])
 			return
 		case "doctor":
 			runDoctor(os.Args[2:])
-			return
-		case "acp-wrap":
-			runAcpWrap(os.Args[2:])
 			return
 		case "mcp":
 			runMCP(os.Args[2:])
@@ -774,21 +764,10 @@ func runListRules(args []string) {
 	}
 }
 
-// runReloadRules handles the reload-rules subcommand
-func runReloadRules(_ []string) {
-	client := cli.NewAPIClient()
-	body, err := client.ReloadRules()
-	if err != nil {
-		exitNotRunning()
-	}
-	fmt.Println(string(body))
-}
-
-// runAcpWrap handles the acp-wrap subcommand
 // proxyRunConfig describes a proxy subcommand entry point.
 type proxyRunConfig struct {
-	name  string // subcommand name (e.g., "acp-wrap")
-	usage string // usage line (e.g., "acp-wrap [flags] -- <agent-command> [args...]")
+	name  string // subcommand name (e.g., "wrap")
+	usage string // usage line (e.g., "wrap [flags] -- <command> [args...]")
 	run   func(engine rules.RuleEvaluator, cmd []string) int
 }
 
@@ -811,7 +790,7 @@ func registerCommonFlags(fs *flag.FlagSet) commonFlags {
 }
 
 // loadEngine sets up logging, loads config, and creates a rules engine.
-// Used by all proxy subcommands (acp-wrap, mcp gateway, mcp http, wrap).
+// Used by all proxy subcommands (wrap, mcp http).
 func loadEngine(name string, cf commonFlags, subprocessIsolation bool) *rules.Engine {
 	logger.SetColored(false)
 	if *cf.logLevel != "" {
@@ -850,7 +829,7 @@ func loadEngine(name string, cf commonFlags, subprocessIsolation bool) *rules.En
 }
 
 // runProxyCommand implements the shared flag parsing, config loading, engine
-// init, and subprocess launch for all proxy subcommands (acp-wrap, mcp gateway, wrap).
+// init, and subprocess launch for proxy subcommands (wrap).
 func runProxyCommand(pcfg proxyRunConfig, args []string) {
 	fs := flag.NewFlagSet(pcfg.name, flag.ExitOnError)
 	cf := registerCommonFlags(fs)
@@ -866,22 +845,12 @@ func runProxyCommand(pcfg proxyRunConfig, args []string) {
 	os.Exit(pcfg.run(engine, subCmd))
 }
 
-func runAcpWrap(args []string) {
-	runProxyCommand(proxyRunConfig{
-		name:  "acp-wrap",
-		usage: "acp-wrap [flags] -- <agent-command> [args...]",
-		run:   acpwrap.Run,
-	}, args)
-}
-
 func runMCP(args []string) {
 	if len(args) < 1 {
 		printMCPUsage()
 		return
 	}
 	switch args[0] {
-	case "gateway":
-		runMcpGateway(args[1:])
 	case "http":
 		runMcpHTTP(args[1:])
 	case "discover":
@@ -896,19 +865,10 @@ func printMCPUsage() {
 	fmt.Println()
 	fmt.Println(tui.Separator("MCP Commands"))
 	fmt.Print(tui.AlignColumns([][2]string{
-		{"crust mcp gateway [flags] -- <cmd...>", "MCP stdio proxy with security rules"},
 		{"crust mcp http --upstream <url>", "MCP HTTP reverse proxy with security rules"},
 		{"crust mcp discover [--patch] [--restore]", "Scan/patch MCP client configs"},
 	}, "  ", 2, tui.StyleCommand, tui.StyleMuted))
 	fmt.Println()
-}
-
-func runMcpGateway(args []string) {
-	runProxyCommand(proxyRunConfig{
-		name:  "mcp gateway",
-		usage: "mcp gateway [flags] -- <mcp-server-command> [args...]",
-		run:   mcpgateway.Run,
-	}, args)
 }
 
 func runMcpHTTP(args []string) {

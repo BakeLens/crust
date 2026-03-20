@@ -42,11 +42,11 @@ Rule Evaluation:
 
 **Rule Engine:** Evaluates tool calls through the pipeline above. Self-protection (steps 1 & 4) is injected via dependency injection to avoid circular imports. Hardcoded path guards (step 12) use a registry pattern — add new guards without modifying the pipeline.
 
-**[MCP Gateway](mcp.md) (`crust wrap`):** Wraps [MCP](https://modelcontextprotocol.io) servers as a transparent stdio proxy. Inspects both directions — client→server requests (`tools/call`, `resources/read`) and server→client responses (DLP secret scanning). Works with any MCP server (filesystem, database, custom). The dedicated `mcp gateway` subcommand is a hidden alias.
+**[MCP Gateway](mcp.md) (`crust wrap`):** Wraps [MCP](https://modelcontextprotocol.io) servers as a transparent stdio proxy. Inspects both directions — client→server requests (`tools/call`, `resources/read`) and server→client responses (DLP secret scanning). Works with any MCP server (filesystem, database, custom).
 
-**[MCP HTTP Gateway](mcp.md) (`crust wrap`):** Reverse proxy for [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports) MCP servers. Includes hardcoded CSRF protection — validates `Origin` and `Sec-Fetch-Site` headers on all requests including WebSocket upgrades, blocking cross-origin browser attacks (CVE-2025-49596, CVE-2026-25253). Non-browser MCP SDK clients are unaffected. The dedicated `mcp http` subcommand is a hidden alias.
+**[MCP HTTP Gateway](mcp.md) (`crust mcp http`):** Reverse proxy for [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports) MCP servers. Includes hardcoded CSRF protection — validates `Origin` and `Sec-Fetch-Site` headers on all requests including WebSocket upgrades, blocking cross-origin browser attacks (CVE-2025-49596, CVE-2026-25253). Non-browser MCP SDK clients are unaffected.
 
-**[ACP Mode](acp.md) (`crust wrap`):** Wraps [ACP](https://agentclientprotocol.com) agents as a transparent stdio proxy. Intercepts `fs/read_text_file`, `fs/write_text_file`, and `terminal/create` requests. Supports JetBrains IDEs and other ACP-compatible editors. The dedicated `acp-wrap` subcommand is a hidden alias.
+**[ACP Mode](acp.md) (`crust wrap`):** Wraps [ACP](https://agentclientprotocol.com) agents as a transparent stdio proxy. Intercepts `fs/read_text_file`, `fs/write_text_file`, and `terminal/create` requests. Supports JetBrains IDEs and other ACP-compatible editors.
 
 **Auto-detect (`crust wrap`):** Inspects both MCP and ACP methods in both directions. Response DLP scans all server responses for leaked secrets. Method names are disjoint — no conflict.
 

@@ -388,21 +388,17 @@ var shellCommandPrefixes = map[string]bool{
 // Checks if the first whitespace-delimited token is a known command name, or if
 // the string contains a path after a space.
 func looksLikeShellCommand(s string) bool {
-	if !strings.Contains(s, " ") {
+	// Need at least two whitespace-delimited tokens (command + argument).
+	parts := strings.Fields(s)
+	if len(parts) < 2 {
 		return false
 	}
-	// Extract the first word
-	firstWord := s
-	if idx := strings.IndexByte(s, ' '); idx > 0 {
-		firstWord = s[:idx]
-	}
 	// Strip path prefix (e.g., /usr/bin/cat -> cat)
-	firstWord = stripPathPrefix(firstWord)
+	firstWord := stripPathPrefix(parts[0])
 	if shellCommandPrefixes[strings.ToLower(firstWord)] {
 		return true
 	}
-	// Check if there's a path-like token after a space
-	parts := strings.Fields(s)
+	// Check if there's a path-like token after the command
 	return slices.ContainsFunc(parts[1:], looksLikePath)
 }
 

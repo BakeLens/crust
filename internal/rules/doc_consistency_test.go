@@ -102,8 +102,8 @@ func TestDocConsistency_ProtectionRules(t *testing.T) {
 // wantUserDisablableCount = total - locked
 //
 // Docs that reference these numbers:
-//   - README.md: "30 security rules (27 locked, 3 user-disablable)"
-//   - docs/cli.md: "27 locked" rules note for --disable-builtin
+//   - README.md: "30 security rules (30 locked, 3 user-disablable)"
+//   - docs/cli.md: "30 locked" rules note for --disable-builtin
 
 const (
 	wantTotalRuleCount      = 33
@@ -159,8 +159,7 @@ func TestDocConsistency_BuiltinRuleCounts(t *testing.T) {
 // ── CLI commands ──────────────────────────────────────────────────────────────
 
 // requiredCLICommands lists user-facing commands that must appear in docs/cli.md.
-// Hidden aliases (wrap, acp-wrap, mcp, reload-rules, lint-rules, agents) are
-// internal and not required in docs.
+// Hidden aliases (wrap, mcp, lint-rules) are internal and not required in docs.
 var requiredCLICommands = []string{
 	"crust start",
 	"crust stop",

@@ -1,6 +1,6 @@
 # MCP Gateway
 
-Crust can secure MCP servers via stdio proxy (`crust wrap`) or HTTP reverse proxy (`crust wrap`). The dedicated `mcp gateway` and `mcp http` subcommands are hidden aliases that still work.
+Crust can secure MCP servers via stdio proxy (`crust wrap`) or HTTP reverse proxy (`crust mcp http`).
 
 ## Stdio Gateway
 
@@ -201,7 +201,7 @@ crust wrap [flags] -- <mcp-server-command> [args...]
 | `--upstream` | — | Upstream MCP server URL (for HTTP reverse proxy mode) |
 | `--listen` | `127.0.0.1:9091` | Local listen address (HTTP mode only) |
 
-Logs go to stderr so they don't interfere with the JSON-RPC stdio stream. The hidden aliases `mcp gateway`, `mcp http`, and `acp-wrap` still work.
+Logs go to stderr so they don't interfere with the JSON-RPC stdio stream.
 
 ### `doctor` (includes MCP config scan)
 
