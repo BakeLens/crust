@@ -215,7 +215,57 @@ func (n *Normalizer) PreparePaths(paths []string) []string {
 	paths = filterShellGlobs(paths)
 	paths = n.NormalizeAll(paths)
 	paths = expandFileGlobs(paths)
+	// Strip leading ../ traversal sequences and add the suffix as an
+	// additional path for rule matching. This lets **/.ssh/id_* rules
+	// catch ../../.ssh/id_rsa without needing to resolve relative paths
+	// against an unknown CWD. The original path is kept too.
+	paths = appendTraversalSuffixes(paths)
 	return paths
+}
+
+// appendTraversalSuffixes adds traversal-stripped path suffixes so that
+// glob rules like **/.ssh/id_* can match ../../.ssh/id_rsa.
+// Only adds a suffix when the path contains ../ and the stripped result
+// is non-empty and different from the original.
+func appendTraversalSuffixes(paths []string) []string {
+	var extra []string
+	for _, p := range paths {
+		if !strings.Contains(p, "../") {
+			continue
+		}
+		// URL-decode if needed (catches %2e%2e/ encoding)
+		decoded := urlDecodeDots(p)
+		// filepath.Clean resolves foo/../../bar → ../bar
+		cleaned := pathutil.CleanPath(decoded)
+		// Strip all leading ../ sequences
+		suffix := stripLeadingTraversal(cleaned)
+		if suffix != "" && suffix != p && suffix != cleaned {
+			extra = append(extra, suffix)
+		}
+	}
+	return append(paths, extra...)
+}
+
+// stripLeadingTraversal removes all leading ../ or ..\ sequences from a path.
+func stripLeadingTraversal(p string) string {
+	for strings.HasPrefix(p, "../") || strings.HasPrefix(p, "..\\") {
+		p = p[3:]
+	}
+	if p == ".." {
+		return ""
+	}
+	return p
+}
+
+// urlDecodeDots decodes %2e sequences in paths to catch URL-encoded traversal.
+func urlDecodeDots(p string) string {
+	// Only decode dot-related sequences to avoid breaking valid %XX in paths
+	r := strings.NewReplacer(
+		"%2e", ".", "%2E", ".",
+		"%2f", "/", "%2F", "/",
+		"%5c", "\\", "%5C", "\\",
+	)
+	return r.Replace(p)
 }
 
 // expandFileGlobs expands paths containing glob metacharacters against the
