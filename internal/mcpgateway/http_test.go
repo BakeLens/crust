@@ -25,7 +25,31 @@ func newGateway(t *testing.T, upstreamURL string) *HTTPGateway {
 	if err != nil {
 		t.Fatalf("NewHTTPGateway: %v", err)
 	}
+	t.Cleanup(gw.Close)
 	return gw
+}
+
+func TestHTTPGateway_CloseStopsReaper(t *testing.T) {
+	gw := newGateway(t, "http://127.0.0.1:1")
+
+	// Track a session to confirm the store is alive.
+	gw.sessions.Track("test-session")
+	if !gw.sessions.Exists("test-session") {
+		t.Fatal("session should exist")
+	}
+
+	// Close is called by t.Cleanup via newGateway, but we can also call
+	// it explicitly — it must be idempotent.
+	gw.Close()
+	gw.Close() // double-close must not panic
+
+	// The stop channel should be closed.
+	select {
+	case <-gw.sessions.stop:
+		// expected
+	default:
+		t.Error("reaper stop channel should be closed after Close()")
+	}
 }
 
 // --- Unit tests (protocol-level, no real MCP server needed) ---

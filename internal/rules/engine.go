@@ -87,7 +87,9 @@ type Engine struct {
 	// Post-checker runs after the evaluation pipeline allows a tool call.
 	// Used for late-stage plugins (sandbox, rate-limiter, etc.) that enforce
 	// additional constraints beyond the rule engine.
-	postChecker func(call ToolCall, info ExtractedInfo) *MatchResult
+	// Stored as atomic.Pointer to avoid data races between Evaluate (read)
+	// and SetPostChecker (write).
+	postChecker atomic.Pointer[func(call ToolCall, info ExtractedInfo) *MatchResult]
 
 	// Close guard
 	closeOnce sync.Once
@@ -157,15 +159,17 @@ func NewEngineWithNormalizer(ctx context.Context, cfg EngineConfig, normalizer *
 	}
 
 	e := &Engine{
-		extractor:   NewExtractorWithEnv(extEnv),
-		normalizer:  normalizer,
-		loader:      loader,
-		preFilter:   NewPreFilter(),
-		dlpScanner:  dlp,
-		config:      cfg,
-		preChecker:  cfg.PreChecker,
-		postChecker: cfg.PostChecker,
-		hitCounts:   make(map[string]*int64),
+		extractor:  NewExtractorWithEnv(extEnv),
+		normalizer: normalizer,
+		loader:     loader,
+		preFilter:  NewPreFilter(),
+		dlpScanner: dlp,
+		config:     cfg,
+		preChecker: cfg.PreChecker,
+		hitCounts:  make(map[string]*int64),
+	}
+	if cfg.PostChecker != nil {
+		e.postChecker.Store(&cfg.PostChecker)
 	}
 
 	if cfg.SubprocessIsolation {
@@ -437,9 +441,11 @@ func (e *Engine) Evaluate(call ToolCall) MatchResult {
 	result := e.matchRules(&info, allPaths, call.Name)
 
 	// Step 15: Post-checker (plugins) — only consulted when rules allowed the call.
-	if !result.Matched && e.postChecker != nil {
-		if m := e.postChecker(call, info); m != nil {
-			return *m
+	if !result.Matched {
+		if pc := e.postChecker.Load(); pc != nil {
+			if m := (*pc)(call, info); m != nil {
+				return *m
+			}
 		}
 	}
 
@@ -846,9 +852,11 @@ func CountLockedBuiltinRules() int {
 // This is useful when the post-checker depends on state created after
 // the engine (e.g., a plugin registry).
 func (e *Engine) SetPostChecker(fn func(call ToolCall, info ExtractedInfo) *MatchResult) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.postChecker = fn
+	if fn == nil {
+		e.postChecker.Store(nil)
+	} else {
+		e.postChecker.Store(&fn)
+	}
 }
 
 // Close releases resources held by the engine (e.g. the PowerShell worker
@@ -972,7 +980,14 @@ func (e *Engine) notifyReload() {
 	copy(cbs, e.onReloadCallbacks)
 	e.mu.RUnlock()
 	for _, cb := range cbs {
-		go cb(rules) // Non-blocking
+		go func(fn ReloadCallback) {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Warn("Panic in reload callback: %v", r)
+				}
+			}()
+			fn(rules)
+		}(cb)
 	}
 }
 

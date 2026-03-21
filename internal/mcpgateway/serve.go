@@ -54,8 +54,10 @@ func ServeHTTPGateway(upstream, listen string, engine rules.RuleEvaluator) error
 	}()
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		gw.Close()
 		return err
 	}
 	<-shutdownDone
+	gw.Close()
 	return nil
 }

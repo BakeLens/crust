@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gobwas/glob"
 )
@@ -1054,5 +1057,82 @@ func TestEngine_PostChecker_CanBlock(t *testing.T) {
 	}
 	if result.Message != "sandbox denied" {
 		t.Errorf("expected message 'sandbox denied', got %q", result.Message)
+	}
+}
+
+// TestEngine_PostChecker_ConcurrentRace verifies that concurrent Evaluate and
+// SetPostChecker calls do not race. This test is meaningful under -race.
+func TestEngine_PostChecker_ConcurrentRace(t *testing.T) {
+	engine, err := NewTestEngine(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	const goroutines = 16
+	const iterations = 200
+
+	// Spawn goroutines that call Evaluate concurrently.
+	for range goroutines / 2 {
+		wg.Go(func() {
+			call := makeToolCall("Bash", map[string]any{"command": "ls /tmp"})
+			for range iterations {
+				engine.Evaluate(call)
+			}
+		})
+	}
+
+	// Spawn goroutines that call SetPostChecker concurrently.
+	for i := range goroutines / 2 {
+		wg.Go(func() {
+			for j := range iterations {
+				if (i+j)%2 == 0 {
+					engine.SetPostChecker(func(call ToolCall, info ExtractedInfo) *MatchResult {
+						return nil
+					})
+				} else {
+					engine.SetPostChecker(nil)
+				}
+			}
+		})
+	}
+
+	wg.Wait()
+}
+
+// TestEngine_NotifyReload_PanicRecovery verifies that a panicking reload
+// callback does not crash the engine and other callbacks still fire.
+func TestEngine_NotifyReload_PanicRecovery(t *testing.T) {
+	engine, err := NewTestEngine(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var called atomic.Bool
+
+	// Register a callback that panics.
+	engine.OnReload(func(_ []Rule) {
+		panic("intentional test panic")
+	})
+
+	// Register a callback after the panicking one.
+	engine.OnReload(func(_ []Rule) {
+		called.Store(true)
+	})
+
+	// Trigger reload — should not crash.
+	engine.notifyReload()
+
+	// Give goroutines time to execute.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if called.Load() {
+			return // success
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if !called.Load() {
+		t.Error("second reload callback was never called; panic in first callback may have blocked it")
 	}
 }

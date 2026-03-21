@@ -51,6 +51,11 @@ func NewHTTPGateway(upstreamURL string, engine rules.RuleEvaluator) (*HTTPGatewa
 	}, nil
 }
 
+// Close releases resources held by the gateway (stops the session reaper goroutine).
+func (g *HTTPGateway) Close() {
+	g.sessions.Close()
+}
+
 // ServeHTTP dispatches to the appropriate handler based on HTTP method.
 // Cross-origin browser requests are rejected before processing (CSRF protection).
 func (g *HTTPGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {

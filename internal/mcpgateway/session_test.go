@@ -118,6 +118,32 @@ func TestSessionStore_DoubleClose(t *testing.T) {
 	s.Track("after-close")
 }
 
+func TestSessionStore_ReapLoopStopsOnClose(t *testing.T) {
+	// Use a short reap interval so the goroutine ticks frequently.
+	s := newSessionStore(time.Now, 10*time.Millisecond)
+
+	// Track a session to confirm the store works.
+	s.Track("alive")
+	if !s.Exists("alive") {
+		t.Fatal("session should exist after Track")
+	}
+
+	// Close should stop the reap goroutine.
+	s.Close()
+
+	// After Close, the store's stop channel is closed.
+	// Verify by selecting on it (non-blocking).
+	select {
+	case <-s.stop:
+		// expected: channel is closed
+	default:
+		t.Error("stop channel should be closed after Close()")
+	}
+
+	// Double-close must not panic.
+	s.Close()
+}
+
 func TestSessionStore_ReaperExpiresSessions(t *testing.T) {
 	s := &SessionStore{
 		sessions: make(map[string]time.Time),
