@@ -1200,7 +1200,10 @@ func FuzzGlobCommandBypass(f *testing.F) {
 		}
 		// Only check if the oracle successfully parsed commands (can determine
 		// resolved names). If parse produced nothing, we can't verify.
-		if !hasGlobInCmdName && !hasSubst && len(parsed) > 0 && info.Evasive &&
+		// Also skip if the raw command contains glob characters in args
+		// (e.g., "eval \x96*" — the * is a legitimate glob detection trigger).
+		hasGlobInArgs := strings.ContainsAny(cmd, "*?[")
+		if !hasGlobInCmdName && !hasGlobInArgs && !hasSubst && len(parsed) > 0 && info.Evasive &&
 			strings.Contains(info.EvasiveReason, "uses a wildcard pattern") {
 			t.Errorf("FALSE POSITIVE: non-glob command flagged as glob evasive: %q", cmd)
 		}
