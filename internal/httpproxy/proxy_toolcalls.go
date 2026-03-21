@@ -150,33 +150,61 @@ func computeSessionID(messages []requestMessage) string {
 //   - Anthropic Messages: messages[].content (string or content block array)
 //   - OpenAI Chat: messages[].content (string)
 //   - OpenAI Responses: input[].content / input[].output
+//
+// maxDLPScanSize limits the total text extracted for DLP scanning to prevent
+// excessive CPU usage on large conversation histories.
+const maxDLPScanSize = 512 * 1024 // 512KB
+
 func extractMessageTextsFromJSON(data []byte) []string {
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil
 	}
-	var texts []string
+	texts := make([]string, 0, 16)
+	totalSize := 0
+	// Handle top-level "system" field (Anthropic Messages API).
+	// Can be a plain string or an array of content blocks.
+	if system, ok := raw["system"]; ok {
+		collectTextsFromContent(system, &texts)
+		for _, t := range texts {
+			totalSize += len(t)
+		}
+	}
 	// Handle "messages" array (Anthropic + OpenAI Chat)
 	if messages, ok := raw["messages"].([]any); ok {
 		for _, msg := range messages {
+			if totalSize >= maxDLPScanSize {
+				break
+			}
 			msgObj, ok := msg.(map[string]any)
 			if !ok {
 				continue
 			}
+			before := len(texts)
 			collectTextsFromContent(msgObj["content"], &texts)
+			for _, t := range texts[before:] {
+				totalSize += len(t)
+			}
 		}
 	}
 	// Handle "input" array (OpenAI Responses)
 	if input, ok := raw["input"].([]any); ok {
 		for _, item := range input {
+			if totalSize >= maxDLPScanSize {
+				break
+			}
 			itemObj, ok := item.(map[string]any)
 			if !ok {
 				continue
 			}
+			before := len(texts)
 			collectTextsFromContent(itemObj["content"], &texts)
 			// function_call_output items store result in "output"
 			if output, ok := itemObj["output"].(string); ok {
 				texts = append(texts, output)
+			}
+			for _, t := range texts[before:] {
+				totalSize += len(t)
 			}
 		}
 	}

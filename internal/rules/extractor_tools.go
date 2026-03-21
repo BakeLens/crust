@@ -262,15 +262,35 @@ func (e *Extractor) extractContentField(info *ExtractedInfo) {
 // automatically catch dangerous commands embedded in written scripts —
 // regardless of where the file is written or what extension it has.
 
+// shellShebangPrefixes lists shebang prefixes that identify shell scripts.
+// Covers standard paths, env wrappers, and common shells across Linux/macOS/FreeBSD.
+var shellShebangPrefixes = []string{
+	"#!/bin/bash",
+	"#!/bin/sh",
+	"#!/bin/zsh",
+	"#!/bin/dash",
+	"#!/bin/ksh",
+	"#!/usr/bin/env bash",
+	"#!/usr/bin/env sh",
+	"#!/usr/bin/env zsh",
+	"#!/usr/bin/env -S bash",
+	"#!/usr/bin/env -S sh",
+	"#!/usr/bin/env -S zsh",
+	"#!/usr/local/bin/bash",
+	"#!/usr/local/bin/zsh",
+}
+
 // looksLikeShellScript checks whether content is a shell script by requiring
 // an explicit shebang line. This avoids false positives from parsing Python,
 // JavaScript, JSON, or other non-shell content through the bash AST parser
 // (which would mark unparseable content as evasive and hard-block it).
 func looksLikeShellScript(content string) bool {
-	return strings.HasPrefix(content, "#!/bin/bash") ||
-		strings.HasPrefix(content, "#!/bin/sh") ||
-		strings.HasPrefix(content, "#!/usr/bin/env bash") ||
-		strings.HasPrefix(content, "#!/usr/bin/env sh")
+	for _, prefix := range shellShebangPrefixes {
+		if strings.HasPrefix(content, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // analyzeWrittenContent parses Write/Edit content through the shell AST
@@ -300,6 +320,23 @@ func (e *Extractor) analyzeWrittenContent(info *ExtractedInfo) {
 		if !slices.Contains(info.Hosts, h) {
 			info.Hosts = append(info.Hosts, h)
 		}
+	}
+
+	// Merge env vars so env-poisoning rules match
+	for k, v := range synthetic.EnvVars {
+		if info.EnvVars == nil {
+			info.EnvVars = make(map[string]string)
+		}
+		if _, exists := info.EnvVars[k]; !exists {
+			info.EnvVars[k] = v
+		}
+	}
+
+	// Merge command so command-pattern rules (detect-reverse-shell,
+	// detect-crontab-write, etc.) fire on shell scripts written via
+	// Write/Edit tools. Without this, only path/host rules match.
+	if synthetic.Command != "" && info.Command == "" {
+		info.Command = synthetic.Command
 	}
 
 	// NOTE: Do NOT propagate Evasive flags from content parsing.

@@ -474,7 +474,7 @@ rules:
   - name: detect-crontab-write
     locked: true
     match:
-      command: "re:(?m)\\bcrontab\\b.*-$|\\|\\s*crontab\\s+-|\\bat\\b\\s+-f\\b"
+      command: "re:\\bcrontab\\b\\s+(?:-[^lr\\s]|[^-\\s])|\\bcrontab\\s*$|\\|\\s*crontab\\b|\\bat\\b\\s+(?:-f\\b|now\\b)"
     actions: [execute]
     message: "Blocked: crontab/at command installs scheduled tasks — a persistence vector."
     severity: critical
@@ -489,9 +489,9 @@ rules:
   - name: detect-exfil-redirect
     locked: true
     match:
-      command: "re:(?s)>.*\\.sh.*\\$\\(cat\\b|(?s)>.*\\.sh.*curl\\b|(?s)>.*\\.sh.*wget\\b"
+      command: "re:(?s)>\\s*\\S+.*(?:\\$\\(cat\\b|curl\\b|wget\\b|nc\\b)"
     actions: [execute, write]
-    message: "Blocked: redirecting shell script with network exfiltration commands."
+    message: "Blocked: file redirect with exfiltration commands (curl, wget, cat)."
     severity: critical
 
   # ===========================================================================

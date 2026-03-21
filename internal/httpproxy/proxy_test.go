@@ -52,6 +52,16 @@ func TestExtractMessageTextsFromJSON(t *testing.T) {
 			wantText: []string{"secret data here"},
 		},
 		{
+			name:     "Anthropic system string",
+			json:     `{"system":"You are a helpful assistant with SECRET=abc123","messages":[{"role":"user","content":"hi"}]}`,
+			wantText: []string{"You are a helpful assistant with SECRET=abc123", "hi"},
+		},
+		{
+			name:     "Anthropic system content blocks",
+			json:     `{"system":[{"type":"text","text":"system prompt with TOKEN=xyz"}],"messages":[]}`,
+			wantText: []string{"system prompt with TOKEN=xyz"},
+		},
+		{
 			name:     "empty messages",
 			json:     `{"messages":[]}`,
 			wantText: nil,

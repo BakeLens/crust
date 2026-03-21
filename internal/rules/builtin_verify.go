@@ -13,8 +13,8 @@ import (
 
 const (
 	file          = "builtin/security.yaml"
-	expectedHash  = "a382c711de6c1feee6f6cb8a78ac7e701c44d027a72ca0e1989e98e12aa79767620fd501610223ba1f6a0c14dc7ede98904e4cf764ba798fafd5162978d075b5"
-	expectedCount = 30
+	expectedHash  = "925caaca2ec0d485729dd44663dd9f0f7e7e7f08221d6fdb80f45b355622ee4828c16d9bcc0f12418cec972e56814e7a291817b833eac9847b3348df3691e10e"
+	expectedCount = 32
 )
 
 // Critical rules that must be present — removal would silently disable
@@ -39,6 +39,8 @@ var criticalRules = []string{
 	"block-eval-exec",
 	"protect-system-config",
 	"protect-persistence",
+	"detect-crontab-write",
+	"detect-exfil-redirect",
 	"detect-reverse-shell",
 	"block-ssrf-metadata",
 	"protect-agent-config",
