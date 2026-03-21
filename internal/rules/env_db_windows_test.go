@@ -112,6 +112,22 @@ func TestEnvDB_WindowsPowerShellEnvVars(t *testing.T) {
 			`Set-Item env:NODE_OPTIONS "--require C:\temp\evil.js"`,
 		},
 		{
+			"si env:PERL5OPT (alias)",
+			`si env:PERL5OPT "-Mevil"`,
+		},
+		{
+			"New-Item env:BASH_ENV",
+			`New-Item env:BASH_ENV -Value "C:\temp\evil.cmd"`,
+		},
+		{
+			"ni env:RUBYOPT (alias)",
+			`ni env:RUBYOPT "-r C:\temp\evil.rb"`,
+		},
+		{
+			"Set-ItemProperty env:GIT_SSH_COMMAND",
+			`sp env:GIT_SSH_COMMAND "C:\temp\evil.exe"`,
+		},
+		{
 			"chained profiler enable + path",
 			`$env:COR_ENABLE_PROFILING = "1"; $env:COR_PROFILER_PATH = "C:\evil.dll"`,
 		},
@@ -121,8 +137,9 @@ func TestEnvDB_WindowsPowerShellEnvVars(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			args, _ := json.Marshal(map[string]string{"command": tc.cmd})
 			result := engine.Evaluate(ToolCall{Name: "Bash", Arguments: args})
-			if !result.Matched {
-				t.Logf("NOTE: %q not blocked — may need enhanced PS detection", tc.name)
+			if !result.Matched || result.RuleName != "builtin:block-dangerous-env" {
+				t.Errorf("expected blocked by block-dangerous-env, got matched=%v rule=%q",
+					result.Matched, result.RuleName)
 			}
 		})
 	}

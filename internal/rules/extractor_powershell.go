@@ -83,16 +83,33 @@ var winCmdEnvPathRe = regexp.MustCompile(`%[A-Z_][A-Z_0-9]*%(?:\\[a-zA-Z0-9_.~-]
 var psVarAssignRe = regexp.MustCompile(`\$([a-zA-Z_]\w*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s;|]+))`)
 
 // psEnvVarAssignRe matches PowerShell env var assignments: $env:VAR = "value"
+// Also handles backtick-escaped forms like $e`nv:VAR (after stripping).
 var psEnvVarAssignRe = regexp.MustCompile(`\$env:([a-zA-Z_]\w*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s;|]+))`)
 
 // psSetEnvMethodRe matches [Environment]::SetEnvironmentVariable("VAR", "value")
 var psSetEnvMethodRe = regexp.MustCompile(`\[(?:System\.)?Environment\]::SetEnvironmentVariable\(\s*["']([^"']+)["']\s*,`)
 
+// psSetItemEnvRe matches Set-Item/si env:VAR "value" and Set-ItemProperty/sp env:VAR
+var psSetItemEnvRe = regexp.MustCompile(`(?i)\b(?:Set-Item|si|Set-ItemProperty|sp)\s+env:([a-zA-Z_]\w*)`)
+
+// psNewItemEnvRe matches New-Item/ni env:VAR -Value "value"
+var psNewItemEnvRe = regexp.MustCompile(`(?i)\b(?:New-Item|ni)\s+env:([a-zA-Z_]\w*)`)
+
+// stripPSBackticks removes PowerShell backtick escape characters that can
+// be used to evade regex detection (e.g., $e`nv:VAR → $env:VAR).
+func stripPSBackticks(cmd string) string {
+	return strings.ReplaceAll(cmd, "`", "")
+}
+
 // extractPSEnvVars extracts env var assignments from PowerShell commands.
-// Catches $env:VAR = ... and [Environment]::SetEnvironmentVariable("VAR", ...).
+// Catches: $env:VAR = ..., [Environment]::SetEnvironmentVariable("VAR", ...),
+// Set-Item env:VAR, New-Item env:VAR.
 func extractPSEnvVars(cmd string, info *ExtractedInfo) {
+	// Strip backtick escapes to defeat evasion like $e`nv:PERL5OPT
+	normalized := stripPSBackticks(cmd)
+
 	// $env:VAR = value
-	for _, m := range psEnvVarAssignRe.FindAllStringSubmatch(cmd, -1) {
+	for _, m := range psEnvVarAssignRe.FindAllStringSubmatch(normalized, -1) {
 		name := m[1]
 		var value string
 		switch {
@@ -110,11 +127,27 @@ func extractPSEnvVars(cmd string, info *ExtractedInfo) {
 	}
 
 	// [Environment]::SetEnvironmentVariable("VAR", ...)
-	for _, m := range psSetEnvMethodRe.FindAllStringSubmatch(cmd, -1) {
+	for _, m := range psSetEnvMethodRe.FindAllStringSubmatch(normalized, -1) {
 		if info.EnvVars == nil {
 			info.EnvVars = make(map[string]string)
 		}
-		info.EnvVars[m[1]] = "" // value is complex to extract; name is enough for envDB lookup
+		info.EnvVars[m[1]] = ""
+	}
+
+	// Set-Item env:VAR / si env:VAR
+	for _, m := range psSetItemEnvRe.FindAllStringSubmatch(normalized, -1) {
+		if info.EnvVars == nil {
+			info.EnvVars = make(map[string]string)
+		}
+		info.EnvVars[m[1]] = ""
+	}
+
+	// New-Item env:VAR / ni env:VAR
+	for _, m := range psNewItemEnvRe.FindAllStringSubmatch(normalized, -1) {
+		if info.EnvVars == nil {
+			info.EnvVars = make(map[string]string)
+		}
+		info.EnvVars[m[1]] = ""
 	}
 }
 
