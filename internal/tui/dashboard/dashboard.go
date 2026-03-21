@@ -407,6 +407,10 @@ func applyChange(m *model, c monitor.Change) {
 			m.data.Enabled = status.Active
 		}
 
+	case monitor.ChangeConfigRedirect:
+		// Config redirect findings — informational for now.
+		// Future: display warning in TUI overview.
+
 	case monitor.ChangeSession:
 		// Session list updated. Decode and merge into the sessions tab.
 		var sessions []SessionSummary

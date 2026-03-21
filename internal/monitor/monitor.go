@@ -63,12 +63,13 @@ func (m *Monitor) Start() {
 		protectPrev := takeProtectSnapshot()
 		sessionPrev := sessionIDs(m.getCurrentSessions())
 
-		m.wg.Add(4)
+		m.wg.Add(5)
 		go m.runAgentScanner(agentPrev)
 		go m.runEventRelay(subID, eventCh)
 		go m.runSessionTracker(sessionPrev)
 		go m.runProtectWatcher(protectPrev)
-		log.Info("monitor started (4 goroutines)")
+		go m.runConfigScanner(nil)
+		log.Info("monitor started (5 goroutines)")
 	})
 }
 

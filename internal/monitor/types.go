@@ -37,11 +37,15 @@ const (
 
 	// ChangeProtect indicates protection status changed (active/inactive, patched agents).
 	ChangeProtect ChangeKind = "protect"
+
+	// ChangeConfigRedirect indicates a suspicious API endpoint redirect was
+	// found in project config files (.env, .claude/settings.json).
+	ChangeConfigRedirect ChangeKind = "config_redirect"
 )
 
 // AllChangeKinds lists every valid ChangeKind value. Used by FFI contract
 // tests to verify the Rust side handles all kinds the Go side can produce.
-var AllChangeKinds = []ChangeKind{ChangeAgents, ChangeEvent, ChangeSession, ChangeProtect}
+var AllChangeKinds = []ChangeKind{ChangeAgents, ChangeEvent, ChangeSession, ChangeProtect, ChangeConfigRedirect}
 
 // Change is a single item in the unified change stream.
 // Kind identifies what changed; Payload contains the JSON-encoded details.

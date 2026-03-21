@@ -710,7 +710,9 @@ func (b *BufferedSSEWriter) flushFilteredOpenAIResponsesEvents(blockedIndices, r
 		var indexProbe struct {
 			OutputIndex *int `json:"output_index"`
 		}
-		json.Unmarshal(event.Data, &indexProbe) //nolint:errcheck // best-effort probe
+		// Fail-closed: on unmarshal error, indexProbe.OutputIndex stays nil
+		// (zero value of *int), so skip/replace logic won't fire on malformed events.
+		_ = json.Unmarshal(event.Data, &indexProbe) //nolint:errcheck // fail-closed: nil OutputIndex is the safe default
 
 		// Determine action for this event
 		shouldSkip := false
