@@ -4,7 +4,6 @@ package libcrust
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -20,7 +19,6 @@ import (
 
 	"github.com/BakeLens/crust/internal/proxyutil"
 
-	"github.com/BakeLens/crust/internal/security"
 	"github.com/BakeLens/crust/internal/types"
 )
 
@@ -252,37 +250,14 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	// to avoid excessive memory use on mobile devices.
 	oversized := len(respBody) > maxResponseBody
 
-	// Decompress if needed for inspection.
-	inspectBody := respBody
-	encoding := resp.Header.Get("Content-Encoding")
-	if !oversized && encoding == "gzip" && len(respBody) > 2 {
-		if decompressed, err := decompressGzip(respBody); err == nil {
-			inspectBody = decompressed
-		}
-	}
-
 	// Intercept tool calls in successful, non-oversized responses.
 	if !oversized && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		i := getInterceptor()
-		if i != nil {
-			result, err := i.InterceptToolCalls(inspectBody, security.InterceptionContext{
-				APIType:   at,
-				BlockMode: types.BlockModeRemove,
-			})
-			if err == nil && len(result.BlockedToolCalls) > 0 {
-				// Use the modified response body.
-				modified := result.ModifiedResponse
-
-				// If the original was gzip'd, re-compress.
-				if encoding == "gzip" {
-					if compressed, err := compressGzip(modified); err == nil {
-						modified = compressed
-					}
-				}
-
-				respBody = modified
-			}
-		}
+		respBody, _ = proxyutil.InterceptResponse(
+			respBody,
+			resp.Header.Get("Content-Encoding"),
+			getInterceptor(),
+			proxyutil.DefaultInterceptionContext(at, types.BlockModeRemove),
+		)
 	}
 
 	// Write response back to client.
@@ -295,16 +270,9 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(respBody)
 }
 
-// detectAPITypeFromPath guesses API type from the request path.
-// NOTE: Keep in sync with CrustURLProtocol.detectAPIType(from:) in CrustKit.swift.
+// detectAPITypeFromPath delegates to the shared proxyutil implementation.
 func detectAPITypeFromPath(path string) types.APIType {
-	if strings.Contains(path, "/v1/messages") {
-		return types.APITypeAnthropic
-	}
-	if strings.Contains(path, "/v1/responses") || strings.HasSuffix(path, "/responses") {
-		return types.APITypeOpenAIResponses
-	}
-	return types.APITypeOpenAICompletion
+	return proxyutil.DetectAPITypeFromPath(path)
 }
 
 // resolveUpstreamFromPath determines the upstream API URL from the request path.
@@ -359,29 +327,6 @@ func singleJoinSlash(base, extra string) string {
 		return base + "/" + extra
 	}
 	return base + extra
-}
-
-// decompressGzip decompresses a gzip'd byte slice.
-func decompressGzip(data []byte) ([]byte, error) {
-	r, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = r.Close() }()
-	return io.ReadAll(io.LimitReader(r, maxResponseBody))
-}
-
-// compressGzip compresses a byte slice with gzip.
-func compressGzip(data []byte) ([]byte, error) {
-	var buf bytes.Buffer
-	w := gzip.NewWriter(&buf)
-	if _, err := w.Write(data); err != nil {
-		return nil, err
-	}
-	if err := w.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }
 
 // EvaluateStream intercepts a complete (non-streaming) LLM API response

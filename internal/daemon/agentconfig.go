@@ -48,3 +48,15 @@ func ResolveCrustBin() string {
 	}
 	return abs
 }
+
+// Patcher implements protect.AgentPatcher using daemon functions.
+type Patcher struct{}
+
+// PatchAgentConfigs patches all agent configs.
+func (Patcher) PatchAgentConfigs(port int) { PatchAgentConfigs(port) }
+
+// RestoreAgentConfigs restores all agent configs.
+func (Patcher) RestoreAgentConfigs() { RestoreAgentConfigs() }
+
+// ResolveCrustBin resolves the crust binary path.
+func (Patcher) ResolveCrustBin() string { return ResolveCrustBin() }

@@ -14,6 +14,7 @@ import (
 	"github.com/BakeLens/crust/internal/config"
 	"github.com/BakeLens/crust/internal/httpproxy"
 	"github.com/BakeLens/crust/internal/logger"
+	"github.com/BakeLens/crust/internal/protect"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/security"
 	"github.com/BakeLens/crust/internal/selfprotect"
@@ -99,8 +100,21 @@ func RunServer(scfg ServerConfig) error {
 	}
 
 	// Patch known agent configs to point at the proxy (restored on shutdown).
-	PatchAgentConfigs(cfg.Server.Port)
-	defer RestoreAgentConfigs()
+	// Uses the shared protect lifecycle so both daemon and GUI use the same
+	// patching/restore logic. Hooks and eval server are disabled — daemon
+	// uses its own HTTP proxy + Unix socket API instead.
+	protectInst, err := protect.Start(protect.Config{
+		ProxyPort: cfg.Server.Port,
+		StartProxy: func(port int) (string, error) {
+			// Daemon starts its proxy later via ListenAndServe.
+			return fmt.Sprintf("127.0.0.1:%d", port), nil
+		},
+		Patcher: Patcher{},
+	})
+	if err != nil {
+		log.Warn("Failed to start protect: %v", err)
+	}
+	defer protectInst.Stop()
 
 	log.Info("Starting Crust daemon...")
 

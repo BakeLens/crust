@@ -31,10 +31,13 @@ func LibcrustStartMonitor() {
 	}
 
 	// Wire the protect state function so the monitor can read protection status.
+	// Instance methods are thread-safe — no additional locking needed.
 	monitor.SetProtectStateFunc(func() (bool, int) {
-		protect.mu.Lock()
-		defer protect.mu.Unlock()
-		return protect.running, protect.port
+		inst := protectInst // atomic read of pointer
+		if inst == nil {
+			return false, 0
+		}
+		return inst.Running(), inst.Port()
 	})
 
 	// Pass storage for session tracking (nil if not initialized).
