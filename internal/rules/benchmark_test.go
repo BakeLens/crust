@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/BakeLens/crust/internal/configscan"
 	"github.com/BakeLens/crust/internal/rules/pwsh"
 )
 
@@ -460,4 +461,117 @@ func BenchmarkNormalizer_Pattern(b *testing.B) {
 			}
 		})
 	}
+}
+
+// ── New feature benchmarks ───────────────────────────────────────────────
+
+// BenchmarkEnvDBLookup measures dangerous env var lookup latency.
+func BenchmarkEnvDBLookup(b *testing.B) {
+	cases := []struct {
+		name    string
+		varName string
+	}{
+		{"hit_PERL5OPT", "PERL5OPT"},
+		{"hit_LD_PRELOAD", "LD_PRELOAD"},
+		{"hit_NODE_OPTIONS", "NODE_OPTIONS"},
+		{"miss_PATH", "PATH"},
+		{"miss_GOPATH", "GOPATH"},
+		{"case_insensitive", "perl5opt"},
+	}
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				LookupDangerousEnv(tc.varName)
+			}
+		})
+	}
+}
+
+// BenchmarkEnvVarDetection measures end-to-end env var poisoning detection
+// through the full evaluation pipeline.
+func BenchmarkEnvVarDetection(b *testing.B) {
+	engine, err := NewEngine(context.Background(), EngineConfig{DisableDLP: true})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer engine.Close()
+
+	cases := []struct {
+		name string
+		cmd  string
+	}{
+		{"export_dangerous", `export PERL5OPT="-Mevil"`},
+		{"export_safe", `export PATH="/usr/local/bin:$PATH"`},
+		{"inline_dangerous", `NODE_OPTIONS="--require /tmp/evil.js" node app.js`},
+		{"env_wrapper", `env BASH_ENV=/tmp/evil.sh bash -c "echo hi"`},
+	}
+	for _, tc := range cases {
+		args, _ := json.Marshal(map[string]string{"command": tc.cmd})
+		call := ToolCall{Name: "Bash", Arguments: args}
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				engine.Evaluate(call)
+			}
+		})
+	}
+}
+
+// BenchmarkPathTraversalStripping measures the traversal suffix stripping overhead.
+func BenchmarkPathTraversalStripping(b *testing.B) {
+	normalizer := NewNormalizer()
+
+	cases := []struct {
+		name  string
+		paths []string
+	}{
+		{"no_traversal", []string{"/home/user/project/main.go", "/tmp/safe.txt"}},
+		{"with_traversal", []string{"../../.ssh/id_rsa", "../../../.env", "../../.aws/credentials"}},
+		{"mixed", []string{"/tmp/ok.txt", "../../.ssh/id_rsa", "/home/user/file.go"}},
+		{"deep_traversal", []string{"../../../../../../../../.env"}},
+	}
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				normalizer.PreparePaths(tc.paths)
+			}
+		})
+	}
+}
+
+// BenchmarkPSEnvVarExtraction measures PowerShell env var regex detection.
+func BenchmarkPSEnvVarExtraction(b *testing.B) {
+	cases := []struct {
+		name string
+		cmd  string
+	}{
+		{"no_ps", `ls -la /tmp`},
+		{"env_assign", `$env:PERL5OPT = "-Mevil"`},
+		{"set_item", `Set-Item env:NODE_OPTIONS "--require /tmp/evil.js"`},
+		{"set_env_method", `[Environment]::SetEnvironmentVariable("BASH_ENV", "/tmp/evil.sh")`},
+		{"backtick", "$e`nv:PERL5OPT = \"-Mevil\""},
+	}
+	for _, tc := range cases {
+		info := &ExtractedInfo{}
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				extractPSEnvVars(tc.cmd, info)
+			}
+		})
+	}
+}
+
+// BenchmarkConfigScan measures config redirect scanning latency.
+func BenchmarkConfigScan(b *testing.B) {
+	// Use a temp dir with no .env files — measures scan overhead, not file I/O.
+	dir := b.TempDir()
+	b.Run("empty_dir", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			configscan.ScanDirOnly(dir)
+		}
+	})
 }

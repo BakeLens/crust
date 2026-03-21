@@ -8,7 +8,7 @@
 Agent Request ──▶ [Layer 0: History Scan] ──▶ LLM ──▶ [Layer 1: Rules] ──▶ Execute
                          │                                    │
                       ↓ BLOCK                              ↓ BLOCK
-                   (14-30μs)                             (14-30μs)
+                   (50-90μs)                             (50-90μs)
                "Bad agent detected"                   "Action blocked"
 
                     MANAGEMENT API
