@@ -253,18 +253,29 @@ Circuit breaker state transitions are **mutex-protected** to prevent TOCTOU race
 
 ## Go Interface
 
-For Go-based plugins (in-process or as the `ProcessPlugin` adapter), the interface is:
+For Go-based plugins (in-process or as the `ProcessPlugin` adapter), two interfaces are available:
 
 ```go
 package plugin
 
+// Plugin evaluates tool calls (per-call, multiple allowed, concurrent).
 type Plugin interface {
     Name() string
     Init(cfg json.RawMessage) error
     Evaluate(ctx context.Context, req Request) *Result
     Close() error
 }
+
+// Executor runs commands under OS-level enforcement
+// (per-process, at most one, owns command execution).
+type Executor interface {
+    Name() string
+    Available() bool
+    Exec(ctx context.Context, cmd []string, policy json.RawMessage) (*ExecResult, error)
+}
 ```
+
+The sandbox plugin implements both — it evaluates tool calls via `Evaluate()` and can execute commands under OS enforcement via `Exec()`. At most one Executor can be registered.
 
 The `ProcessPlugin` adapter implements this interface by spawning an external process and communicating over the wire protocol:
 

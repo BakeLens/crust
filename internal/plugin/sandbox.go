@@ -61,7 +61,10 @@ type SandboxExecResult struct {
 	Stderr   []byte
 }
 
-// SandboxPlugin wraps the bakelens-sandbox binary as an in-process plugin.
+// SandboxPluginName is the identifier for the sandbox plugin/executor.
+const SandboxPluginName = "sandbox"
+
+// SandboxPlugin wraps the sandbox binary as an in-process plugin.
 // It builds a sandbox InputPolicy from the plugin Request, validates it,
 // and can execute commands under the sandbox via Exec.
 type SandboxPlugin struct {
@@ -69,17 +72,17 @@ type SandboxPlugin struct {
 	config     SandboxConfig
 }
 
-// NewSandboxPlugin creates a SandboxPlugin if bakelens-sandbox is on $PATH.
+// NewSandboxPlugin creates a SandboxPlugin if the sandbox binary is on $PATH.
 // Returns an error if the binary is not found.
 func NewSandboxPlugin() (*SandboxPlugin, error) {
 	path, err := exec.LookPath("bakelens-sandbox")
 	if err != nil {
-		return nil, fmt.Errorf("bakelens-sandbox not found: %w", err)
+		return nil, fmt.Errorf("sandbox binary not found: %w", err)
 	}
 	return &SandboxPlugin{binaryPath: path}, nil
 }
 
-func (s *SandboxPlugin) Name() string { return "sandbox" }
+func (s *SandboxPlugin) Name() string { return SandboxPluginName }
 
 func (s *SandboxPlugin) Init(cfg json.RawMessage) error {
 	if len(cfg) == 0 {
@@ -205,16 +208,36 @@ func (s *SandboxPlugin) BinaryPath() string { return s.binaryPath }
 // Available reports whether the sandbox binary exists and is executable.
 func (s *SandboxPlugin) Available() bool { return s.binaryPath != "" }
 
-// Exec runs a command under the sandbox with the given policy.
-// The policy JSON is sent on stdin to bakelens-sandbox, which executes
-// the command in a sandboxed environment.
+// ExecGeneric implements the Executor interface with generic types.
+// Unmarshals the policy JSON into InputPolicy and delegates to ExecPolicy.
+func (s *SandboxPlugin) Exec(ctx context.Context, cmd []string, policy json.RawMessage) (*ExecResult, error) {
+	var p InputPolicy
+	if len(policy) > 0 {
+		if err := json.Unmarshal(policy, &p); err != nil {
+			return nil, fmt.Errorf("unmarshal sandbox policy: %w", err)
+		}
+	}
+	p.Command = cmd
+	result, err := s.ExecPolicy(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	return &ExecResult{
+		ExitCode: result.ExitCode,
+		Stdout:   result.Stdout,
+		Stderr:   result.Stderr,
+	}, nil
+}
+
+// ExecPolicy runs a command under the sandbox with the given policy.
+// The policy JSON is sent on stdin to the sandbox binary.
 //
-// Exit code protocol (from bakelens-sandbox):
+// Exit code protocol:
 //
 //	0-124 = target command exit code
 //	125   = sandbox setup error (parse stderr JSON)
 //	128+N = target killed by signal N
-func (s *SandboxPlugin) Exec(ctx context.Context, policy InputPolicy) (*SandboxExecResult, error) {
+func (s *SandboxPlugin) ExecPolicy(ctx context.Context, policy InputPolicy) (*SandboxExecResult, error) {
 	if !s.Available() {
 		return nil, errors.New("sandbox binary not available")
 	}

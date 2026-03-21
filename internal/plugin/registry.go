@@ -47,11 +47,12 @@ type Stats struct {
 
 // Registry manages plugins with crash isolation.
 type Registry struct {
-	states  []*pluginState // pointer slice — append won't invalidate existing elements
-	pool    *Pool
-	now     func() time.Time // clock for circuit breaker timing; defaults to time.Now
-	mu      sync.RWMutex     // protects states slice (Register/Close vs Evaluate)
-	closing atomic.Bool      // set during Close to reject new Evaluate calls
+	states   []*pluginState // pointer slice — append won't invalidate existing elements
+	pool     *Pool
+	executor Executor         // at most one — wraps subprocess execution
+	now      func() time.Time // clock for circuit breaker timing; defaults to time.Now
+	mu       sync.RWMutex     // protects states slice + executor (Register/Close vs Evaluate)
+	closing  atomic.Bool      // set during Close to reject new Evaluate calls
 }
 
 // NewRegistry creates a registry with the given worker pool.
@@ -330,6 +331,9 @@ func InitDefaultRegistry() *Registry {
 			log.Warn("sandbox plugin registration failed: %v", regErr)
 		} else {
 			log.Info("sandbox plugin registered (binary: %s)", sp.BinaryPath())
+		}
+		if regErr := reg.RegisterExecutor(sp); regErr != nil {
+			log.Warn("sandbox executor registration failed: %v", regErr)
 		}
 	} else {
 		log.Info("sandbox plugin not available: %v", err)

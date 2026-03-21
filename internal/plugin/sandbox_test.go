@@ -259,7 +259,7 @@ func TestSandboxPlugin_Available(t *testing.T) {
 func TestSandboxPlugin_ExecWithoutBinary(t *testing.T) {
 	sp := &SandboxPlugin{} // no binary
 	policy := sp.BuildPolicy(Request{Command: "echo hello"})
-	_, err := sp.Exec(context.Background(), policy)
+	_, err := sp.ExecPolicy(context.Background(), policy)
 	if err == nil {
 		t.Fatal("expected error when binary not available")
 	}

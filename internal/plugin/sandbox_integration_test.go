@@ -27,7 +27,7 @@ func requireSandbox(t *testing.T) *SandboxPlugin {
 func execPolicy(t *testing.T, sp *SandboxPlugin, policy InputPolicy) error {
 	t.Helper()
 	policy.Command = []string{"/usr/bin/true"}
-	result, err := sp.Exec(context.Background(), policy)
+	result, err := sp.ExecPolicy(context.Background(), policy)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func TestSandboxExec_CommandExitCode(t *testing.T) {
 	sp := requireSandbox(t)
 	policy := sp.BuildPolicy(Request{Command: "false"})
 	policy.Command = []string{"/usr/bin/false"}
-	result, err := sp.Exec(context.Background(), policy)
+	result, err := sp.ExecPolicy(context.Background(), policy)
 	if err != nil {
 		t.Fatalf("exec error: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestSandboxExec_CommandOutput(t *testing.T) {
 	sp := requireSandbox(t)
 	policy := sp.BuildPolicy(Request{Command: "echo hello"})
 	policy.Command = []string{"/bin/echo", "hello"}
-	result, err := sp.Exec(context.Background(), policy)
+	result, err := sp.ExecPolicy(context.Background(), policy)
 	if err != nil {
 		t.Fatalf("exec error: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestSandboxExec_FilesystemDenyBlocks(t *testing.T) {
 		},
 	})
 	policy.Command = []string{"/bin/cat", "/etc/shadow"}
-	result, err := sp.Exec(context.Background(), policy)
+	result, err := sp.ExecPolicy(context.Background(), policy)
 	if err != nil {
 		t.Fatalf("exec error: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestSandboxExec_InvalidPolicy(t *testing.T) {
 		Command: []string{},
 		Rules:   []DenyRule{},
 	}
-	result, err := sp.Exec(context.Background(), policy)
+	result, err := sp.ExecPolicy(context.Background(), policy)
 	if err != nil {
 		t.Fatalf("exec error: %v", err)
 	}
