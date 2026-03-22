@@ -1517,30 +1517,24 @@ func collectInnerStmts(stmt *syntax.Stmt) []*syntax.Stmt {
 }
 
 // defuseStmt creates a shallow copy of an unsafe statement with dangerous
-// features removed: Background cleared, unsafe redirects stripped. If the
+// features removed: Background cleared, unsupported redirects stripped. If the
 // resulting stmt passes nodeHasUnsafe (e.g., it still contains ProcSubst in
 // CallExpr args), returns nil — the caller should use AST fallback instead.
+//
+// Redirect filtering strips ops that the interpreter doesn't execute (returns
+// error instead of running the command). This is for correctness, not crash
+// prevention — panics were fixed in mvdan.cc/sh v3.13.1-0.20260321.
 func defuseStmt(stmt *syntax.Stmt) *syntax.Stmt {
 	defused := *stmt // shallow copy
 	defused.Background = false
 	defused.Coprocess = false
 
-	// Filter redirects to keep only safe ones.
+	// Filter redirects to keep only interpreter-supported ones.
+	// Uses interpSupportsRedirect for consistency with nodeHasUnsafe.
 	var safeRedirs []*syntax.Redirect
 	for _, r := range stmt.Redirs {
-		if r.N != nil && r.N.Value != "" && r.N.Value != "0" && r.N.Value != "1" && r.N.Value != "2" {
-			continue
-		}
-		switch r.Op {
-		case syntax.RdrOut, syntax.AppOut, syntax.RdrIn, syntax.WordHdoc:
+		if interpSupportsRedirect(r) {
 			safeRedirs = append(safeRedirs, r)
-		case syntax.RdrInOut, syntax.DplIn, syntax.DplOut, syntax.RdrClob,
-			syntax.Hdoc, syntax.DashHdoc, syntax.RdrAll, syntax.AppAll,
-			syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob:
-			// RdrAll/AppAll (&>, &>>) are path-bearing but unsupported by the interpreter;
-			// their paths are captured by extractFromAST on the AST fallback path.
-			// The rest (DplIn/DplOut dup FDs, Hdoc/DashHdoc use goroutines) are also
-			// unsafe for the interpreter — all dropped here.
 		}
 	}
 	defused.Redirs = safeRedirs
@@ -1551,16 +1545,48 @@ func defuseStmt(stmt *syntax.Stmt) *syntax.Stmt {
 	}
 
 	if nodeHasUnsafe(&defused) {
-		return nil // still has ProcSubst in args, ParamExp @op, etc.
+		return nil // still has ProcSubst in args, etc.
 	}
 	return &defused
 }
 
+// extractRedirPaths extracts output redirect paths from redirects in the
+// original statement that were stripped by defuseStmt. Returns parsedCommand
+// entries with only the redirect paths populated (no command name/args).
+func extractRedirPaths(origFile *syntax.File, keptRedirs []*syntax.Redirect) []parsedCommand {
+	kept := make(map[*syntax.Redirect]bool, len(keptRedirs))
+	for _, r := range keptRedirs {
+		kept[r] = true
+	}
+	var cmds []parsedCommand
+	for _, stmt := range origFile.Stmts {
+		for _, r := range stmt.Redirs {
+			if kept[r] || r.Word == nil {
+				continue
+			}
+			p := wordToLiteral(r.Word)
+			if p == "" || isBareFileDescriptor(p) {
+				continue
+			}
+			switch r.Op {
+			case syntax.RdrClob, syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob,
+				syntax.RdrAll, syntax.AppAll, syntax.RdrOut, syntax.AppOut:
+				cmds = append(cmds, parsedCommand{RedirPaths: []string{p}})
+			case syntax.RdrIn, syntax.RdrInOut:
+				cmds = append(cmds, parsedCommand{RedirInPaths: []string{p}})
+			case syntax.DplIn, syntax.DplOut, syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
+				// fd duplications and heredocs — not file paths
+			}
+		}
+	}
+	return cmds
+}
+
 // extractFromAST walks the parsed AST and extracts commands from CallExpr nodes
 // without running the interpreter. This is the fallback when the interpreter
-// cannot handle certain constructs (process substitution, heredocs in pipes,
-// backgrounded commands, coproc). It extracts command names, literal arguments,
-// and redirect paths from statements.
+// cannot handle certain constructs (backgrounded commands, coproc, process
+// substitution, pattern.go crash triggers). It extracts command names, literal
+// arguments, and redirect paths from statements.
 //
 // When skipInner is true, ProcSubst and CoprocClause subtrees are skipped;
 // the caller handles them separately via collectInnerStmts + interpretation.
@@ -1590,19 +1616,18 @@ func extractFromAST(file *syntax.File, skipInner bool) []parsedCommand {
 				continue
 			}
 			switch r.Op {
-			case syntax.RdrOut, syntax.AppOut, syntax.RdrAll, syntax.AppAll:
+			case syntax.RdrOut, syntax.AppOut, syntax.RdrAll, syntax.AppAll,
+				syntax.RdrClob, syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob:
+				// Output redirects (>, >>, &>, &>>, >|, >>|, &>|, &>>|).
 				// Skip bare fd numbers (e.g., >&0, >1) — these are fd
-				// duplications, not file paths. Treating them as paths
-				// causes false positives in path rules and exfil detection.
+				// duplications, not file paths.
 				if !isBareFileDescriptor(p) {
 					redirOut = append(redirOut, p)
 				}
-			case syntax.RdrIn, syntax.WordHdoc:
+			case syntax.RdrIn, syntax.RdrInOut, syntax.WordHdoc:
 				redirIn = append(redirIn, p)
-			case syntax.RdrInOut, syntax.DplIn, syntax.DplOut, syntax.RdrClob,
-				syntax.Hdoc, syntax.DashHdoc,
-				syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob:
-				// not path-bearing; ignore
+			case syntax.DplIn, syntax.DplOut, syntax.Hdoc, syntax.DashHdoc:
+				// fd duplications and heredocs — not file paths
 			}
 		}
 
@@ -1805,9 +1830,29 @@ func wordHasExpansion(w *syntax.Word) bool {
 	return false
 }
 
-// nodeHasUnsafe checks for AST nodes that the mvdan.cc/sh interpreter panics on.
-// Panics in interpreter-spawned goroutines (e.g., backgrounded commands) are
-// unrecoverable, so we must skip the interpreter for these inputs.
+// nodeHasUnsafe checks for AST nodes that the mvdan.cc/sh interpreter cannot
+// safely handle. Flagged statements are routed to the hybrid path where
+// defuseStmt strips the problematic constructs before interpretation.
+//
+// Two categories of guards:
+//
+// Category A — CRASH / HANG (must skip interpreter entirely):
+//   - Background (cmd &): spawns goroutines where pattern.go panics are
+//     unrecoverable via defer/recover
+//   - CoprocClause: same goroutine issue
+//   - ProcSubst >(cmd)/<(cmd): hangs in dry-run (FIFO deadlock)
+//   - Lit with U+FFFD, control chars, or non-ASCII globs: crashes
+//     regexp.MustCompile in pattern/pattern.go (unfixed upstream)
+//   - shopt -p / shopt -q: panics "unhandled shopt flag" (builtin.go:795)
+//   - declare/local/typeset -n (nameref): panics on subsequent array append
+//     ref+=(x) with "unhandled conversion of kind" (vars.go:423)
+//
+// Category B — UNSUPPORTED REDIRECT (no crash, but command not executed):
+//   - fd >= 3 redirects, fd dup (DplIn/DplOut), RdrClob, RdrInOut, etc.
+//   - These no longer panic (fixed in mvdan.cc/sh v3.13.1-0.20260321) but
+//     the interpreter returns an error without running the command.
+//     defuseStmt strips them so the command part still gets interpreted.
+//
 // Accepts any syntax.Node (File, Stmt, etc.) for per-statement granularity.
 func nodeHasUnsafe(root syntax.Node) bool {
 	found := false
@@ -1816,78 +1861,41 @@ func nodeHasUnsafe(root syntax.Node) bool {
 			return false
 		}
 		switch n := node.(type) {
+
+		// --- Category A: crash / hang guards ---
+
 		case *syntax.Stmt:
-			// Backgrounded statements (cmd &) spawn goroutines we can't recover
-			// panics from, and their handlers may not complete before Run returns.
 			if n.Background {
 				found = true
 				return false
 			}
-		case *syntax.ParamExp:
-			_ = n // ${var@op} panic fixed in mvdan.cc/sh post-v3.13.0
-		case *syntax.Lit:
-			// U+FFFD in literals crashes regexp.MustCompile during glob
-			// expansion inside interpreter-spawned goroutines (unrecoverable).
-			if strings.ContainsRune(n.Value, '\uFFFD') {
-				found = true
-				return false
-			}
-			// Control characters (except \t, \n, \r) can crash the
-			// interpreter in pipe goroutines during glob expansion.
-			for _, r := range n.Value {
-				if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
-					found = true
-					return false
-				}
-			}
-			// Non-ASCII bytes in glob patterns crash regexp.MustCompile
-			// during field expansion: the glob-to-regex converter processes
-			// individual bytes, splitting multi-byte UTF-8 characters into
-			// invalid sequences (e.g., ŀ → \xc5\x80 → broken regex).
-			if strings.ContainsAny(n.Value, "*?[") {
-				for _, b := range []byte(n.Value) {
-					if b > 0x7F {
-						found = true
-						return false
-					}
-				}
-			}
 		case *syntax.CoprocClause:
 			found = true
+			return false
 		case *syntax.ProcSubst:
-			// Process substitution >(cmd) / <(cmd) creates FIFOs that the
-			// interpreter tries to open. In dry-run mode these block forever
-			// (nothing reads/writes the other end), causing hangs.
 			found = true
 			return false
-		case *syntax.Redirect:
-			// Interpreter only handles fd 0, 1, 2 (exact string match)
-			if n.N != nil && n.N.Value != "" && n.N.Value != "0" && n.N.Value != "1" && n.N.Value != "2" {
+		case *syntax.Lit:
+			if litHasUnsafeChars(n.Value) {
 				found = true
 				return false
 			}
-			switch n.Op {
-			case syntax.DplIn, syntax.DplOut:
-				// The interpreter only supports a narrow subset of fd dup args
-				// (e.g., ">&-" to close) and panics on valid fd numbers like
-				// ">&0". Mark all fd dup redirects as unsafe.
+
+		case *syntax.CallExpr:
+			if callHasUnsafeBuiltin(n) {
 				found = true
 				return false
-			case syntax.RdrOut, syntax.AppOut, syntax.RdrIn, syntax.WordHdoc:
-				// Handled by the interpreter
-			case syntax.Hdoc, syntax.DashHdoc:
-				// Heredocs in pipe goroutines still panic with "unhandled
-				// redirect op: <<" (e.g., "<<0|''\n0"). Only the non-pipe
-				// case was fixed upstream. Guard must remain.
+			}
+		case *syntax.DeclClause:
+			if declHasUnsafeNameref(n) {
 				found = true
 				return false
-			case syntax.RdrInOut, syntax.RdrClob, syntax.RdrAll, syntax.AppAll,
-				syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob:
-				// Not supported by the interpreter — mark as unsafe.
-				found = true
-				return false
-			default:
-				// Unhandled redirect operator — would panic
+			}
+
+		// --- Category B: unsupported redirect ops (no crash) ---
+
+		case *syntax.Redirect:
+			if !interpSupportsRedirect(n) {
 				found = true
 				return false
 			}
@@ -1897,9 +1905,131 @@ func nodeHasUnsafe(root syntax.Node) bool {
 	return found
 }
 
+// litHasUnsafeChars returns true if the literal value contains characters that
+// crash the interpreter's glob expansion (pattern/pattern.go bugs, unfixed).
+func litHasUnsafeChars(s string) bool {
+	// U+FFFD crashes regexp.MustCompile during glob expansion.
+	if strings.ContainsRune(s, '\uFFFD') {
+		return true
+	}
+	// Control characters (except \t, \n, \r) crash glob expansion in pipes.
+	for _, r := range s {
+		if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
+			return true
+		}
+	}
+	// Non-ASCII bytes in glob patterns crash regexp.MustCompile: the
+	// glob-to-regex converter splits multi-byte UTF-8 into invalid sequences.
+	if strings.ContainsAny(s, "*?[") {
+		for _, b := range []byte(s) {
+			if b > 0x7F {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// callHasUnsafeBuiltin returns true if a CallExpr invokes a builtin that
+// panics in the interpreter. Currently detects:
+//   - shopt -p / shopt -q: panics with "unhandled shopt flag" (builtin.go:795)
+//
+// Checks all arg positions for the command name to handle "command shopt -p"
+// and "builtin shopt -p". Also detects combined flags like "-sp".
+// Bypasses via variable indirection ($S -p) or eval are caught by the
+// defer/recover in runShellFileInterp (safe as long as not backgrounded,
+// which is separately guarded).
+func callHasUnsafeBuiltin(call *syntax.CallExpr) bool {
+	if len(call.Args) < 2 {
+		return false
+	}
+	// Find "shopt" in any position to handle "command shopt" / "builtin shopt".
+	shoptIdx := -1
+	for i, arg := range call.Args {
+		v := wordToLiteral(arg)
+		if v == "shopt" {
+			shoptIdx = i
+			break
+		}
+		// Stop scanning after the first non-prefix command (command/builtin).
+		if v != "command" && v != "builtin" {
+			break
+		}
+	}
+	if shoptIdx < 0 {
+		return false
+	}
+	for _, arg := range call.Args[shoptIdx+1:] {
+		v := wordToLiteral(arg)
+		// Check for -p, -q, or combined flags containing p/q (e.g., -sp, -qo).
+		if strings.HasPrefix(v, "-") && (strings.ContainsAny(v, "pq")) {
+			return true
+		}
+	}
+	return false
+}
+
+// declHasUnsafeNameref returns true if a DeclClause uses -n (nameref), which
+// can panic on subsequent array append (ref+=(x)) due to an unhandled Kind in
+// assignVal (vars.go:423). Conservative: flags the declare -n itself since the
+// panic requires a separate statement (ref+=(x)) that we can't link statically.
+//
+// Handles bare (-n), combined (-rn), and quoted ("-n") flags.
+// Bypasses via variable indirection (declare $F) or eval are caught by the
+// defer/recover in runShellFileInterp.
+func declHasUnsafeNameref(decl *syntax.DeclClause) bool {
+	if decl.Variant == nil {
+		return false
+	}
+	v := decl.Variant.Value
+	if v != "declare" && v != "typeset" && v != "local" {
+		return false
+	}
+	for _, assign := range decl.Args {
+		if assign.Name != nil {
+			continue // this is a name=value, not a flag
+		}
+		// Use wordToLiteral to handle both bare and quoted flags.
+		w := wordToLiteral(assign.Value)
+		if strings.HasPrefix(w, "-") && strings.ContainsRune(w, 'n') {
+			return true
+		}
+	}
+	return false
+}
+
+// interpSupportsRedirect returns true if the mvdan.cc/sh interpreter can
+// execute a command with this redirect without erroring. Redirect panics were
+// fixed in v3.13.1-0.20260321 (all converted to error returns), but the
+// interpreter still doesn't support all redirect operations — unsupported ops
+// cause the command to not execute at all.
+func interpSupportsRedirect(r *syntax.Redirect) bool {
+	// fd >= 3 not supported
+	if r.N != nil && r.N.Value != "" && r.N.Value != "0" && r.N.Value != "1" && r.N.Value != "2" {
+		return false
+	}
+	switch r.Op {
+	case syntax.RdrOut, syntax.AppOut, syntax.RdrIn, syntax.WordHdoc,
+		syntax.RdrAll, syntax.AppAll, syntax.Hdoc, syntax.DashHdoc:
+		return true
+	case syntax.DplOut:
+		// >&1, >&2, >&- work. >&0 and other targets cause error return.
+		w := wordToLiteral(r.Word)
+		return w == "1" || w == "2" || w == "-"
+	case syntax.DplIn:
+		// Only <&- works. <&0, <&1, <&2, etc. all cause error return.
+		return wordToLiteral(r.Word) == "-"
+	case syntax.RdrInOut, syntax.RdrClob, syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob:
+		// Interpreter returns error — command not executed.
+		return false
+	}
+	return false // unknown op — conservative
+}
+
 // safeShellParse wraps syntax.Parser.Parse with a recover guard.
 // Defense-in-depth against potential parser panics on untrusted input.
-// The "export A0=$0(" declClause panic was fixed upstream post-v3.13.0.
+// Known panics (declClause "export A0=$0(", etc.) were fixed upstream
+// in mvdan.cc/sh v3.13.1-0.20260321; this guard remains for safety.
 func safeShellParse(parser *syntax.Parser, cmd string) (file *syntax.File, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -2032,16 +2162,25 @@ func (e *Extractor) runShellFile(file *syntax.File, parentSymtab map[string]stri
 
 		// Unsafe stmt: try three strategies in order.
 
-		// Strategy (a): defuse (strip background/unsafe redirects) and interpret.
-		// Accept even zero-cmd results: pure assignments (e.g., "A=/secret 1>&2")
-		// produce no commands but DO update the symtab — crucial for subsequent
-		// "cat $A" stmts to see the variable binding.
+		// Strategy (a): defuse (strip background/unsupported redirects) and
+		// interpret. Accept even zero-cmd results: pure assignments (e.g.,
+		// "A=/secret 1>&2") produce no commands but DO update the symtab —
+		// crucial for subsequent "cat $A" stmts to see the variable binding.
+		//
+		// After interpreting the defused copy, also extract redirect paths
+		// from any stripped redirects via AST extraction on the original
+		// statement, so paths like ">| /tmp/out" are not lost.
 		if defused := defuseStmt(stmt); defused != nil {
 			defusedFile := &syntax.File{Stmts: []*syntax.Stmt{defused}}
 			defusedRes := e.runShellFileInterp(defusedFile, symtab)
 			if !defusedRes.panicked {
 				allCmds = append(allCmds, defusedRes.cmds...)
 				maps.Copy(symtab, defusedRes.sym)
+				// Capture redirect paths from stripped redirects.
+				if len(stmt.Redirs) != len(defused.Redirs) {
+					origFile := &syntax.File{Stmts: []*syntax.Stmt{stmt}}
+					allCmds = append(allCmds, extractRedirPaths(origFile, defused.Redirs)...)
+				}
 				continue
 			}
 		}
