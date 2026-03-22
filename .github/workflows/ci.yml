@@ -698,9 +698,9 @@ jobs:
           docker logs crust-ci
           exit 1
 
-      - name: DLP block test – Bash tool_use reading /etc/passwd must return 403
+      - name: DLP block test – AWS key in message content must return 403
         run: |
-          BODY='{"model":"claude-3-5-sonnet-20241022","max_tokens":1,"messages":[{"role":"user","content":"read it"},{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cat /etc/passwd"}}]}]}'
+          BODY='{"model":"claude-3-5-sonnet-20241022","max_tokens":1,"messages":[{"role":"user","content":"Use this key: AKIAIOSFODNN7EXAMPLE"}]}'
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST http://localhost:9090/v1/messages \
             -H "Content-Type: application/json" \

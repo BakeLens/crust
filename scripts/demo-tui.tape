@@ -63,12 +63,12 @@ Type "clear"
 Enter
 Sleep 0.3s
 Show
-Type "# Step 3: Real GLM-4-Plus — 8 attacks through the gateway"
+Type "# Step 3: Real GLM-4-Plus — 6 attacks through the gateway"
 Enter
 Sleep 1.5s
 Type "bash scripts/demo-attack.sh"
 Enter
-Sleep 25s
+Sleep 18s
 
 # ─── ACP Stdio Proxy: VS Code agent operations ─────────────────────────
 Type "# Step 4: ACP stdio proxy — wrapping VS Code + GLM-4-Plus agent"
