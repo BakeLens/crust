@@ -680,7 +680,41 @@ rules:
     severity: critical
 
   # ===========================================================================
-  # 30. MOBILE CALL LOG / SMS HISTORY PROTECTION
+  # 30. GIT CONFIG FILE PROTECTION
+  # .git/config can define filter/diff/merge drivers that execute commands.
+  # .gitattributes can trigger those filters on checkout/diff/merge.
+  # .gitmodules can define update commands that run on submodule update.
+  # An agent writing these achieves arbitrary code execution on git operations.
+  # ===========================================================================
+  - name: protect-git-config
+    locked: true
+    block:
+      - "**/.git/config"
+      - "**/.gitattributes"
+      - "**/.gitmodules"
+    actions: [write, delete]
+    message: "Blocked: git config files can define commands that execute on git operations."
+    severity: critical
+
+  # ===========================================================================
+  # 31. HOOK CONFIG FILE PROTECTION
+  # Pre-commit, Husky, and Lefthook configs auto-execute commands on git
+  # commit/push/checkout. An agent writing these achieves persistence.
+  # ===========================================================================
+  - name: protect-hook-configs
+    locked: true
+    block:
+      - "**/.pre-commit-config.yaml"
+      - "**/.husky/**"
+      - "**/lefthook.yml"
+      - "**/lefthook.yaml"
+      - "**/.lefthook/**"
+    actions: [write, delete]
+    message: "Blocked: hook config files auto-execute commands on git commit/push."
+    severity: critical
+
+  # ===========================================================================
+  # 32. MOBILE CALL LOG / SMS HISTORY PROTECTION
   # Call logs and SMS history contain highly sensitive communication metadata.
   # Already partially covered by protect-mobile-pii (mobile://pii/**), but
   # explicitly listed for clarity.

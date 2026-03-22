@@ -5410,9 +5410,9 @@ func TestAnalyzeWrittenContent_CommandMerge(t *testing.T) {
 			wantHosts:   []string{"evil.com"},
 		},
 		{
-			name:        "non-shell content ignored",
+			name:        "non-shell content in .sh file still parsed",
 			content:     "print('hello world')\nimport os",
-			wantCommand: false,
+			wantCommand: true, // .sh extension → always parsed as shell
 		},
 		{
 			name:        "empty content",

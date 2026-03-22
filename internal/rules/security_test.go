@@ -130,6 +130,8 @@ func TestLockedRulesSurviveDisableBuiltin(t *testing.T) {
 		"protect-mobile-purchases",
 		"detect-crontab-write",
 		"detect-exfil-redirect",
+		"protect-git-config",
+		"protect-hook-configs",
 	}
 	unlockedNames := []string{
 		"detect-private-key-write",
