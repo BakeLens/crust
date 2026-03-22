@@ -40,7 +40,7 @@ func TestReloadReEvaluation_FlagsPreviouslyAllowed(t *testing.T) {
 	}
 
 	// Wire the reload re-evaluation
-	wireReloadReEvaluation(engine, storage)
+	WireReloadReEvaluation(engine, storage)
 
 	// Now add a rule that blocks /tmp/secret/** and reload
 	err = engine.AddRulesFromYAML([]byte(`
@@ -97,7 +97,7 @@ func TestReloadReEvaluation_IgnoresAlreadyBlocked(t *testing.T) {
 	}
 
 	// Wire and reload — should not panic or flag anything
-	wireReloadReEvaluation(engine, storage)
+	WireReloadReEvaluation(engine, storage)
 
 	err = engine.AddRulesFromYAML([]byte(`
 rules:

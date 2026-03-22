@@ -18,13 +18,13 @@ type RecentLogQuerier interface {
 	GetRecentLogs(ctx context.Context, minutes int, limit int) ([]telemetry.ToolCallLog, error)
 }
 
-// wireReloadReEvaluation registers an OnReload callback that re-evaluates
+// WireReloadReEvaluation registers an OnReload callback that re-evaluates
 // recent allowed tool calls against the updated rules. If any would now be
 // blocked, it logs a warning so operators can investigate.
 //
 // This replaces request-history scanning (removed) with a targeted check
 // that only runs on rule changes, not on every request.
-func wireReloadReEvaluation(engine *rules.Engine, querier RecentLogQuerier) {
+func WireReloadReEvaluation(engine *rules.Engine, querier RecentLogQuerier) {
 	engine.OnReload(func(_ []rules.Rule) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

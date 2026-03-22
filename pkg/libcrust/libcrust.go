@@ -36,6 +36,7 @@ var (
 	engine      *rules.Engine
 	interceptor *security.Interceptor
 	pluginReg   *plugin.Registry
+	evalLog     *security.EvalLog
 )
 
 const errNotInitialized = "engine not initialized"
@@ -50,6 +51,12 @@ func getInterceptor() *security.Interceptor {
 	mu.RLock()
 	defer mu.RUnlock()
 	return interceptor
+}
+
+func getEvalLog() *security.EvalLog {
+	mu.RLock()
+	defer mu.RUnlock()
+	return evalLog
 }
 
 // Init initializes the rule engine with builtin rules.
@@ -76,6 +83,10 @@ func Init(userRulesDir string) error {
 	engine = e
 
 	interceptor = security.NewInterceptor(e, telemetry.NopRecorder{})
+
+	// In-memory evaluation log for reload re-evaluation.
+	evalLog = security.NewEvalLog(500)
+	security.WireReloadReEvaluation(e, evalLog)
 
 	// Initialize plugin registry (sandbox, etc.).
 	if pluginReg != nil {
@@ -130,6 +141,11 @@ func Evaluate(toolName string, argsJSON string) string {
 	// Engine.Evaluate now calls plugins via PostChecker automatically,
 	// so no separate plugin call is needed here.
 	result := e.Evaluate(call)
+
+	// Record in eval log for reload re-evaluation.
+	if l := getEvalLog(); l != nil {
+		l.Record(call, result.Matched && result.Action == rules.ActionBlock)
+	}
 
 	out, err := json.Marshal(result)
 	if err != nil {
