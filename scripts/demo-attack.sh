@@ -4,9 +4,7 @@
 #
 # ALL requests go to real GLM-4-Plus (Zhipu AI). No mock server.
 # - Safe calls: normal coding prompts → real GLM responses → allowed
-# - Layer 0: malicious tool_calls in conversation history → blocked (HTTP 403)
 # - Layer 1: prompt injection makes GLM emit malicious tool_calls → intercepted
-# - DLP: credential patterns in tool arguments → blocked (HTTP 403)
 #
 # Prerequisites:
 #   go build -o crust .
