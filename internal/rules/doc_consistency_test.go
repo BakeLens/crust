@@ -106,8 +106,8 @@ func TestDocConsistency_ProtectionRules(t *testing.T) {
 //   - docs/cli.md: update locked count to match
 
 const (
-	wantTotalRuleCount      = 36
-	wantLockedRuleCount     = 33
+	wantTotalRuleCount      = 37
+	wantLockedRuleCount     = 34
 	wantUserDisablableCount = 3
 )
 

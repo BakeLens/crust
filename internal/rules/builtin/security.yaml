@@ -481,11 +481,19 @@ rules:
 
   # ===========================================================================
   # 18c. EXFILTRATION VIA BASH REDIRECT
-  # Moved to shell parser (extractor_shell.go:detectExfilRedirect).
-  # The AST-based check detects output-redirect + network-exfil-tool
-  # combinations structurally, avoiding regex false positives.
-  # Rule name "detect-exfil-redirect" is hardcoded in engine.go.
+  # Defense-in-depth: the primary check is AST-based in the shell parser
+  # (extractor_shell.go:detectExfilRedirect, engine.go step 6). This regex
+  # rule is a fallback for evasive/unparseable commands where the AST check
+  # cannot run. Requires redirect target to start with a path character
+  # [/~$.] to avoid false positives on arbitrary strings containing ">".
   # ===========================================================================
+  - name: detect-exfil-redirect
+    locked: true
+    match:
+      command: "re:(?s)>\\s*[/~$.]\\S*.*(?:\\$\\(cat\\b|curl\\b|wget\\b|nc\\b)"
+    actions: [execute, write]
+    message: "Blocked: file redirect with exfiltration commands (curl, wget, cat)."
+    severity: critical
 
   # ===========================================================================
   # 19. REVERSE SHELL DETECTION

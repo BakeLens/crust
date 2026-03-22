@@ -341,7 +341,7 @@ func FuzzExtractBashCommand(f *testing.F) {
 // COVERS: protect-mobile-biometric
 // COVERS: protect-mobile-purchases
 // COVERS: detect-crontab-write
-// NOTE: detect-exfil-redirect is now hardcoded in engine.go (AST-based detection)
+// COVERS: detect-exfil-redirect
 // COVERS: protect-git-config
 // COVERS: protect-hook-configs
 // NOTE: protect-crust-api is hardcoded in engine.go, tested by FuzzLoopbackRegex + FuzzJSONUnicodeEscapeBypass
