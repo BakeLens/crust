@@ -964,6 +964,13 @@ func (e *Extractor) extractInterpreterAndRedirects(info *ExtractedInfo, cmdBaseN
 }
 
 // exfilNetworkCommands are commands that can exfiltrate data over the network.
+// isBareFileDescriptor returns true if s is a single digit (0-9),
+// indicating a file descriptor number rather than a file path.
+// Shell redirects like >&2 or >0 target fds, not files.
+func isBareFileDescriptor(s string) bool {
+	return len(s) == 1 && s[0] >= '0' && s[0] <= '9'
+}
+
 var exfilNetworkCommands = map[string]bool{
 	"curl": true, "wget": true, "nc": true, "ncat": true, "netcat": true,
 }
@@ -1584,7 +1591,12 @@ func extractFromAST(file *syntax.File, skipInner bool) []parsedCommand {
 			}
 			switch r.Op {
 			case syntax.RdrOut, syntax.AppOut, syntax.RdrAll, syntax.AppAll:
-				redirOut = append(redirOut, p)
+				// Skip bare fd numbers (e.g., >&0, >1) — these are fd
+				// duplications, not file paths. Treating them as paths
+				// causes false positives in path rules and exfil detection.
+				if !isBareFileDescriptor(p) {
+					redirOut = append(redirOut, p)
+				}
 			case syntax.RdrIn, syntax.WordHdoc:
 				redirIn = append(redirIn, p)
 			case syntax.RdrInOut, syntax.DplIn, syntax.DplOut, syntax.RdrClob,
