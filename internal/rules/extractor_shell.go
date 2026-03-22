@@ -2289,7 +2289,7 @@ func (e *Extractor) runShellFileInterp(file *syntax.File, parentSymtab map[strin
 			}
 		}),
 		interp.OpenHandler(func(ctx context.Context, path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
-			if path == "" {
+			if path == "" || isBareFileDescriptor(path) {
 				return nopCloser{}, nil
 			}
 			mu.Lock()
