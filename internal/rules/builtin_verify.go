@@ -13,7 +13,7 @@ import (
 
 const (
 	file          = "builtin/security.yaml"
-	expectedHash  = "886472af5129c55fee3c12ef75855ffa5b6f8abcc040b74d8096d877510919f68cf242a2412d613534c891389053074ead06c33966b3ed50cc57e552521e109d"
+	expectedHash  = "328abf3cb48ae0041583f2ec5cf35f29429c0691cf539e6dbf6877bff0090c4ab2094158cb1ca10e94a7f561c1599e7ed6edcffdbc533f68e302a30bf05b84f6"
 	expectedCount = 34
 )
 

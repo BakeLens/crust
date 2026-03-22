@@ -690,9 +690,15 @@ rules:
   - name: protect-git-config
     locked: true
     block:
+      # Per-repo config
       - "**/.git/config"
       - "**/.gitattributes"
       - "**/.gitmodules"
+      # Global config (can define fsmonitor, filter drivers, hooksPath)
+      - "$HOME/.gitconfig"
+      - "$HOME/.config/git/config"
+      # System-wide config
+      - "/etc/gitconfig"
     actions: [write, delete]
     message: "Blocked: git config files can define commands that execute on git operations."
     severity: critical

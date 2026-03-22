@@ -152,6 +152,20 @@ func extractDockerfileCommands(content string) []string {
 			}
 			continue
 		}
+
+		// HEALTHCHECK CMD <command> (shell form only)
+		// Executes periodically — can be abused for persistence.
+		if strings.HasPrefix(upper, "HEALTHCHECK ") {
+			rest := strings.TrimSpace(trimmed[12:])
+			restUpper := strings.ToUpper(rest)
+			if strings.HasPrefix(restUpper, "CMD ") {
+				cmd := strings.TrimSpace(rest[4:])
+				if cmd != "" && !strings.HasPrefix(cmd, "[") {
+					cmds = append(cmds, cmd)
+				}
+			}
+			continue
+		}
 	}
 	return cmds
 }

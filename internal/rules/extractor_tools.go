@@ -376,9 +376,20 @@ func mergeExtractedFields(dst, src *ExtractedInfo) {
 	}
 
 	// Merge command so command-pattern rules (detect-reverse-shell,
-	// detect-crontab-write, etc.) fire on written scripts.
-	if src.Command != "" && dst.Command == "" {
-		dst.Command = src.Command
+	// detect-crontab-write, etc.) fire on ALL embedded commands,
+	// not just the first. Concatenate with newline so regex patterns
+	// that use \b word boundaries still match correctly.
+	if src.Command != "" {
+		if dst.Command == "" {
+			dst.Command = src.Command
+		} else {
+			dst.Command = dst.Command + "\n" + src.Command
+		}
+	}
+
+	// Merge ExfilRedirect flag
+	if src.ExfilRedirect {
+		dst.ExfilRedirect = true
 	}
 }
 
