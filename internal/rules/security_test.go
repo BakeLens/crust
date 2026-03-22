@@ -129,7 +129,7 @@ func TestLockedRulesSurviveDisableBuiltin(t *testing.T) {
 		"protect-mobile-biometric",
 		"protect-mobile-purchases",
 		"detect-crontab-write",
-		"detect-exfil-redirect",
+		// detect-exfil-redirect is now hardcoded in engine.go (AST-based)
 		"protect-git-config",
 		"protect-hook-configs",
 	}

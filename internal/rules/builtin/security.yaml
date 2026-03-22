@@ -481,18 +481,11 @@ rules:
 
   # ===========================================================================
   # 18c. EXFILTRATION VIA BASH REDIRECT
-  # Catches bash commands that write scripts via heredocs/redirects where the
-  # shell dry-run interpreter cannot expand nested subshells inside heredoc
-  # bodies. The Write tool case is handled by analyzeWrittenContent in the
-  # extractor, which parses written shell scripts through the bash AST.
+  # Moved to shell parser (extractor_shell.go:detectExfilRedirect).
+  # The AST-based check detects output-redirect + network-exfil-tool
+  # combinations structurally, avoiding regex false positives.
+  # Rule name "detect-exfil-redirect" is hardcoded in engine.go.
   # ===========================================================================
-  - name: detect-exfil-redirect
-    locked: true
-    match:
-      command: "re:(?s)>\\s*[/~$.]\\S*.*(?:\\$\\(cat\\b|curl\\b|wget\\b|nc\\b)"
-    actions: [execute, write]
-    message: "Blocked: file redirect with exfiltration commands (curl, wget, cat)."
-    severity: critical
 
   # ===========================================================================
   # 19. REVERSE SHELL DETECTION

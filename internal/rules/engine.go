@@ -426,6 +426,14 @@ func (e *Engine) Evaluate(call ToolCall) MatchResult {
 		}
 	}
 
+	// Step 4c: Structural exfil-redirect detection.
+	// The shell parser detects output-redirect + network-exfil-tool combinations
+	// from the AST, which is more precise than regex on the raw command string.
+	if info.ExfilRedirect {
+		return NewMatch("detect-exfil-redirect", SeverityCritical, ActionBlock,
+			"Blocked: file redirect with exfiltration commands (curl, wget, cat).")
+	}
+
 	// Steps 5-9: Content validation (Unicode, null bytes, evasion, obfuscation, DLP).
 	if m := e.validateContent(&info); m != nil {
 		return *m

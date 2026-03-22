@@ -13,8 +13,8 @@ import (
 
 const (
 	file          = "builtin/security.yaml"
-	expectedHash  = "4f5a198a4c3dbad6945d51466b981394ec116f60af5124912c6b0a27e2e10f8961faef7119442d262d700e8215c72b4d27aa1bce5644b80bb2120ae62823f7c8"
-	expectedCount = 34
+	expectedHash  = "d08fe5e2e5b99d9d6b18075c212ee18750b76e19245a5cf2a3d0e15d26f14a26743d62ae52e31f64688a66d65c55276dcac2d80a8249977d5745314cb3184eae"
+	expectedCount = 33
 )
 
 // Critical rules that must be present — removal would silently disable
@@ -40,7 +40,7 @@ var criticalRules = []string{
 	"protect-system-config",
 	"protect-persistence",
 	"detect-crontab-write",
-	"detect-exfil-redirect",
+	// detect-exfil-redirect is now hardcoded in engine.go (AST-based detection)
 	"detect-reverse-shell",
 	"block-ssrf-metadata",
 	"protect-agent-config",

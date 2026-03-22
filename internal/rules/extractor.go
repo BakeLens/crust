@@ -25,6 +25,7 @@ type ExtractedInfo struct {
 	EnvVars       map[string]string // env vars set by the command (name → value)
 	Evasive       bool              // true if command uses shell tricks that prevent static analysis
 	EvasiveReason string            // human-readable reason for evasion detection
+	ExfilRedirect bool              // true if command redirects to file + uses network exfil tool
 }
 
 // addOperation adds op to info.Operations (deduplicated) and upgrades
