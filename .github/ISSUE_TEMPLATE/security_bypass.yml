@@ -27,7 +27,7 @@ body:
       label: Security Layer
       description: Which security layer does this relate to?
       options:
-        - Layer 0 (request history scanning)
+        - Layer 0 (outbound DLP)
         - Layer 1 (response scanning)
         - Rules configuration
         - Unsure

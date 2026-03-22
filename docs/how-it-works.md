@@ -5,11 +5,11 @@
 ```text
                     REQUEST SIDE                         RESPONSE SIDE
                          │                                    │
-Agent Request ──▶ [Layer 0: History Scan] ──▶ LLM ──▶ [Layer 1: Rules] ──▶ Execute
+Agent Request ──▶ [Layer 0: Outbound DLP] ──▶ LLM ──▶ [Layer 1: Rules] ──▶ Execute
                          │                                    │
                       ↓ BLOCK                              ↓ BLOCK
                    (50-90μs)                             (50-90μs)
-               "Bad agent detected"                   "Action blocked"
+               "Secret detected"                     "Action blocked"
 
                     MANAGEMENT API
                          │
@@ -36,7 +36,7 @@ Rule Evaluation:
   14. Fallback rules (content-only) → raw JSON matching for ANY tool
 ```
 
-**Layer 0 (Request History + Outbound DLP):** Scans tool_calls in conversation history and runs DLP secret detection on all message content (plain text, tool results, and other text blocks) before the request reaches the LLM provider. Catches both "bad agent" patterns from past turns and secrets that have leaked into the conversation context.
+**Layer 0 (Outbound DLP):** Runs DLP secret detection on all message content (plain text, tool results, and other text blocks) before the request reaches the LLM provider. Catches secrets that have leaked into the conversation context — API keys in tool results, credentials in user messages, private keys in code snippets.
 
 **Layer 2 (Privacy Sanitization):** All management API responses pass through `telemetry/sanitize.go` before leaving the process. Strips LLM message bodies (`input.value`, `output.value`), tool call arguments (`tool.parameters`), and URL query parameters (which may contain API keys). Raw data remains in the local SQLite database for forensic inspection via `sqlite3`. This layer protects against shoulder-surfing the TUI, API responses accidentally included in bug reports, and local processes scraping the management API.
 

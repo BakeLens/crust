@@ -22,7 +22,6 @@ import (
 	"github.com/BakeLens/crust/internal/eventlog"
 	"github.com/BakeLens/crust/internal/logger"
 	"github.com/BakeLens/crust/internal/message"
-	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/security"
 	"github.com/BakeLens/crust/internal/telemetry"
 	"github.com/BakeLens/crust/internal/types"
@@ -214,34 +213,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Determine API type from path
 	apiType := detectAPIType(reqPath)
 
-	// [Layer0] Scan tool_calls in request history (format-agnostic).
-	// Walks raw JSON to find tool calls across OpenAI Chat, Anthropic Messages,
-	// and OpenAI Responses formats without format-specific struct parsing.
+	// [Layer0-DLP] Scan message content for leaked secrets.
+	// Catches secrets in plain messages, tool results, and other text content
+	// being sent to the LLM provider — prevents exfiltration via model context.
 	interceptor := p.interceptor
 	if interceptor != nil && interceptor.IsEnabled() && interceptor.GetEngine() != nil {
-		for _, tc := range extractToolCallsFromJSON(parseBytes) {
-			result := interceptor.GetEngine().Evaluate(tc)
-			if result.Matched && result.Action == rules.ActionBlock {
-				log.Warn("[Layer0] Request blocked: %s in history (rule: %s)", tc.Name, result.RuleName)
-				eventlog.Record(eventlog.Event{
-					Layer:      eventlog.LayerProxyRequest,
-					TraceID:    traceID,
-					SessionID:  sessionID,
-					ToolName:   tc.Name,
-					Arguments:  tc.Arguments,
-					APIType:    apiType,
-					Model:      reqBody.Model,
-					WasBlocked: true,
-					RuleName:   result.RuleName,
-				})
-				http.Error(w, message.FormatHTTPBlock(result), http.StatusForbidden)
-				return
-			}
-		}
-
-		// [Layer0-DLP] Scan message content for leaked secrets.
-		// Tool calls are checked above; this catches secrets in plain messages,
-		// tool results, and other text content being sent to the LLM provider.
 		engine := interceptor.GetEngine()
 		for _, text := range extractMessageTextsFromJSON(parseBytes) {
 			if dlpResult := engine.ScanDLP(text); dlpResult != nil {

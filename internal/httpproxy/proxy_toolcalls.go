@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
 	"github.com/BakeLens/crust/internal/types"
 )
@@ -144,7 +143,7 @@ func computeSessionID(messages []requestMessage) string {
 // extractMessageTextsFromJSON walks raw JSON to extract all text content from
 // messages in the request body. This catches secrets embedded in conversation
 // history (tool results, user messages, assistant messages) that are not inside
-// tool call argument objects — those are handled by extractToolCallsFromJSON.
+// tool call argument objects — those are handled by Layer 1 response-side evaluation.
 //
 // Supports all three API formats:
 //   - Anthropic Messages: messages[].content (string or content block array)
@@ -242,109 +241,6 @@ func collectTextsFromContent(content any, texts *[]string) {
 			collectTextsFromContent(blockObj["content"], texts)
 		}
 	}
-}
-
-// maxJSONWalkDepth limits recursion depth in walkJSONForToolCalls to prevent
-// stack overflow from adversarially nested JSON. Tool calls in real API
-// requests are at most ~5 levels deep; 64 is generous.
-const maxJSONWalkDepth = 64
-
-// extractToolCallsFromJSON walks raw JSON to find tool call objects across
-// all API formats (OpenAI Chat, Anthropic Messages, OpenAI Responses) without
-// format-specific struct parsing.
-func extractToolCallsFromJSON(data []byte) []rules.ToolCall {
-	var raw any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil
-	}
-	var results []rules.ToolCall
-	walkJSONForToolCalls(raw, &results, 0)
-	if len(results) > 0 {
-		log.Debug("extractToolCallsFromJSON: found %d tool calls", len(results))
-	}
-	return results
-}
-
-func walkJSONForToolCalls(v any, results *[]rules.ToolCall, depth int) {
-	if depth > maxJSONWalkDepth {
-		return
-	}
-	switch val := v.(type) {
-	case map[string]any:
-		// Pattern 1: type=tool_use (Anthropic)
-		// Pattern 2: type=function_call (OpenAI Responses)
-		matched := false
-		if tc, ok := matchTypedToolCall(val); ok {
-			*results = append(*results, tc)
-			matched = true
-		}
-		// Pattern 3: function.{name, arguments} (OpenAI Chat)
-		// Skip if already matched as typed tool call to avoid double-counting.
-		if !matched {
-			if fn, ok := val["function"].(map[string]any); ok {
-				if tc, ok := matchFunctionObject(fn); ok {
-					*results = append(*results, tc)
-				}
-			}
-		}
-		// Recurse into all values
-		for _, child := range val {
-			walkJSONForToolCalls(child, results, depth+1)
-		}
-	case []any:
-		for _, child := range val {
-			walkJSONForToolCalls(child, results, depth+1)
-		}
-	}
-}
-
-func matchTypedToolCall(obj map[string]any) (rules.ToolCall, bool) {
-	t, _ := obj["type"].(string)
-	name, _ := obj["name"].(string)
-	if name == "" {
-		return rules.ToolCall{}, false
-	}
-	switch t {
-	case contentTypeToolUse:
-		// Anthropic: input is a JSON object
-		return rules.ToolCall{Name: name, Arguments: toRawMessage(obj["input"])}, true
-	case contentTypeFunctionCall:
-		// OpenAI Responses: arguments is a JSON string
-		return rules.ToolCall{Name: name, Arguments: toRawMessage(obj["arguments"])}, true
-	}
-	return rules.ToolCall{}, false
-}
-
-func matchFunctionObject(fn map[string]any) (rules.ToolCall, bool) {
-	name, _ := fn["name"].(string)
-	if name == "" {
-		return rules.ToolCall{}, false
-	}
-	_, hasArgs := fn["arguments"]
-	if !hasArgs {
-		return rules.ToolCall{}, false
-	}
-	return rules.ToolCall{Name: name, Arguments: toRawMessage(fn["arguments"])}, true
-}
-
-// toRawMessage converts a value to json.RawMessage.
-// If the value is a string, it's treated as already-encoded JSON arguments.
-// Otherwise, it's marshaled to JSON.
-func toRawMessage(v any) json.RawMessage {
-	if v == nil {
-		return nil
-	}
-	if s, ok := v.(string); ok {
-		if json.Valid([]byte(s)) {
-			return json.RawMessage(s)
-		}
-		return nil
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil
-	}
-	return b
 }
 
 // writeBody writes the response body after headers are sent.

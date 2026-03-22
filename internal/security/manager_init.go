@@ -53,6 +53,11 @@ func Init(cfg Config) (*Manager, error) {
 	registry := plugin.InitDefaultRegistry()
 	if eng, ok := cfg.Engine.(*rules.Engine); ok && eng != nil {
 		plugin.WirePluginPostChecker(eng, registry)
+
+		// Re-evaluate recent allowed events after rule reload.
+		// If rules are tightened mid-session, this detects tool calls that
+		// were previously allowed but would now be blocked, and logs warnings.
+		wireReloadReEvaluation(eng, storage)
 	}
 
 	// Interceptor
