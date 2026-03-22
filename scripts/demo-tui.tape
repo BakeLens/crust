@@ -29,7 +29,6 @@ Sleep 0.5s
 Type "export HOME=/tmp/demo && export PATH=.:$PATH && export ZHIPUAI_API_KEY=${ZHIPUAI_API_KEY:-}"
 Enter
 Sleep 0.1s
-# Clean DB *after* setting HOME so it targets /tmp/demo/.crust/
 Type "rm -f ~/.crust/crust.db ~/.crust/crust.db-shm ~/.crust/crust.db-wal ~/.crust/config.yaml"
 Enter
 Sleep 0.3s
@@ -41,21 +40,13 @@ Enter
 Sleep 0.3s
 Show
 
-# ─── Doctor: system diagnostics ──────────────────────────────────────────
-Type "# Step 1: Run diagnostics"
-Enter
-Sleep 1.5s
-Type "crust doctor"
-Enter
-Sleep 6s
-
-# ─── Start gateway ───────────────────────────────────────────────────────
-Type "# Step 2: Start the security gateway"
+# ─── Start gateway (clean screen → big logo) ─────────────────────────────
+Type "# Start the Crust security gateway"
 Enter
 Sleep 1.5s
 Type "crust start --auto"
 Enter
-Sleep 3s
+Sleep 4s
 
 # ─── HTTP Proxy: real GLM-4-Plus attack interception ────────────────────
 Hide
@@ -63,7 +54,7 @@ Type "clear"
 Enter
 Sleep 0.3s
 Show
-Type "# Step 3: Real GLM-4-Plus — 6 attacks through the gateway"
+Type "# Real GLM-4-Plus — 6 attacks through the gateway"
 Enter
 Sleep 1.5s
 Type "bash scripts/demo-attack.sh"
@@ -71,7 +62,7 @@ Enter
 Sleep 18s
 
 # ─── ACP Stdio Proxy: VS Code agent operations ─────────────────────────
-Type "# Step 4: ACP stdio proxy — wrapping VS Code + GLM-4-Plus agent"
+Type "# ACP stdio proxy — wrapping VS Code + GLM-4-Plus agent"
 Enter
 Sleep 1.5s
 Type "bash scripts/demo-acp.sh"
@@ -86,7 +77,7 @@ Sleep 0.3s
 Show
 Type "crust status"
 Enter
-Sleep 3s
+Sleep 4s
 
 # ─── Live dashboard: Overview ────────────────────────────────────────────
 Type "crust status --live"
@@ -95,11 +86,28 @@ Sleep 3s
 
 # ─── Live dashboard: Sessions tab ────────────────────────────────────────
 Type "2"
-Sleep 2s
+Sleep 3s
 Down
-Sleep 1.5s
+Sleep 2s
 Type "1"
-Sleep 1s
+Sleep 2s
+Type "q"
+Sleep 0.5s
+
+# ─── Rule list ───────────────────────────────────────────────────────────
+Type "crust list-rules"
+Enter
+Sleep 3s
+Down 3
+Sleep 1.5s
+Down 3
+Sleep 1.5s
+Type "/"
+Sleep 0.5s
+Type "ssh"
+Sleep 3s
+Escape
+Sleep 0.5s
 Type "q"
 Sleep 0.5s
 
@@ -111,23 +119,6 @@ Down 5
 Sleep 2s
 Up 3
 Sleep 2s
-Type "q"
-Sleep 0.5s
-
-# ─── Rule list + ssh filter ──────────────────────────────────────────────
-Type "crust list-rules"
-Enter
-Sleep 3s
-Down 3
-Sleep 1s
-Down 3
-Sleep 1s
-Type "/"
-Sleep 0.5s
-Type "ssh"
-Sleep 2s
-Escape
-Sleep 0.5s
 Type "q"
 Sleep 0.5s
 
