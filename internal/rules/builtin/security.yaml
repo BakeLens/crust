@@ -489,7 +489,7 @@ rules:
   - name: detect-exfil-redirect
     locked: true
     match:
-      command: "re:(?s)>\\s*\\S+.*(?:\\$\\(cat\\b|curl\\b|wget\\b|nc\\b)"
+      command: "re:(?s)>\\s*[/~$.]\\S*.*(?:\\$\\(cat\\b|curl\\b|wget\\b|nc\\b)"
     actions: [execute, write]
     message: "Blocked: file redirect with exfiltration commands (curl, wget, cat)."
     severity: critical
