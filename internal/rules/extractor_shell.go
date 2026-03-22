@@ -1550,36 +1550,31 @@ func defuseStmt(stmt *syntax.Stmt) *syntax.Stmt {
 	return &defused
 }
 
-// extractRedirPaths extracts output redirect paths from redirects in the
-// original statement that were stripped by defuseStmt. Returns parsedCommand
-// entries with only the redirect paths populated (no command name/args).
-func extractRedirPaths(origFile *syntax.File, keptRedirs []*syntax.Redirect) []parsedCommand {
+// mergeRedirPaths merges redirect paths from stripped redirects (those in
+// stmt.Redirs but not in keptRedirs) into the target parsedCommand.
+func mergeRedirPaths(target *parsedCommand, stmt *syntax.Stmt, keptRedirs []*syntax.Redirect) {
 	kept := make(map[*syntax.Redirect]bool, len(keptRedirs))
 	for _, r := range keptRedirs {
 		kept[r] = true
 	}
-	var cmds []parsedCommand
-	for _, stmt := range origFile.Stmts {
-		for _, r := range stmt.Redirs {
-			if kept[r] || r.Word == nil {
-				continue
-			}
-			p := wordToLiteral(r.Word)
-			if p == "" || isBareFileDescriptor(p) {
-				continue
-			}
-			switch r.Op {
-			case syntax.RdrClob, syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob,
-				syntax.RdrAll, syntax.AppAll, syntax.RdrOut, syntax.AppOut:
-				cmds = append(cmds, parsedCommand{RedirPaths: []string{p}})
-			case syntax.RdrIn, syntax.RdrInOut:
-				cmds = append(cmds, parsedCommand{RedirInPaths: []string{p}})
-			case syntax.DplIn, syntax.DplOut, syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
-				// fd duplications and heredocs — not file paths
-			}
+	for _, r := range stmt.Redirs {
+		if kept[r] || r.Word == nil {
+			continue
+		}
+		p := wordToLiteral(r.Word)
+		if p == "" || isBareFileDescriptor(p) {
+			continue
+		}
+		switch r.Op {
+		case syntax.RdrClob, syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob,
+			syntax.RdrAll, syntax.AppAll, syntax.RdrOut, syntax.AppOut:
+			target.RedirPaths = append(target.RedirPaths, p)
+		case syntax.RdrIn, syntax.RdrInOut:
+			target.RedirInPaths = append(target.RedirInPaths, p)
+		case syntax.DplIn, syntax.DplOut, syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
+			// fd duplications and heredocs — not file paths
 		}
 	}
-	return cmds
 }
 
 // extractFromAST walks the parsed AST and extracts commands from CallExpr nodes
@@ -2174,14 +2169,25 @@ func (e *Extractor) runShellFile(file *syntax.File, parentSymtab map[string]stri
 			defusedFile := &syntax.File{Stmts: []*syntax.Stmt{defused}}
 			defusedRes := e.runShellFileInterp(defusedFile, symtab)
 			if !defusedRes.panicked {
-				allCmds = append(allCmds, defusedRes.cmds...)
 				maps.Copy(symtab, defusedRes.sym)
-				// Capture redirect paths from stripped redirects.
-				if len(stmt.Redirs) != len(defused.Redirs) {
-					origFile := &syntax.File{Stmts: []*syntax.Stmt{stmt}}
-					allCmds = append(allCmds, extractRedirPaths(origFile, defused.Redirs)...)
+				if len(defusedRes.cmds) > 0 {
+					allCmds = append(allCmds, defusedRes.cmds...)
+					// Merge redirect paths from stripped redirects into
+					// the last interpreted command so paths like
+					// ">| /tmp/out" are not lost.
+					if len(stmt.Redirs) != len(defused.Redirs) {
+						last := &allCmds[len(allCmds)-1]
+						mergeRedirPaths(last, stmt, defused.Redirs)
+					}
+					continue
 				}
-				continue
+				// Zero commands: pure assignment or bare redirect.
+				// Pure assignments (no stripped redirects) updated symtab
+				// above — done. Bare redirects (e.g., "7>A") fall through
+				// to strategy (b) for AST extraction.
+				if len(stmt.Redirs) == len(defused.Redirs) {
+					continue // pure assignment, symtab updated
+				}
 			}
 		}
 
