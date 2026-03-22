@@ -1,4 +1,4 @@
-# Crust Demo — real GLM-4-Plus attacks, HTTP + ACP proxy, doctor, observability
+# Crust Demo — real GLM-4-Plus attacks, HTTP + ACP proxy, observability
 # Usage: ZHIPUAI_API_KEY=xxx vhs scripts/demo-tui.tape
 # Prerequisites: go build -o crust . && go build -o cmd/mock-acp-agent/mock-acp-agent ./cmd/mock-acp-agent
 
@@ -41,21 +41,13 @@ Enter
 Sleep 0.3s
 Show
 
-# ─── Doctor: provider endpoint check ────────────────────────────────────
-Type "# Step 1: Check all provider endpoints before starting"
+# ─── Doctor: system diagnostics ──────────────────────────────────────────
+Type "# Step 1: Run diagnostics"
 Enter
 Sleep 1.5s
-Type "crust doctor --timeout 3s --retries 0"
+Type "crust doctor"
 Enter
-Sleep 8s
-
-# ─── Doctor: --report for GitHub issues ─────────────────────────────────
-Type "# Generate a privacy-safe report for GitHub issues"
-Enter
-Sleep 1.5s
-Type "crust doctor --timeout 3s --retries 0 --report"
-Enter
-Sleep 8s
+Sleep 6s
 
 # ─── Start gateway ───────────────────────────────────────────────────────
 Type "# Step 2: Start the security gateway"
@@ -66,15 +58,17 @@ Enter
 Sleep 3s
 
 # ─── HTTP Proxy: real GLM-4-Plus attack interception ────────────────────
+Hide
 Type "clear"
 Enter
-Sleep 0.2s
+Sleep 0.3s
+Show
 Type "# Step 3: Real GLM-4-Plus — 8 attacks through the gateway"
 Enter
 Sleep 1.5s
 Type "bash scripts/demo-attack.sh"
 Enter
-Sleep 20s
+Sleep 25s
 
 # ─── ACP Stdio Proxy: VS Code agent operations ─────────────────────────
 Type "# Step 4: ACP stdio proxy — wrapping VS Code + GLM-4-Plus agent"
@@ -85,23 +79,23 @@ Enter
 Sleep 7s
 
 # ─── Status overview ─────────────────────────────────────────────────────
+Hide
 Type "clear"
 Enter
-Sleep 0.2s
+Sleep 0.3s
+Show
 Type "crust status"
 Enter
-Sleep 2s
+Sleep 3s
 
 # ─── Live dashboard: Overview ────────────────────────────────────────────
 Type "crust status --live"
 Enter
-Sleep 2s
+Sleep 3s
 
 # ─── Live dashboard: Sessions tab ────────────────────────────────────────
 Type "2"
 Sleep 2s
-Down
-Sleep 1.5s
 Down
 Sleep 1.5s
 Type "1"
@@ -112,7 +106,7 @@ Sleep 0.5s
 # ─── Log viewer ──────────────────────────────────────────────────────────
 Type "crust logs"
 Enter
-Sleep 2s
+Sleep 3s
 Down 5
 Sleep 2s
 Up 3
@@ -123,7 +117,7 @@ Sleep 0.5s
 # ─── Rule list + ssh filter ──────────────────────────────────────────────
 Type "crust list-rules"
 Enter
-Sleep 2s
+Sleep 3s
 Down 3
 Sleep 1s
 Down 3
@@ -140,7 +134,7 @@ Sleep 0.5s
 # ─── Stop ────────────────────────────────────────────────────────────────
 Type "crust stop"
 Enter
-Sleep 1.5s
+Sleep 2s
 
 # ─── End ─────────────────────────────────────────────────────────────────
 Sleep 1s
