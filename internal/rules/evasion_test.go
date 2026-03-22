@@ -162,7 +162,7 @@ func TestEvasion_VariableExpansionBlocked(t *testing.T) {
 
 func TestEvasion_Base64Blocked(t *testing.T) {
 	// OK: Base64-encoded command piped to bash is blocked by the obfuscation
-	// pre-filter (step 8).
+	// pre-filter (step 10).
 	engine := newEvasionTestEngine(t)
 	result := engine.EvaluateJSON("Bash", `{"command": "echo Y2F0IC9ldGMvc2hhZG93 | base64 -d | bash"}`)
 

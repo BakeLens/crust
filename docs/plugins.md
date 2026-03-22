@@ -2,10 +2,10 @@
 
 ## Overview
 
-Plugins are **post-engine protection layers** (PostChecker) that run after the built-in 14-step evaluation pipeline decides to allow a tool call. They do not re-evaluate rules — they provide **additional checks** at a different layer (e.g., sandbox policy validation, rate limiting, compliance enforcement).
+Plugins are **post-engine protection layers** (PostChecker) that run after the built-in 17-step evaluation pipeline decides to allow a tool call. They do not re-evaluate rules — they provide **additional checks** at a different layer (e.g., sandbox policy validation, rate limiting, compliance enforcement).
 
 ```text
-Tool Call ──▶ [Steps 1-14: Engine Pipeline] ──▶ allowed? ──▶ [PostChecker: Plugins] ──▶ Result
+Tool Call ──▶ [Steps 1-17: Engine Pipeline] ──▶ allowed? ──▶ [PostChecker: Plugins] ──▶ Result
                                                     │               │
                                                  ↓ BLOCK      block or allow
                                               (engine)        (plugin decision)

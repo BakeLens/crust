@@ -2179,7 +2179,7 @@ func FuzzPipeBypass(f *testing.F) {
 		// ---------------------------------------------------------------
 		info := NewExtractor().Extract("Bash", json.RawMessage(args))
 		// Use PreparePaths (which includes filterShellGlobs) to match
-		// the engine's step 10 pipeline, then resolve symlinks (step 11).
+		// the engine's step 12 pipeline, then resolve symlinks (step 13).
 		preparedPaths := normalizer.PreparePaths(info.Paths)
 		normalizedPaths := normalizer.resolveSymlinks(preparedPaths)
 

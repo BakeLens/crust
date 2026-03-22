@@ -274,7 +274,7 @@ crust add-rule my-rules.yaml    # Rules active immediately (hot reload)
 
 ### Plugins
 
-Plugins are **late-stage protection layers** that run after the built-in 14-step evaluation pipeline. When the engine allows a tool call, it passes through registered plugins before returning the final verdict. Plugins can implement sandboxing, rate limiting, audit logging, or custom policy enforcement.
+Plugins are **late-stage protection layers** that run after the built-in 17-step evaluation pipeline. When the engine allows a tool call, it passes through registered plugins before returning the final verdict. Plugins can implement sandboxing, rate limiting, audit logging, or custom policy enforcement.
 
 Plugins communicate over a **JSON wire protocol** (newline-delimited JSON over stdin/stdout) — write them in **any language**: Python, Go, Rust, Node.js, etc.
 

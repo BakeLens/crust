@@ -696,7 +696,7 @@ func newMinimalEngine(t *testing.T) *Engine {
 	return e
 }
 
-// TestValidateContent_NullBytesBlocked verifies step 5 blocks null bytes in write content.
+// TestValidateContent_NullBytesBlocked verifies step 8 blocks null bytes in write content.
 func TestValidateContent_NullBytesBlocked(t *testing.T) {
 	e := newMinimalEngine(t)
 	info := ExtractedInfo{
@@ -726,7 +726,7 @@ func TestValidateContent_CleanWrite(t *testing.T) {
 	}
 }
 
-// TestValidateContent_ObfuscationBlocked verifies step 7 detects base64 obfuscation.
+// TestValidateContent_ObfuscationBlocked verifies step 10 detects base64 obfuscation.
 func TestValidateContent_ObfuscationBlocked(t *testing.T) {
 	e := newMinimalEngine(t)
 	info := ExtractedInfo{
@@ -742,7 +742,7 @@ func TestValidateContent_ObfuscationBlocked(t *testing.T) {
 	}
 }
 
-// TestValidateContent_EvasiveBlocked verifies step 6 blocks evasive commands.
+// TestValidateContent_EvasiveBlocked verifies step 9 blocks evasive commands.
 func TestValidateContent_EvasiveBlocked(t *testing.T) {
 	e := newMinimalEngine(t)
 	info := ExtractedInfo{
@@ -759,7 +759,7 @@ func TestValidateContent_EvasiveBlocked(t *testing.T) {
 	}
 }
 
-// TestValidateContent_DLPBlocked verifies step 8 detects API keys.
+// TestValidateContent_DLPBlocked verifies step 11 detects API keys.
 func TestValidateContent_DLPBlocked(t *testing.T) {
 	e := newMinimalEngine(t)
 	// AWS access key: AKIA + 16 alphanumeric chars (20 total)
@@ -788,7 +788,7 @@ func TestValidateContent_NormalCommand(t *testing.T) {
 	}
 }
 
-// TestValidateContent_NormalizesUnicode verifies step 4 normalizes before later checks.
+// TestValidateContent_NormalizesUnicode verifies step 7 normalizes before later checks.
 func TestValidateContent_NormalizesUnicode(t *testing.T) {
 	e := newMinimalEngine(t)
 	info := ExtractedInfo{
@@ -801,7 +801,7 @@ func TestValidateContent_NormalizesUnicode(t *testing.T) {
 	}
 }
 
-// TestResolvePaths_ProcBlocked verifies step 11 blocks /proc access.
+// TestResolvePaths_ProcBlocked verifies step 14 blocks /proc access.
 func TestResolvePaths_ProcBlocked(t *testing.T) {
 	e := newMinimalEngine(t)
 	_, m := e.resolvePaths([]string{"/proc/1/environ"})
@@ -826,7 +826,7 @@ func TestResolvePaths_CleanPath(t *testing.T) {
 	}
 }
 
-// TestResolvePaths_FiltersShellGlobs verifies step 9 filters bare globs.
+// TestResolvePaths_FiltersShellGlobs verifies step 12 filters bare globs.
 func TestResolvePaths_FiltersShellGlobs(t *testing.T) {
 	e := newMinimalEngine(t)
 	paths, m := e.resolvePaths([]string{"*", "/tmp/foo"})
@@ -845,7 +845,7 @@ func TestResolvePaths_FiltersShellGlobs(t *testing.T) {
 	}
 }
 
-// TestMatchRules_PathRuleBlocks verifies step 12 matches path rules.
+// TestMatchRules_PathRuleBlocks verifies step 15 matches path rules.
 func TestMatchRules_PathRuleBlocks(t *testing.T) {
 	e, err := NewTestEngine([]Rule{
 		{
@@ -870,7 +870,7 @@ func TestMatchRules_PathRuleBlocks(t *testing.T) {
 	}
 }
 
-// TestMatchRules_ContentOnlyFallback verifies step 13 matches content-only rules.
+// TestMatchRules_ContentOnlyFallback verifies step 16 matches content-only rules.
 func TestMatchRules_ContentOnlyFallback(t *testing.T) {
 	e, err := NewTestEngine([]Rule{
 		{

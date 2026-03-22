@@ -67,12 +67,12 @@ func BenchmarkFinding_UnicodeRawJSONRedundancy(b *testing.B) {
 }
 
 // =============================================================================
-// Finding 2: Null bytes in commands — already caught by step 6 (evasion)
+// Finding 2: Null bytes in commands — already caught by step 9 (evasion)
 // The extractor marks commands with null bytes as evasive. No change needed.
 // =============================================================================
 
 // TestFinding_NullByteInCommandCaughtByEvasion confirms that null bytes in
-// commands are blocked by step 6 (shell evasion), not step 5 (null byte check).
+// commands are blocked by step 9 (shell evasion), not step 8 (null byte check).
 func TestFinding_NullByteInCommandCaughtByEvasion(t *testing.T) {
 	engine, err := NewTestEngine(nil)
 	if err != nil {
@@ -92,12 +92,12 @@ func TestFinding_NullByteInCommandCaughtByEvasion(t *testing.T) {
 }
 
 // =============================================================================
-// Finding 3: Evasion boolean (step 6) now runs before PreFilter regex (step 7)
+// Finding 3: Evasion boolean (step 9) now runs before PreFilter regex (step 10)
 // (FIXED) Swapped to check the ~2ns boolean before the ~63ns regex.
 // =============================================================================
 
 // BenchmarkFinding_EvasiveCheckOrdering quantifies the cost difference between
-// the evasive boolean check (step 6) and the PreFilter regex scan (step 7).
+// the evasive boolean check (step 9) and the PreFilter regex scan (step 10).
 func BenchmarkFinding_EvasiveCheckOrdering(b *testing.B) {
 	pf := NewPreFilter()
 	cmd := "ls -la /tmp"

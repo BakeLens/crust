@@ -11,7 +11,7 @@ import (
 	"github.com/BakeLens/crust/internal/rules"
 )
 
-// Plugin is a late-stage protection layer (step 13+).
+// Plugin is a late-stage protection layer (step 17).
 // Runs only for tool calls that passed all built-in checks.
 // Implementations must be safe for concurrent use.
 type Plugin interface {

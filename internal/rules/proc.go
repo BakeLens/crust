@@ -13,7 +13,7 @@ type pathGuard struct {
 }
 
 // pathGuards is the registry of hardcoded path protections.
-// Add new entries here — they are automatically applied in Evaluate() step 11.
+// Add new entries here — they are automatically applied in Evaluate() step 14.
 var pathGuards = []pathGuard{
 	{
 		rule:     "builtin:protect-proc",

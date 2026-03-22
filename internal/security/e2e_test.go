@@ -17,7 +17,7 @@ import (
 // --- Full Pipeline E2E Tests ---
 //
 // These tests exercise the complete security pipeline end-to-end:
-//   selfprotect (Step 0) → rules engine (14-step) → interceptor → telemetry → privacy sanitization
+//   selfprotect (Step 0) → rules engine (17-step) → interceptor → telemetry → privacy sanitization
 
 // newE2EInterceptor creates an interceptor with builtin rules + selfprotect
 // pre-checker — the same configuration used in production.
