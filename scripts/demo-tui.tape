@@ -41,12 +41,11 @@ Sleep 0.3s
 Show
 
 # ─── Start gateway (clean screen → big logo) ─────────────────────────────
-Type "# Start the Crust security gateway"
-Enter
-Sleep 1.5s
 Type "crust start --auto"
 Enter
-Sleep 4s
+Sleep 6s
+# Pause to admire the logo
+Sleep 3s
 
 # ─── HTTP Proxy: real GLM-4-Plus attack interception ────────────────────
 Hide
@@ -59,7 +58,9 @@ Enter
 Sleep 1.5s
 Type "bash scripts/demo-attack.sh"
 Enter
-Sleep 18s
+Sleep 20s
+# Pause on results
+Sleep 3s
 
 # ─── ACP Stdio Proxy: VS Code agent operations ─────────────────────────
 Type "# ACP stdio proxy — wrapping VS Code + GLM-4-Plus agent"
@@ -67,7 +68,7 @@ Enter
 Sleep 1.5s
 Type "bash scripts/demo-acp.sh"
 Enter
-Sleep 7s
+Sleep 8s
 
 # ─── Status overview ─────────────────────────────────────────────────────
 Hide
@@ -77,18 +78,18 @@ Sleep 0.3s
 Show
 Type "crust status"
 Enter
-Sleep 4s
+Sleep 5s
 
 # ─── Live dashboard: Overview ────────────────────────────────────────────
 Type "crust status --live"
 Enter
-Sleep 3s
+Sleep 4s
 
 # ─── Live dashboard: Sessions tab ────────────────────────────────────────
 Type "2"
-Sleep 3s
+Sleep 4s
 Down
-Sleep 2s
+Sleep 3s
 Type "1"
 Sleep 2s
 Type "q"
@@ -97,15 +98,15 @@ Sleep 0.5s
 # ─── Rule list ───────────────────────────────────────────────────────────
 Type "crust list-rules"
 Enter
-Sleep 3s
+Sleep 4s
 Down 3
-Sleep 1.5s
+Sleep 2s
 Down 3
-Sleep 1.5s
+Sleep 2s
 Type "/"
 Sleep 0.5s
 Type "ssh"
-Sleep 3s
+Sleep 4s
 Escape
 Sleep 0.5s
 Type "q"
@@ -114,18 +115,18 @@ Sleep 0.5s
 # ─── Log viewer ──────────────────────────────────────────────────────────
 Type "crust logs"
 Enter
-Sleep 3s
+Sleep 4s
 Down 5
-Sleep 2s
+Sleep 3s
 Up 3
-Sleep 2s
+Sleep 3s
 Type "q"
 Sleep 0.5s
 
 # ─── Stop ────────────────────────────────────────────────────────────────
 Type "crust stop"
 Enter
-Sleep 2s
+Sleep 3s
 
 # ─── End ─────────────────────────────────────────────────────────────────
 Sleep 1s
