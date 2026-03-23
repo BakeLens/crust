@@ -86,6 +86,9 @@ func TestWriteFileExclusive_MissingDirectory(t *testing.T) {
 }
 
 func TestWriteFileWithLock_ReadOnlyDir(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can write to read-only directories")
+	}
 	dir := t.TempDir()
 	roDir := filepath.Join(dir, "readonly")
 	if err := os.MkdirAll(roDir, 0500); err != nil {

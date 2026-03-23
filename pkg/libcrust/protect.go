@@ -32,11 +32,9 @@ func StartProtect() (int, error) {
 			}
 			return addr, nil
 		},
-		Patcher:      daemon.Patcher{},
-		InstallHooks: true,
-		Hooks:        claudeHookInstaller{},
-		EvalServer:   true,
-		Evaluate:     Evaluate,
+		Patcher:    daemon.Patcher{},
+		EvalServer: true,
+		Evaluate:   Evaluate,
 	})
 	if err != nil {
 		return 0, err
@@ -76,15 +74,3 @@ func EvaluateViaRunningInstance(hookInput string) string {
 
 // ReadPortFile reads the eval port from ~/.crust/protect.port.
 func ReadPortFile() int { return protect.ReadPortFile() }
-
-// claudeHookInstaller wraps hooks.go functions.
-type claudeHookInstaller struct{}
-
-func (claudeHookInstaller) Install(crustBin string) error {
-	cleanupStaleHooksFile()
-	return InstallClaudeHook(crustBin)
-}
-
-func (claudeHookInstaller) Uninstall() error {
-	return UninstallClaudeHook()
-}

@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/BakeLens/crust/internal/fileutil"
+	"github.com/BakeLens/crust/internal/protect"
 	"golang.org/x/sys/windows"
 )
 
@@ -61,9 +62,9 @@ func WritePID() error {
 
 // CleanupPID releases the file lock and removes the PID and port files.
 // Named pipes are cleaned up by the kernel on Windows; no socket cleanup needed.
-// It also restores any agent configs that were patched on startup.
+// It also uninstalls all protection mechanisms (agent configs, hooks).
 func CleanupPID() {
-	RestoreAgentConfigs()
+	protect.UninstallAll()
 	if pidLockFile != nil {
 		pidLockFile.Close()
 		pidLockFile = nil

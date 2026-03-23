@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/BakeLens/crust/internal/fileutil"
+	"github.com/BakeLens/crust/internal/protect"
 )
 
 // pidLockFile holds the open PID file to maintain the flock advisory lock.
@@ -49,9 +50,9 @@ func WritePID() error {
 }
 
 // CleanupPID releases the flock and removes the PID, port, and socket files.
-// It also restores any agent configs that were patched on startup.
+// It also uninstalls all protection mechanisms (agent configs, hooks).
 func CleanupPID() {
-	RestoreAgentConfigs()
+	protect.UninstallAll()
 	if pidLockFile != nil {
 		pidLockFile.Close()
 		pidLockFile = nil

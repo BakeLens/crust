@@ -1,19 +1,18 @@
-package libcrust
+package hookutil
 
 import (
 	"encoding/json"
 	"testing"
 )
 
-func TestFormatHookResponse_Block(t *testing.T) {
+func TestFormatResponse_Block(t *testing.T) {
 	evalResult := `{"matched":true,"rule_name":"protect-persistence","severity":"critical","action":"block","message":"Blocked write to crontab"}`
 
-	hookJSON := FormatHookResponse(evalResult)
+	hookJSON := FormatResponse(evalResult)
 	if hookJSON == "" {
 		t.Fatal("expected non-empty hook JSON for a block result")
 	}
 
-	// Verify the JSON structure matches the hook protocol.
 	var resp struct {
 		HookSpecificOutput struct {
 			HookEventName            string `json:"hookEventName"`
@@ -37,30 +36,26 @@ func TestFormatHookResponse_Block(t *testing.T) {
 	}
 }
 
-func TestFormatHookResponse_Allow(t *testing.T) {
-	hookJSON := FormatHookResponse(`{"matched":false}`)
-	if hookJSON != "" {
-		t.Errorf("expected empty hook JSON for allow, got: %s", hookJSON)
+func TestFormatResponse_Allow(t *testing.T) {
+	if hookJSON := FormatResponse(`{"matched":false}`); hookJSON != "" {
+		t.Errorf("expected empty for allow, got: %s", hookJSON)
 	}
 }
 
-func TestFormatHookResponse_MatchedButNotBlock(t *testing.T) {
-	hookJSON := FormatHookResponse(`{"matched":true,"rule_name":"log-only-rule","action":"log","message":"Logged"}`)
-	if hookJSON != "" {
-		t.Errorf("expected empty hook JSON for action=log, got: %s", hookJSON)
+func TestFormatResponse_MatchedButNotBlock(t *testing.T) {
+	if hookJSON := FormatResponse(`{"matched":true,"rule_name":"log-only-rule","action":"log","message":"Logged"}`); hookJSON != "" {
+		t.Errorf("expected empty for action=log, got: %s", hookJSON)
 	}
 }
 
-func TestFormatHookResponse_InvalidJSON(t *testing.T) {
-	hookJSON := FormatHookResponse("not{json")
-	if hookJSON != "" {
-		t.Errorf("expected empty hook JSON for malformed input, got: %s", hookJSON)
+func TestFormatResponse_InvalidJSON(t *testing.T) {
+	if hookJSON := FormatResponse("not{json"); hookJSON != "" {
+		t.Errorf("expected empty for malformed input, got: %s", hookJSON)
 	}
 }
 
-func TestFormatHookResponse_EmptyInput(t *testing.T) {
-	hookJSON := FormatHookResponse("")
-	if hookJSON != "" {
-		t.Errorf("expected empty hook JSON for empty input, got: %s", hookJSON)
+func TestFormatResponse_EmptyInput(t *testing.T) {
+	if hookJSON := FormatResponse(""); hookJSON != "" {
+		t.Errorf("expected empty for empty input, got: %s", hookJSON)
 	}
 }

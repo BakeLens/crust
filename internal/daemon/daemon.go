@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/BakeLens/crust/internal/fileutil"
+	"github.com/BakeLens/crust/internal/protect"
 )
 
 const (
@@ -99,7 +100,7 @@ func IsDaemonMode() bool {
 // Called from Stop() after the daemon process has been killed, because
 // a forcefully-killed process can't run its own defers.
 func stopCleanup() {
-	RestoreAgentConfigs()
+	protect.UninstallAll()
 	_ = RemovePID()           //nolint:errcheck // cleanup best effort
 	_ = os.Remove(portFile()) // cleanup best effort
 }

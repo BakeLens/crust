@@ -1,12 +1,11 @@
 package agentdetect
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/BakeLens/crust/internal/daemon/registry"
+	"github.com/BakeLens/crust/internal/hookutil"
 	"github.com/BakeLens/crust/internal/logger"
 	"github.com/BakeLens/crust/internal/pathutil"
 )
@@ -183,16 +182,7 @@ func isRegistryPatched(name string) bool {
 
 // isClaudeHookInstalled checks if ~/.claude/settings.json contains a crust PreToolUse hook.
 func isClaudeHookInstalled() bool {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return false
-	}
-	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
-	if err != nil {
-		return false
-	}
-	// Quick string check — avoids JSON parsing overhead in the hot path.
-	return strings.Contains(string(data), "evaluate-hook")
+	return hookutil.IsInstalled()
 }
 
 // cleanExePath strips self-update rename suffixes (e.g. ".old.1773623400727")

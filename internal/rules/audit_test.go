@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/BakeLens/crust/internal/pathutil"
 )
 
 // TestAudit_GitConfigBypass verifies that global git config files are blocked.
@@ -17,10 +19,13 @@ func TestAudit_GitConfigBypass(t *testing.T) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 
-	home := os.Getenv("HOME")
-	if home == "" {
-		t.Skip("HOME not set")
+	home, err2 := os.UserHomeDir()
+	if err2 != nil || home == "" {
+		t.Skip("cannot determine home directory")
 	}
+	// Normalize to forward slashes — the engine's path normalizer uses
+	// forward slashes on all platforms, so test paths must match.
+	home = pathutil.ToSlash(home)
 
 	tests := []struct {
 		name    string

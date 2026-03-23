@@ -1,5 +1,21 @@
 // Package protect provides a unified protection lifecycle for both the CLI
 // daemon and the libcrust GUI app.
+//
+// Lifecycle:
+//
+//	Start():
+//	  1. Start HTTP proxy (intercepts agent ↔ LLM traffic)
+//	  2. Patch all agents (HTTP proxy configs, MCP wrappers, hooks)
+//	  3. Start eval server (optional, for hook-based evaluation)
+//
+//	Stop():
+//	  1. Restore all agents (revert configs, remove hooks)
+//	  2. Stop eval server, remove port file
+//
+// All modifications are reversible. Stop runs via defer in RunServer,
+// triggered by SIGINT/SIGTERM. If the daemon is killed with SIGKILL (or
+// crashes), defers don't run — stopCleanup() in internal/daemon handles
+// recovery when the user runs "crust stop".
 package protect
 
 import (
@@ -23,24 +39,16 @@ type AgentPatcher interface {
 	ResolveCrustBin() string
 }
 
-// HookInstaller installs/uninstalls Claude Code PreToolUse hooks.
-type HookInstaller interface {
-	Install(crustBin string) error
-	Uninstall() error
-}
-
 // EvaluateFunc evaluates a tool call, returning JSON result.
 type EvaluateFunc func(toolName, argsJSON string) string
 
 // Config carries all dependencies — no package-level globals.
 type Config struct {
-	ProxyPort    int                                     // 0 = auto-assign
-	StartProxy   func(port int) (addr string, err error) // starts the HTTP proxy
-	Patcher      AgentPatcher                            // patches agent configs
-	InstallHooks bool                                    // install Claude Code hooks
-	Hooks        HookInstaller                           // hook installer
-	EvalServer   bool                                    // start TCP eval server
-	Evaluate     EvaluateFunc                            // eval function for eval server
+	ProxyPort  int                                     // 0 = auto-assign
+	StartProxy func(port int) (addr string, err error) // starts the HTTP proxy
+	Patcher    AgentPatcher                            // patches agent configs
+	EvalServer bool                                    // start TCP eval server
+	Evaluate   EvaluateFunc                            // eval function for eval server
 }
 
 // Instance represents a running protection instance.
@@ -73,24 +81,12 @@ func Start(cfg Config) (*Instance, error) {
 		return nil, fmt.Errorf("parse port %q: %w", portStr, err)
 	}
 
-	// 2. Patch agent configs.
+	// 2. Patch agent configs (including hooks — all registered in registry).
 	if cfg.Patcher != nil {
 		cfg.Patcher.PatchAgentConfigs(port)
 	}
 
-	// 3. Install hooks (optional).
-	if cfg.InstallHooks && cfg.Hooks != nil && cfg.Patcher != nil {
-		crustBin := cfg.Patcher.ResolveCrustBin()
-		if crustBin != "" {
-			if err := cfg.Hooks.Install(crustBin); err != nil {
-				log.Warn("install claude hook: %v", err)
-			} else {
-				registry.Default.MarkPatched("Claude Code")
-			}
-		}
-	}
-
-	// 4. Start eval server (optional).
+	// 3. Start eval server (optional).
 	inst := &Instance{running: true, port: port, cfg: cfg}
 	if cfg.EvalServer && cfg.Evaluate != nil {
 		evalPort, err := inst.startEvalServer()
@@ -105,6 +101,17 @@ func Start(cfg Config) (*Instance, error) {
 	return inst, nil
 }
 
+// UninstallAll removes all Crust protection mechanisms from the system.
+// Idempotent — safe to call from both Stop() (graceful shutdown) and
+// daemon.stopCleanup() (SIGKILL recovery). Does not require a running
+// Instance; works purely from on-disk state (backup files, settings.json).
+//
+// Calls registry.Default.RestoreAll() which iterates all registered targets:
+// HTTP proxy agents, MCP config patches, and Claude Code hooks.
+func UninstallAll() {
+	registry.Default.RestoreAll()
+}
+
 // Stop tears down the protection stack.
 func (inst *Instance) Stop() {
 	if inst == nil {
@@ -117,15 +124,7 @@ func (inst *Instance) Stop() {
 		return
 	}
 
-	if inst.cfg.Hooks != nil {
-		if err := inst.cfg.Hooks.Uninstall(); err != nil {
-			log.Warn("uninstall claude hook: %v", err)
-		}
-	}
-	if inst.cfg.Patcher != nil {
-		inst.cfg.Patcher.RestoreAgentConfigs()
-	}
-
+	UninstallAll()
 	inst.stopEvalServer()
 	removePortFile()
 	inst.running = false

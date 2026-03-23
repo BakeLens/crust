@@ -50,16 +50,9 @@ func (inst *Instance) EnableAgent(name string) error {
 	for _, t := range registry.Default.Targets() {
 		if t.Name() == name {
 			if err := t.Patch(port, crustBin); err != nil {
-				if name != "Claude Code" {
-					return err
-				}
+				return err
 			}
 			registry.Default.MarkPatched(name)
-			if name == "Claude Code" && inst.cfg.Hooks != nil {
-				if err := inst.cfg.Hooks.Install(crustBin); err != nil {
-					log.Warn("install claude hook: %v", err)
-				}
-			}
 			return nil
 		}
 	}
@@ -74,11 +67,6 @@ func (inst *Instance) DisableAgent(name string) error {
 				return err
 			}
 			registry.Default.MarkUnpatched(name)
-			if name == "Claude Code" && inst != nil && inst.cfg.Hooks != nil {
-				if err := inst.cfg.Hooks.Uninstall(); err != nil {
-					log.Warn("uninstall claude hook: %v", err)
-				}
-			}
 			return nil
 		}
 	}

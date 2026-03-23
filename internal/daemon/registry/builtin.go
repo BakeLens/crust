@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/BakeLens/crust/internal/hookutil"
 	"github.com/BakeLens/crust/internal/mcpdiscover"
 )
 
@@ -27,6 +28,19 @@ func init() {
 	// automatically appear here via BuiltinClients().
 	// Go 1.22+ loop variables are per-iteration, so closures safely capture
 	// the correct client definition for each iteration.
+	// ── Claude Code hooks ────────────────────────────────────────────────────
+	// PreToolUse hook in ~/.claude/settings.json — evaluated via "crust evaluate-hook".
+	Register(&FuncTarget{
+		AgentName:     "Claude Code (hooks)",
+		InstalledFunc: hookutil.IsInstalled,
+		PatchFunc: func(_ int, bin string) error {
+			hookutil.CleanupStaleFile()
+			return hookutil.Install(bin)
+		},
+		RestoreFunc: hookutil.Uninstall,
+	})
+
+	// ── MCP clients ───────────────────────────────────────────────────────────
 	for _, c := range mcpdiscover.BuiltinClients() {
 		Register(&FuncTarget{
 			AgentName: c.ClientName(),

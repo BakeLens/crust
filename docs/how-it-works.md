@@ -55,6 +55,32 @@ Rule Evaluation (17-step pipeline):
 
 ---
 
+## Daemon Lifecycle
+
+### Start (`crust start` / GUI "Enable")
+
+1. **Start HTTP proxy** — intercepts agent ↔ LLM traffic on a local port
+2. **Patch all agents** — via `registry.PatchAll()`:
+   - HTTP proxy configs (rewrite API URL to proxy)
+   - MCP configs (wrap stdio servers with `crust wrap`)
+   - Tool-call evaluation hooks (PreToolUse in agent settings)
+3. **Start eval server** — TCP server for hook-based evaluation (optional)
+
+All modifications are reversible — originals are backed up and restored on stop.
+
+### Stop (`crust stop` / GUI "Disable" / SIGINT / SIGTERM)
+
+1. **Restore all agents** — via `registry.RestoreAll()`: reverts all configs and removes hooks
+2. **Stop eval server** — closes listener, removes port file
+
+### Crash Recovery
+
+If the daemon is killed with `kill -9` (SIGKILL) or crashes, `defer`-based cleanup doesn't run. The next `crust stop` call detects the stale PID and runs `protect.UninstallAll()` → `registry.RestoreAll()`, which restores all agents from backups. PID and port files are also cleaned up.
+
+Adding a new agent only requires registering it in `internal/daemon/registry/builtin.go` — all lifecycle paths automatically cover it.
+
+---
+
 ## Rule Schema (Progressive Disclosure)
 
 ```yaml
