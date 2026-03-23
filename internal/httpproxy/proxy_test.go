@@ -1503,11 +1503,11 @@ func TestAgent_ClaudeCode_BufferedStreaming_MultiDataLine(t *testing.T) {
 // When the SSE buffer overflows, the proxy retries the request with stream=false
 // and returns the full JSON response — client gets JSON, not truncated SSE.
 func TestAgent_OpenAI_BufferOverflow_RetriesNonStreaming(t *testing.T) {
-	var reqCount int32
+	var reqCount atomic.Int32
 	nonStreamingJSON := `{"id":"chatcmpl-retry","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"full response"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2}}`
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count := atomic.AddInt32(&reqCount, 1)
+		count := reqCount.Add(1)
 		if count == 1 {
 			// First request: streaming — send 5 events to trigger overflow at limit=2
 			w.Header().Set("Content-Type", "text/event-stream")
@@ -1576,7 +1576,7 @@ func TestAgent_OpenAI_BufferOverflow_RetriesNonStreaming(t *testing.T) {
 	p.handleBufferedStreamingRequest(rctx, secCfg)
 
 	// Two requests must have been made: original streaming + retry non-streaming
-	if got := atomic.LoadInt32(&reqCount); got != 2 {
+	if got := reqCount.Load(); got != 2 {
 		t.Errorf("expected 2 upstream requests (stream + retry), got %d", got)
 	}
 
