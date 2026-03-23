@@ -1017,7 +1017,7 @@ func detectExfilRedirect(info *ExtractedInfo, commands []parsedCommand) {
 		for _, arg := range ec.Args {
 			// curl -d @/tmp/out — strip @ prefix for path comparison
 			checkArg := strings.TrimPrefix(arg, "@")
-			if slices.Contains(redirectPaths, checkArg) {
+			if checkArg != "" && slices.Contains(redirectPaths, checkArg) {
 				info.ExfilRedirect = true
 				return
 			}
@@ -2038,11 +2038,14 @@ func interpSupportsRedirect(r *syntax.Redirect) bool {
 		return true
 	case syntax.DplOut:
 		// >&1, >&2, >&- work. >&0 and other targets cause error return.
+		if r.Word == nil {
+			return false
+		}
 		w := wordToLiteral(r.Word)
 		return w == "1" || w == "2" || w == "-"
 	case syntax.DplIn:
 		// Only <&- works. <&0, <&1, <&2, etc. all cause error return.
-		return wordToLiteral(r.Word) == "-"
+		return r.Word != nil && wordToLiteral(r.Word) == "-"
 	case syntax.RdrInOut, syntax.RdrClob, syntax.AppClob, syntax.RdrAllClob, syntax.AppAllClob:
 		// Interpreter returns error — command not executed.
 		return false
