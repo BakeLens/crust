@@ -179,8 +179,11 @@ jobs:
             FuzzCommandRegexBypass FuzzHostRegexBypass \
             FuzzJSONUnicodeEscapeBypass FuzzEvasionDetectionBypass FuzzGlobCommandBypass \
             FuzzPipelineExtraction FuzzContentConfusableBypass FuzzVariableExpansionEvasion \
-            FuzzShapeDetectionBypass FuzzWebSearchURLBypass FuzzNormalAgentFalsePositive \
+            FuzzShapeDetectionBypass FuzzWebSearchURLBypass \
             || rc=1
+          # FuzzNormalAgentFalsePositive creates a full engine per iteration
+          # (with DLP/gitleaks) — too slow for the 12s parallel batch.
+          /tmp/rules.fuzz -test.fuzz=FuzzNormalAgentFalsePositive -test.fuzztime=15s -test.short -test.fuzzcachedir=/tmp/fuzz-cache || rc=1
           # FuzzPipeBypass and FuzzForkBombDetection need constrained memory and
           # single worker to avoid OOM when running alongside other fuzz targets.
           GOMEMLIMIT=2GiB /tmp/rules.fuzz -test.fuzz=FuzzPipeBypass -test.fuzztime=12s -test.short -test.fuzzcachedir=/tmp/fuzz-cache -test.parallel=1 || rc=1
