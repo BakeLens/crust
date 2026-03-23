@@ -646,8 +646,8 @@ func TestCommandUnicodeNormalization(t *testing.T) {
 			false,
 		},
 		{
-			"fullwidth chars in command flagged as evasive",
-			// Fullwidth "cat" — IsSuspiciousInput flags this as evasive during extraction.
+			"fullwidth chars in command resolved via NFKC normalization",
+			// Fullwidth "ｃａｔ" → NFKC → "cat" → command DB hit → /etc/passwd extracted.
 			`{"command":"` + "\uff43\uff41\uff54" + ` /etc/passwd"}`,
 			true,
 		},

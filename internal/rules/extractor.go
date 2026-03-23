@@ -10,6 +10,7 @@ import (
 
 	"github.com/BakeLens/crust/internal/pathutil"
 	"github.com/BakeLens/crust/internal/rules/pwsh"
+	"golang.org/x/text/unicode/norm"
 )
 
 // ExtractedInfo contains paths and operation from a tool call
@@ -78,6 +79,11 @@ func normalizeParsedCmdName(name string) string {
 	if name == "[" {
 		return "test"
 	}
+	// NFKC normalization: converts fullwidth Latin characters to ASCII
+	// (e.g., ｃａｔ → cat) so the command DB lookup resolves correctly.
+	// This provides defense-in-depth against fullwidth evasion without
+	// blocking legitimate CJK filenames in IsSuspiciousInput.
+	name = norm.NFKC.String(name)
 	// .NET static calls: lowercase for case-insensitive DB lookup.
 	// PS cmdlets (Verb-Noun) keep their original case; commandDB lookups
 	// use strings.ToLower(cmdName) so no pre-normalization is needed.

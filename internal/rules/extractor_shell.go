@@ -1173,7 +1173,7 @@ func (e *Extractor) resolveCommand(name string, args []string) (string, []string
 			return cmdName, nil
 		}
 
-		cmdName = stripPathPrefix(args[i])
+		cmdName = normalizeParsedCmdName(stripPathPrefix(args[i]))
 		args = args[i+1:]
 	}
 

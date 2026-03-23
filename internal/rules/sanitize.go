@@ -81,23 +81,13 @@ func IsSuspiciousInput(s string) (suspicious bool, reasons []string) {
 		reasons = append(reasons, "input contains hidden null characters")
 	}
 
-	// Check for fullwidth characters
-	for _, r := range s {
-		if r >= 0xFF01 && r <= 0xFF5E {
-			suspicious = true
-			reasons = append(reasons, "input uses lookalike fullwidth characters")
-			break
-		}
-	}
-
-	// Check for cross-script confusable characters
-	for _, r := range s {
-		if _, ok := confusableMap[r]; ok {
-			suspicious = true
-			reasons = append(reasons, "input uses lookalike characters from another script")
-			break
-		}
-	}
+	// Fullwidth characters (letters, digits, punctuation) and cross-script
+	// confusables (Cyrillic/Greek) are NOT flagged here. They appear
+	// naturally in CJK filenames and multilingual text. Security is handled
+	// by NFKC normalization and confusable stripping in the path normalizer,
+	// which converts them to ASCII before rule matching. Fullwidth command
+	// names (e.g., ｃａｔ) are harmless — the shell rejects them as
+	// "command not found."
 
 	// Check for excessive path traversal
 	if strings.Count(s, "..") > 3 {
