@@ -151,8 +151,8 @@ func TestDocConsistency_BuiltinRuleCounts(t *testing.T) {
 	}
 
 	// Assert docs reflect the source counts (README uses markdown bold around numbers)
-	docContains(t, "README.md", "35 security rules")
-	docContains(t, "README.md", "32 locked")
+	docContains(t, "README.md", "37 security rules")
+	docContains(t, "README.md", "34 locked")
 	docContains(t, "README.md", "3 user-disablable")
 }
 

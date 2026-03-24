@@ -293,10 +293,10 @@ If a `ProcessPlugin`'s external process crashes or times out during IPC, it is k
 
 ## Integration
 
-The plugin registry is created via `plugin.InitDefaultRegistry()` and wired into the engine by `plugin.WirePluginPostChecker()`. Both the daemon (`security.Init`) and the mobile library (`libcrust.Init`) use this shared path. After the engine's 14-step pipeline allows a tool call, plugins enforce additional policy at exec time (e.g., OS-level sandboxing).
+The plugin registry is created via `plugin.InitDefaultRegistry()` and wired into the engine by `plugin.WirePluginPostChecker()`. Both the daemon (`security.Init`) and the mobile library (`libcrust.Init`) use this shared path. After the engine's 17-step pipeline allows a tool call, plugins enforce additional policy at exec time (e.g., OS-level sandboxing).
 
 ```text
-Tool Call ──▶ [Steps 1-14: Engine Pipeline] ──▶ allowed? ──▶ [PostChecker] ──▶ Result
+Tool Call ──▶ [Steps 1-17: Engine Pipeline] ──▶ allowed? ──▶ [PostChecker] ──▶ Result
                                                     │              │
                                                  ↓ BLOCK    plugin.Evaluate()
                                               (engine)     (sandbox, rate-limiter, etc.)
@@ -304,7 +304,7 @@ Tool Call ──▶ [Steps 1-14: Engine Pipeline] ──▶ allowed? ──▶ [
 
 ### Current wiring
 
-Plugins are wired into the engine via `PostChecker` — a callback that runs after the 14-step pipeline allows a tool call. Both functions live in `internal/plugin/`:
+Plugins are wired into the engine via `PostChecker` — a callback that runs after the 17-step pipeline allows a tool call. Both functions live in `internal/plugin/`:
 
 ```go
 // internal/plugin/registry.go — InitDefaultRegistry()

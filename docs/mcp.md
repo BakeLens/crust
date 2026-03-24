@@ -42,7 +42,7 @@ Real MCP Server (filesystem, database, etc.)
 For remote MCP servers that expose an HTTP endpoint ([MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports)):
 
 ```bash
-crust wrap --upstream https://mcp-server.example.com/mcp
+crust mcp http --upstream https://mcp-server.example.com/mcp
 ```
 
 ### How It Works
