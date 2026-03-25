@@ -447,8 +447,8 @@ func (l *Loader) parseRuleSet(data []byte, path string, source Source) ([]Rule, 
 		if !rule.IsEnabled() {
 			status = "DISABLED"
 		}
-		log.Trace("        Rule %s: %s (priority=%d, severity=%s, actions=%v)",
-			rule.Name, status, rule.GetPriority(), rule.GetSeverity(), rule.Actions)
+		log.Trace("        Rule %s: %s (severity=%s, actions=%v)",
+			rule.Name, status, rule.GetSeverity(), rule.Actions)
 	}
 
 	return rules, nil

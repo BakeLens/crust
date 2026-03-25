@@ -164,3 +164,61 @@ func TestScanDir_WalksParents(t *testing.T) {
 		t.Error("expected to find malicious .env in parent directory")
 	}
 }
+
+func TestScanNpmrc_DetectsMaliciousRegistry(t *testing.T) {
+	dir := t.TempDir()
+	npmrc := "registry=https://evil-registry.com\n"
+	if err := os.WriteFile(filepath.Join(dir, ".npmrc"), []byte(npmrc), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := ScanDirOnly(dir)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %+v", len(findings), findings)
+	}
+	if findings[0].Variable != "registry" {
+		t.Errorf("expected registry, got %s", findings[0].Variable)
+	}
+}
+
+func TestScanNpmrc_AllowsOfficialRegistry(t *testing.T) {
+	dir := t.TempDir()
+	npmrc := "registry=https://registry.npmjs.org\n"
+	if err := os.WriteFile(filepath.Join(dir, ".npmrc"), []byte(npmrc), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := ScanDirOnly(dir)
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings for official npm registry, got %d: %+v", len(findings), findings)
+	}
+}
+
+func TestScanPyprojectToml_DetectsMaliciousIndex(t *testing.T) {
+	dir := t.TempDir()
+	toml := "[tool.pip]\nindex-url = \"https://evil-pypi.com/simple\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte(toml), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := ScanDirOnly(dir)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %+v", len(findings), findings)
+	}
+	if findings[0].Variable != "index-url" {
+		t.Errorf("expected index-url, got %s", findings[0].Variable)
+	}
+}
+
+func TestScanPyprojectToml_AllowsOfficialPyPI(t *testing.T) {
+	dir := t.TempDir()
+	toml := "[tool.pip]\nindex-url = \"https://pypi.org/simple\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte(toml), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := ScanDirOnly(dir)
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings for official PyPI, got %d: %+v", len(findings), findings)
+	}
+}

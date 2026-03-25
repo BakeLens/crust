@@ -49,6 +49,7 @@ func ScanDir(dir string) []Finding {
 	var findings []Finding
 	findings = append(findings, scanEnvFiles(dir)...)
 	findings = append(findings, scanClaudeSettings(dir)...)
+	findings = append(findings, scanPackageManagerConfigs(dir)...)
 	return findings
 }
 
@@ -57,6 +58,7 @@ func ScanDirOnly(dir string) []Finding {
 	var findings []Finding
 	findings = append(findings, scanEnvFilesInDir(dir)...)
 	findings = append(findings, scanClaudeSettingsInDir(dir)...)
+	findings = append(findings, scanPackageManagerConfigsInDir(dir)...)
 	return findings
 }
 
@@ -188,6 +190,140 @@ func isSuspiciousURL(rawURL string) bool {
 	host = strings.ToLower(host)
 
 	return !knownSafeDomains[host]
+}
+
+// scanPackageManagerConfigs scans for registry redirects in package manager configs
+// in the given directory and parent dirs.
+func scanPackageManagerConfigs(dir string) []Finding {
+	var findings []Finding
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return scanPackageManagerConfigsInDir(dir)
+	}
+
+	for {
+		findings = append(findings, scanPackageManagerConfigsInDir(dir)...)
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		if dir == home {
+			break
+		}
+		dir = parent
+	}
+	return findings
+}
+
+func scanPackageManagerConfigsInDir(dir string) []Finding {
+	var findings []Finding
+
+	// .npmrc — registry=https://evil.com
+	findings = append(findings, scanNpmrc(filepath.Join(dir, ".npmrc"))...)
+
+	// pyproject.toml — index-url = "https://evil.com/simple"
+	findings = append(findings, scanPyprojectToml(filepath.Join(dir, "pyproject.toml"))...)
+
+	return findings
+}
+
+// npmrcRegistryRe matches registry=<url> in .npmrc files.
+var npmrcRegistryRe = regexp.MustCompile(`(?i)^\s*registry\s*=\s*["']?(\S+?)["']?\s*$`)
+
+// knownSafeRegistries are official package registries that are not suspicious.
+var knownSafeRegistries = map[string]bool{
+	"registry.npmjs.org":     true,
+	"registry.yarnpkg.com":   true,
+	"pypi.org":               true,
+	"upload.pypi.org":        true,
+	"files.pythonhosted.org": true,
+	"crates.io":              true,
+	"rubygems.org":           true,
+	"repo1.maven.org":        true,
+	"repo.maven.apache.org":  true,
+	"plugins.gradle.org":     true,
+	"jcenter.bintray.com":    true,
+	"localhost":              true,
+	"127.0.0.1":              true,
+	"0.0.0.0":                true,
+	"::1":                    true,
+}
+
+func scanNpmrc(path string) []Finding {
+	var findings []Finding
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, ";") || strings.HasPrefix(line, "#") {
+			continue
+		}
+		m := npmrcRegistryRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		url := m[1]
+		if isSuspiciousRegistry(url) {
+			findings = append(findings, Finding{
+				File:     path,
+				Variable: "registry",
+				Value:    url,
+				Risk:     "npm registry redirected to non-official endpoint",
+			})
+		}
+	}
+	return findings
+}
+
+// pyprojectIndexRe matches index-url or extra-index-url in pyproject.toml [tool.pip] or [tool.uv] sections.
+var pyprojectIndexRe = regexp.MustCompile(`(?i)^\s*(?:index-url|extra-index-url)\s*=\s*["'](\S+?)["']\s*$`)
+
+func scanPyprojectToml(path string) []Finding {
+	var findings []Finding
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		m := pyprojectIndexRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		url := m[1]
+		if isSuspiciousRegistry(url) {
+			findings = append(findings, Finding{
+				File:     path,
+				Variable: "index-url",
+				Value:    url,
+				Risk:     "Python package index redirected to non-official endpoint",
+			})
+		}
+	}
+	return findings
+}
+
+// isSuspiciousRegistry returns true if the URL doesn't point to a known safe registry.
+func isSuspiciousRegistry(rawURL string) bool {
+	u := rawURL
+	for _, prefix := range []string{"https://", "http://", "HTTP://", "HTTPS://"} {
+		u = strings.TrimPrefix(u, prefix)
+	}
+	host := u
+	if i := strings.IndexAny(host, "/:"); i >= 0 {
+		host = host[:i]
+	}
+	host = strings.ToLower(host)
+	return !knownSafeRegistries[host]
 }
 
 // FindingCount returns the number of findings.

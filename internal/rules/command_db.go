@@ -169,6 +169,8 @@ func defaultCommandDB() map[string]CommandInfo {
 		"chmod":    {Operation: OpWrite, PathArgIndex: []int{1, 2, 3, 4, 5}}, // arg0 = mode
 		"chown":    {Operation: OpWrite, PathArgIndex: []int{1, 2, 3, 4, 5}}, // arg0 = owner[:group]
 		"chgrp":    {Operation: OpWrite, PathArgIndex: []int{1, 2, 3, 4, 5}}, // arg0 = group
+		"setcap":   {Operation: OpWrite, PathArgIndex: []int{1, 2, 3, 4, 5}}, // arg0 = capabilities
+		"umask":    {Operation: OpWrite},                                     // shell builtin, no file paths
 
 		// Compiler / build tools
 		"gcc":     {Operation: OpWrite, PathArgIndex: []int{0, 1, 2, 3}, PathFlags: []string{"-o"}},

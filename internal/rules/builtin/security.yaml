@@ -726,3 +726,44 @@ rules:
   # Already partially covered by protect-mobile-pii (mobile://pii/**), but
   # explicitly listed for clarity.
   # ===========================================================================
+
+  # ===========================================================================
+  # 33. PERMISSION MANIPULATION DETECTION
+  # Detects chmod/chown/umask commands targeting sensitive paths or creating
+  # world-writable files. An agent using these can weaken file permissions
+  # to enable credential theft or privilege escalation.
+  # ===========================================================================
+  - name: detect-permission-manipulation
+    locked: true
+    match:
+      command: "re:\\bchmod\\b\\s+(?:777|666|o\\+[rwx]|a\\+[rwx]|\\+[rwx]{2,})|\\bumask\\b\\s+0{1,3}(?:\\s|$)|\\bsetcap\\b|\\bsetfacl\\b"
+    actions: [execute, write]
+    message: "Blocked: permission manipulation (chmod 777, umask 0, setcap, setfacl) can weaken system security."
+    severity: high
+
+  # ===========================================================================
+  # 34. ADDITIONAL PERSISTENCE VECTORS
+  # Blocks agent writes to boot-time, container, and build-system configs
+  # that auto-execute code.
+  # ===========================================================================
+  - name: protect-persistence-extended
+    locked: true
+    block:
+      # Kernel module loading
+      - "/etc/modprobe.conf"
+      - "/etc/modprobe.d/**"
+      # Docker Compose overrides (auto-merged with docker-compose.yml)
+      - "**/docker-compose.override.yml"
+      - "**/docker-compose.override.yaml"
+      # Gradle init scripts (run on every build)
+      - "$HOME/.gradle/init.gradle"
+      - "$HOME/.gradle/init.gradle.kts"
+      - "$HOME/.gradle/init.d/**"
+      # GRUB bootloader
+      - "/etc/default/grub"
+      - "/etc/grub.d/**"
+      - "/boot/grub/grub.cfg"
+      - "/boot/grub2/grub.cfg"
+    actions: [write, delete]
+    message: "Blocked: modprobe, Docker Compose override, Gradle init, and GRUB configs are persistence vectors."
+    severity: critical

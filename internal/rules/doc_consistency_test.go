@@ -55,7 +55,7 @@ func docContains(t *testing.T, relPath, substr string) {
 
 // wantDLPPatternCount is the expected number of hardcoded DLP patterns.
 // Update this constant AND the docs below whenever patterns are added or removed.
-const wantDLPPatternCount = 46
+const wantDLPPatternCount = 51
 
 // Docs that reference the DLP pattern count:
 //   - README.md: "46 DLP token-detection patterns"
@@ -66,12 +66,26 @@ func TestDocConsistency_DLPPatternCount(t *testing.T) {
 	if got != wantDLPPatternCount {
 		t.Errorf("len(dlpPatterns) = %d, want %d\n"+
 			"  → Update wantDLPPatternCount in this file AND:\n"+
-			"    - README.md  (\"46 DLP token-detection patterns\")\n"+
+			"    - README.md  (\"51 DLP token-detection patterns\")\n"+
 			"    - docs/how-it-works.md",
 			got, wantDLPPatternCount)
 	}
 
-	docContains(t, "README.md", "46 DLP token-detection patterns")
+	docContains(t, "README.md", "51 DLP token-detection patterns")
+}
+
+// ── Dangerous environment variables ──────────────────────────────────────────
+
+const wantEnvVarCount = 51
+
+func TestDocConsistency_EnvVarCount(t *testing.T) {
+	got := DangerousEnvVarCount()
+	if got != wantEnvVarCount {
+		t.Errorf("DangerousEnvVarCount() = %d, want %d\n"+
+			"  → Update wantEnvVarCount in this file AND:\n"+
+			"    - docs/cve-tracker.md  (envDB entry count)",
+			got, wantEnvVarCount)
+	}
 }
 
 // ── Dynamic protection rules ─────────────────────────────────────────────────
@@ -106,8 +120,8 @@ func TestDocConsistency_ProtectionRules(t *testing.T) {
 //   - docs/cli.md: update locked count to match
 
 const (
-	wantTotalRuleCount      = 37
-	wantLockedRuleCount     = 34
+	wantTotalRuleCount      = 39
+	wantLockedRuleCount     = 36
 	wantUserDisablableCount = 3
 )
 
@@ -151,8 +165,8 @@ func TestDocConsistency_BuiltinRuleCounts(t *testing.T) {
 	}
 
 	// Assert docs reflect the source counts (README uses markdown bold around numbers)
-	docContains(t, "README.md", "37 security rules")
-	docContains(t, "README.md", "34 locked")
+	docContains(t, "README.md", "39 security rules")
+	docContains(t, "README.md", "36 locked")
 	docContains(t, "README.md", "3 user-disablable")
 }
 

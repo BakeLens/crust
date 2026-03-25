@@ -71,7 +71,6 @@ type RuleSnapshot struct {
 	Description string            `json:"description"`
 	Source      rules.Source      `json:"source"`
 	Severity    rules.Severity    `json:"severity"`
-	Priority    int               `json:"priority"`
 	Actions     []rules.Operation `json:"actions"`
 	BlockPaths  []string          `json:"block_paths"`
 	BlockExcept []string          `json:"block_except"`
@@ -90,7 +89,6 @@ func SnapshotRule(r *rules.Rule) RuleSnapshot {
 		Description: r.Description,
 		Source:      r.Source,
 		Severity:    r.GetSeverity(),
-		Priority:    r.GetPriority(),
 		Actions:     slices.Clone(r.Actions),
 		BlockPaths:  slices.Clone(r.GetBlockPaths()),
 		BlockExcept: slices.Clone(r.GetBlockExcept()),

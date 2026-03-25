@@ -358,5 +358,40 @@ var dlpPatterns = []dlpPattern{
 		message: "Cannot write FHIR health data bundle — potential health record exfiltration",
 	},
 
+	// Database connection strings with embedded credentials
+	{
+		name:    "builtin:dlp-database-uri-credentials",
+		re:      regexp.MustCompile(`(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|rediss|amqp|amqps)://[^:/?#\s]+:[^@/?#\s]+@[^/?#\s]+`),
+		message: "Cannot write database connection string with embedded credentials — potential credential leak",
+	},
+
+	// PGP private key block
+	{
+		name:    "builtin:dlp-pgp-private-key",
+		re:      regexp.MustCompile(`-----BEGIN PGP PRIVATE KEY BLOCK-----`),
+		message: "Cannot expose PGP private key — potential credential leak",
+	},
+
+	// Mailgun
+	{
+		name:    "builtin:dlp-mailgun-api-key",
+		re:      regexp.MustCompile(`key-[a-f0-9]{32}`),
+		message: "Cannot write Mailgun API key — potential credential leak",
+	},
+
+	// Discord webhook
+	{
+		name:    "builtin:dlp-discord-webhook",
+		re:      regexp.MustCompile(`(?:^|\b)https://discord(?:app)?\.com/api/webhooks/\d{17,20}/[A-Za-z0-9_\-]{60,}`),
+		message: "Cannot write Discord webhook URL — potential credential leak",
+	},
+
+	// Grafana
+	{
+		name:    "builtin:dlp-grafana-token",
+		re:      regexp.MustCompile(`\bglsa_[A-Za-z0-9_]{32,}\b`),
+		message: "Cannot write Grafana service account token — potential credential leak",
+	},
+
 	// Add new patterns above this line.
 }

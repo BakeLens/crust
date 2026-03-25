@@ -510,8 +510,8 @@ func TestBypassFix_ExpandedCommandDB(t *testing.T) {
 		{
 			"chmod-env", "Bash",
 			map[string]any{"command": "chmod 777 /home/user/.env"},
-			true, "protect-env-files",
-			"chmod on .env",
+			true, "detect-permission-manipulation",
+			"chmod 777 on .env — permission manipulation rule fires first (alphabetical)",
 		},
 		{
 			"truncate-env", "Bash",
@@ -799,8 +799,7 @@ func TestBypassFix_SymlinkMatching(t *testing.T) {
 	// the post-resolved path.
 	rules := []Rule{
 		{
-			Name:     "test-symlink-path-rule",
-			Priority: new(10), // higher priority (lower number) so it wins when both match
+			Name: "test-symlink-path-rule",
 			Block: Block{
 				Paths: []string{"/etc/passwd"},
 			},
@@ -809,8 +808,7 @@ func TestBypassFix_SymlinkMatching(t *testing.T) {
 			Severity: SeverityCritical,
 		},
 		{
-			Name:     "test-real-path-rule",
-			Priority: new(20),
+			Name: "test-real-path-rule",
 			Block: Block{
 				Paths: []string{"/private/etc/passwd"},
 			},
@@ -839,8 +837,8 @@ func TestBypassFix_SymlinkMatching(t *testing.T) {
 		{
 			"symlink-path-matches-symlink-rule", "Bash",
 			map[string]any{"command": "cat /etc/passwd"},
-			true, "test-symlink-path-rule",
-			"pre-resolved /etc/passwd matches rule /etc/passwd despite symlink resolution",
+			true, "test-real-path-rule",
+			"both rules match (pre+post resolved); test-real-path-rule wins alphabetically",
 		},
 		// Post-resolved path matches rule with real path.
 		// On macOS: /etc/passwd resolves to /private/etc/passwd, which

@@ -2,8 +2,6 @@ package rules
 
 import (
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 func TestRule_Validate(t *testing.T) {
@@ -158,29 +156,6 @@ func TestRule_IsEnabled(t *testing.T) {
 	})
 }
 
-func TestRule_GetPriority(t *testing.T) {
-	t.Run("default is 50", func(t *testing.T) {
-		r := Rule{}
-		if r.GetPriority() != 50 {
-			t.Errorf("expected default priority 50, got %d", r.GetPriority())
-		}
-	})
-
-	t.Run("explicit priority", func(t *testing.T) {
-		r := Rule{Priority: new(10)}
-		if r.GetPriority() != 10 {
-			t.Errorf("expected priority 10, got %d", r.GetPriority())
-		}
-	})
-
-	t.Run("explicit priority zero", func(t *testing.T) {
-		r := Rule{Priority: new(0)}
-		if r.GetPriority() != 0 {
-			t.Errorf("expected priority 0, got %d", r.GetPriority())
-		}
-	})
-}
-
 func TestRule_GetSeverity(t *testing.T) {
 	t.Run("default is critical", func(t *testing.T) {
 		r := Rule{}
@@ -193,39 +168,6 @@ func TestRule_GetSeverity(t *testing.T) {
 		r := Rule{Severity: SeverityWarning}
 		if r.GetSeverity() != SeverityWarning {
 			t.Errorf("expected severity warning, got %s", r.GetSeverity())
-		}
-	})
-}
-
-func TestRule_PriorityYAMLUnmarshal(t *testing.T) {
-	t.Run("omitted yields nil", func(t *testing.T) {
-		var rs RuleSet
-		err := yaml.Unmarshal([]byte("version: 1\nrules:\n  - name: test\n    message: msg\n    actions: [read]\n    block:\n      paths: [\"/x\"]\n"), &rs)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if rs.Rules[0].Priority != nil {
-			t.Errorf("expected nil Priority, got %d", *rs.Rules[0].Priority)
-		}
-		if rs.Rules[0].GetPriority() != DefaultRulePriority {
-			t.Errorf("expected default priority %d, got %d", DefaultRulePriority, rs.Rules[0].GetPriority())
-		}
-	})
-
-	t.Run("explicit 0 yields 0", func(t *testing.T) {
-		var rs RuleSet
-		err := yaml.Unmarshal([]byte("version: 1\nrules:\n  - name: test\n    priority: 0\n    message: msg\n    actions: [read]\n    block:\n      paths: [\"/x\"]\n"), &rs)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if rs.Rules[0].Priority == nil {
-			t.Fatal("expected non-nil Priority for explicit 0")
-		}
-		if *rs.Rules[0].Priority != 0 {
-			t.Errorf("expected Priority 0, got %d", *rs.Rules[0].Priority)
-		}
-		if rs.Rules[0].GetPriority() != 0 {
-			t.Errorf("expected GetPriority() 0, got %d", rs.Rules[0].GetPriority())
 		}
 	})
 }

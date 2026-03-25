@@ -168,54 +168,6 @@ func TestRuleEnabled(t *testing.T) {
 	}
 }
 
-func TestRulePriority(t *testing.T) {
-	tests := []struct {
-		name         string
-		jsonData     string
-		wantNil      bool
-		wantPriority int
-	}{
-		{
-			name:     "priority omitted (nil)",
-			jsonData: `{"name": "test", "actions": ["read"], "block": {}}`,
-			wantNil:  true,
-		},
-		{
-			name:         "priority explicit zero",
-			jsonData:     `{"name": "test", "priority": 0, "actions": ["read"], "block": {}}`,
-			wantNil:      false,
-			wantPriority: 0,
-		},
-		{
-			name:         "priority explicit",
-			jsonData:     `{"name": "test", "priority": 10, "actions": ["read"], "block": {}}`,
-			wantNil:      false,
-			wantPriority: 10,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var r rules.Rule
-			if err := json.Unmarshal([]byte(tt.jsonData), &r); err != nil {
-				t.Fatalf("unmarshal error: %v", err)
-			}
-			if tt.wantNil {
-				if r.Priority != nil {
-					t.Errorf("priority = %v, want nil", *r.Priority)
-				}
-			} else {
-				if r.Priority == nil {
-					t.Fatalf("priority = nil, want %d", tt.wantPriority)
-				}
-				if *r.Priority != tt.wantPriority {
-					t.Errorf("priority = %d, want %d", *r.Priority, tt.wantPriority)
-				}
-			}
-		})
-	}
-}
-
 func TestRuleBlockFields(t *testing.T) {
 	jsonData := `{
 		"name": "test-rule",

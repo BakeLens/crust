@@ -76,6 +76,21 @@ var dangerousEnvVars = map[string]EnvVarEntry{
 	"LESSOPEN":  {EnvRiskCodeExec, "all", "less executes this input preprocessor command"},
 	"LESSCLOSE": {EnvRiskCodeExec, "all", "less executes this input postprocessor command"},
 
+	// Build tool injection
+	"MAVEN_OPTS": {EnvRiskCodeExec, "all", "JVM flags for Maven — -javaagent injects code into every build"},
+	"GOFLAGS":    {EnvRiskCodeExec, "all", "appended to every go command — -ldflags/-toolexec inject code"},
+	"RUSTFLAGS":  {EnvRiskCodeExec, "all", "appended to every rustc invocation — -C link-arg injects code"},
+
+	// Crypto library injection
+	"OPENSSL_CONF": {EnvRiskCodeExec, "all", "custom OpenSSL config — engine directive loads arbitrary shared library"},
+
+	// Module path hijack
+	"PYTHONPATH": {EnvRiskPathHijack, "all", "prepends to sys.path — malicious modules shadow stdlib"},
+	"RUBYLIB":    {EnvRiskPathHijack, "all", "prepends to $LOAD_PATH — malicious gems shadow stdlib"},
+
+	// Git config override
+	"GIT_CONFIG_GLOBAL": {EnvRiskCodeExec, "all", "overrides global gitconfig — core.hooksPath/fsmonitor inject code"},
+
 	// Compiler overrides
 	"CC":            {EnvRiskCodeExec, "all", "overrides C compiler — build systems exec this binary"},
 	"CXX":           {EnvRiskCodeExec, "all", "overrides C++ compiler — build systems exec this binary"},

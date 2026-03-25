@@ -13,7 +13,7 @@ import (
 )
 
 // expectedPatternCount is the number of DLP patterns in dlp.go.
-const expectedPatternCount = 46
+const expectedPatternCount = 51
 
 // dlpVector defines a test vector for a single DLP pattern.
 type dlpVector struct {
@@ -485,6 +485,71 @@ var vectors = []dlpVector{
 			"neon_short",
 		},
 	},
+	// ── New patterns (2026-03) ──
+	{
+		name:  "builtin:dlp-database-uri-credentials",
+		regex: `(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|rediss|amqp|amqps)://[^:/?#\s]+:[^@/?#\s]+@[^/?#\s]+`,
+		mustHit: []string{
+			"mongodb://admin:password123@db.example.com",
+			"postgresql://user:secret@localhost:5432/mydb",
+			"redis://default:s3cret@cache.example.com:6379",
+			"mysql://root:pass@127.0.0.1/db",
+			"amqps://guest:guest@rabbit.example.com",
+			"mongodb+srv://user:p%40ss@cluster0.abc.mongodb.net",
+		},
+		mustMis: []string{
+			"mongodb://localhost:27017/mydb",
+			"postgresql://localhost/mydb",
+			"redis://cache.example.com:6379",
+			"https://api.example.com/v1",
+			"mongodb://user@host",
+		},
+	},
+	{
+		name:  "builtin:dlp-pgp-private-key",
+		regex: "-----BEGIN PGP " + "PRIVATE KEY BLOCK-----",
+		mustHit: []string{
+			"-----BEGIN PGP " + "PRIVATE" + " KEY BLOCK-----",
+		},
+		mustMis: []string{
+			"-----BEGIN PGP PUBLIC KEY BLOCK-----",
+			"-----BEGIN PGP MESSAGE-----",
+			"-----BEGIN PGP SIGNATURE-----",
+		},
+	},
+	{
+		name:  "builtin:dlp-mailgun-api-key",
+		regex: `key-[a-f0-9]{32}`,
+		mustHit: []string{
+			"key-" + pad(32),
+		},
+		mustMis: []string{
+			"key-short",
+			"key-ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+		},
+	},
+	{
+		name:  "builtin:dlp-discord-webhook",
+		regex: `https://discord(?:app)?\.com/api/webhooks/\d{17,20}/[A-Za-z0-9_\-]{60,}`,
+		mustHit: []string{
+			"https://discord.com/api/webhooks/12345678901234567/" + strings.Repeat("A", 68),
+			"https://discordapp.com/api/webhooks/12345678901234567/" + strings.Repeat("B", 68),
+		},
+		mustMis: []string{
+			"https://discord.com/api/webhooks/123/short",
+			"https://example.com/api/webhooks/12345678901234567/" + strings.Repeat("A", 68),
+		},
+	},
+	{
+		name:  "builtin:dlp-grafana-token",
+		regex: `glsa_[A-Za-z0-9_]{32,}`,
+		mustHit: []string{
+			"glsa_" + pad(32) + "extra",
+		},
+		mustMis: []string{
+			"glsa_short",
+		},
+	},
 	// ── Mobile PII patterns ──
 	{
 		name:  "builtin:dlp-vcard",
@@ -577,7 +642,7 @@ func main() {
 
 	// 3. Verify SHA-512 of dlp.go source.
 	hash := fmt.Sprintf("%x", sha512.Sum512(data))
-	const expectedHash = "562895d689b2c7caa62f0023c10b17aa7be6c285519cbc9ae9269026c4ae991e71282bdba9679e36634fe7fbc935c3d3cc2cd7ff170e44955b02a4f5feffbd0c"
+	const expectedHash = "a7795c9b48ec337943d2a5a180739a3646ca3230b41e69ea3d2ac2576a72f9a4c2799115bd4ec7e1e8dfb824de43aa7257d1c365b597524afddc6f95d259851c"
 	if hash != expectedHash {
 		fmt.Fprintf(os.Stderr, "FAIL: dlp.go SHA-512 mismatch\n  got:  %s\n  want: %s\n", hash, expectedHash)
 		failed++

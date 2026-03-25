@@ -21,9 +21,8 @@ type RuleSet struct {
 type Rule struct {
 	Name        string      `yaml:"name" json:"name"`
 	Description string      `yaml:"description,omitempty" json:"description,omitempty"`
-	Enabled     *bool       `yaml:"enabled,omitempty" json:"enabled,omitempty"`   // default true
-	Locked      *bool       `yaml:"locked,omitempty" json:"locked,omitempty"`     // locked rules survive --disable-builtin
-	Priority    *int        `yaml:"priority,omitempty" json:"priority,omitempty"` // lower = higher priority, default 50
+	Enabled     *bool       `yaml:"enabled,omitempty" json:"enabled,omitempty"` // default true
+	Locked      *bool       `yaml:"locked,omitempty" json:"locked,omitempty"`   // locked rules survive --disable-builtin
 	Block       Block       `yaml:"block" json:"block"`
 	Actions     []Operation `yaml:"actions" json:"actions"`
 	Message     string      `yaml:"message" json:"message"`
@@ -86,7 +85,6 @@ var ValidOperations = map[Operation]bool{
 
 // Default values for rules
 const (
-	DefaultRulePriority          = 50
 	DefaultRuleSeverity Severity = SeverityCritical
 )
 
@@ -105,17 +103,6 @@ func (r *Rule) IsLocked() bool {
 
 // lockedTrue is a convenience pointer for setting Locked=true in Go-constructed rules.
 var lockedTrue = func() *bool { t := true; return &t }()
-
-// GetPriority returns the rule priority (default 50)
-func (r *Rule) GetPriority() int {
-	if r.Priority == nil {
-		return DefaultRulePriority
-	}
-	return *r.Priority
-}
-
-// IntPtr is a convenience helper for creating *int values in Go-constructed rules.
-func IntPtr(v int) *int { return new(v) }
 
 // GetSeverity returns the rule severity (default critical)
 func (r *Rule) GetSeverity() Severity {

@@ -1121,3 +1121,79 @@ func TestCVE_2026_25725_SandboxEscape(t *testing.T) {
 	}))
 	assertBlocked(t, result, "protect-agent-config")
 }
+
+// ─── Permission manipulation ──────────────────────────────────────────
+
+// Defense: detect-permission-manipulation blocks chmod 777/666, umask 0,
+// setcap, and setfacl commands that weaken file permissions.
+func TestCVE_PermissionManipulation(t *testing.T) {
+	engine := newBuiltinEngine(t)
+
+	blocked := []struct {
+		name    string
+		command string
+	}{
+		{"chmod 777 /etc/passwd", "chmod 777 /etc/passwd"},
+		{"chmod 666 /tmp/test", "chmod 666 /tmp/test"},
+		{"umask 0", "umask 0"},
+		{"umask 000", "umask 000"},
+		{"setcap cap_net_admin", "setcap cap_net_admin+ep /usr/bin/foo"},
+		{"setfacl -m", "setfacl -m u:www-data:rwx /var/www"},
+	}
+
+	for _, tc := range blocked {
+		t.Run(tc.name, func(t *testing.T) {
+			call := makeToolCall("Bash", map[string]any{"command": tc.command})
+			result := engine.Evaluate(call)
+			assertBlocked(t, result, "detect-permission-manipulation")
+		})
+	}
+
+	// Safe permission commands must NOT be blocked by this rule.
+	safe := []struct {
+		name    string
+		command string
+	}{
+		{"chmod 644 (normal)", "chmod 644 /tmp/test.txt"},
+		{"chmod +x (single flag)", "chmod +x script.sh"},
+	}
+
+	for _, tc := range safe {
+		t.Run(tc.name, func(t *testing.T) {
+			call := makeToolCall("Bash", map[string]any{"command": tc.command})
+			result := engine.Evaluate(call)
+			if result.Matched && result.RuleName == "builtin:detect-permission-manipulation" {
+				t.Errorf("safe command %q should NOT be blocked by detect-permission-manipulation", tc.command)
+			}
+		})
+	}
+}
+
+// ─── Extended persistence vectors ─────────────────────────────────────
+
+// Defense: protect-persistence-extended blocks writes to modprobe, Docker
+// Compose override, Gradle init, and GRUB config files.
+func TestCVE_PersistenceExtended(t *testing.T) {
+	engine := newBuiltinEngine(t)
+
+	paths := []struct {
+		name string
+		path string
+	}{
+		{"modprobe.d config", "/etc/modprobe.d/evil.conf"},
+		{"docker-compose override", "/home/user/project/docker-compose.override.yml"},
+		{"gradle init script", home(t, ".gradle/init.gradle")},
+		{"grub config", "/boot/grub/grub.cfg"},
+	}
+
+	for _, tc := range paths {
+		t.Run(tc.name, func(t *testing.T) {
+			call := makeToolCall("Write", map[string]any{
+				"file_path": tc.path,
+				"content":   "malicious payload",
+			})
+			result := engine.Evaluate(call)
+			assertBlocked(t, result, "protect-persistence-extended")
+		})
+	}
+}

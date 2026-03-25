@@ -37,7 +37,7 @@
       "type": "object",
       "title": "RuleSnapshot",
       "description": "A read-only, JSON-safe view of an engine rule. Plugins can use this for context-aware decisions (e.g., checking if a path is already protected by a builtin rule).",
-      "required": ["name", "description", "source", "severity", "priority", "actions", "block_paths", "block_except", "block_hosts", "message", "locked", "enabled", "hit_count"],
+      "required": ["name", "description", "source", "severity", "actions", "block_paths", "block_except", "block_hosts", "message", "locked", "enabled", "hit_count"],
       "properties": {
         "name": {
           "type": "string",
@@ -54,11 +54,6 @@
         },
         "severity": {
           "$ref": "#/$defs/severity"
-        },
-        "priority": {
-          "type": "integer",
-          "description": "Rule priority. Lower values = higher priority. Default is 50.",
-          "examples": [10, 50]
         },
         "actions": {
           "type": "array",

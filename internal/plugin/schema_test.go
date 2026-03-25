@@ -180,7 +180,6 @@ func TestSchema_RoundTrip_Request(t *testing.T) {
 			Name:     "r1",
 			Source:   rules.SourceBuiltin,
 			Severity: rules.SeverityCritical,
-			Priority: 10,
 			Message:  "blocked",
 			Locked:   true,
 			Enabled:  true,

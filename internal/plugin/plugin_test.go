@@ -284,7 +284,6 @@ func TestRuleSnapshot_JSONRoundTrip(t *testing.T) {
 		Description: "Block .env file access",
 		Source:      rules.SourceBuiltin,
 		Severity:    rules.SeverityCritical,
-		Priority:    10,
 		Actions:     []rules.Operation{rules.OpRead, rules.OpWrite},
 		BlockPaths:  []string{"**/.env"},
 		BlockExcept: []string{"**/.env.example"},
@@ -816,7 +815,6 @@ func TestRegistry_RuleSnapshotProperties(t *testing.T) {
 				Description: "Block /etc access",
 				Source:      rules.SourceBuiltin,
 				Severity:    rules.SeverityCritical,
-				Priority:    10,
 				Actions:     []rules.Operation{rules.OpRead, rules.OpWrite, rules.OpDelete},
 				BlockPaths:  []string{"/etc/**"},
 				BlockExcept: []string{"/etc/hostname"},
@@ -833,9 +831,6 @@ func TestRegistry_RuleSnapshotProperties(t *testing.T) {
 	r := seen.Rules[0]
 	if r.Description != "Block /etc access" {
 		t.Errorf("Description = %q", r.Description)
-	}
-	if r.Priority != 10 {
-		t.Errorf("Priority = %d", r.Priority)
 	}
 	if len(r.Actions) != 3 {
 		t.Errorf("Actions = %v", r.Actions)
