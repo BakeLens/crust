@@ -15,6 +15,9 @@ func (s stubExecutor) Available() bool { return true }
 func (s stubExecutor) Exec(_ context.Context, _ []string, _ json.RawMessage) (*ExecResult, error) {
 	return &ExecResult{ExitCode: 0}, nil
 }
+func (s stubExecutor) Wrap(_ context.Context, _ []string, _ json.RawMessage) *WrapResult {
+	return nil
+}
 
 func TestRegisterExecutor_AtMostOne(t *testing.T) {
 	reg := NewRegistry(NewPool(4, 0))

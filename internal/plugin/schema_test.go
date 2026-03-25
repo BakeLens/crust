@@ -144,6 +144,7 @@ func TestSchema_MethodConstants(t *testing.T) {
 		MethodInit:     true,
 		MethodEvaluate: true,
 		MethodClose:    true,
+		MethodWrap:     true,
 	}
 
 	schemaMethods := wireDef.ExtractMethodConsts()

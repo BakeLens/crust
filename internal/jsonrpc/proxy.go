@@ -1,7 +1,9 @@
 package jsonrpc
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -32,6 +34,18 @@ type PipeConfig struct {
 	Observer MessageObserver
 }
 
+// WrapResult holds the command and handshake data returned by a ProcessWrapper.
+type WrapResult struct {
+	Cmd       *exec.Cmd // child process to start
+	Handshake []byte    // JSON-RPC request line to write to stdin after Start
+}
+
+// ProcessWrapper can wrap a command in OS-level enforcement (e.g., sandbox).
+type ProcessWrapper interface {
+	Available() bool
+	Wrap(ctx context.Context, cmd []string, policy json.RawMessage) *WrapResult
+}
+
 // ProxyConfig describes how to run the stdio proxy.
 type ProxyConfig struct {
 	// Log is the logger to use. Each caller passes its own prefixed logger.
@@ -44,6 +58,12 @@ type ProxyConfig struct {
 	Outbound PipeConfig
 	// ExtraLogLines are additional log lines to emit at startup.
 	ExtraLogLines []string
+	// Wrapper optionally wraps the child process under OS-level enforcement
+	// (e.g., sandbox). If nil or !Available(), the child runs unwrapped.
+	Wrapper ProcessWrapper
+	// WrapperPolicy is the JSON policy passed to Wrapper.Wrap(). Ignored if
+	// Wrapper is nil.
+	WrapperPolicy json.RawMessage
 }
 
 // RunProxy starts the stdio proxy. It spawns cmd, wires up stdio pipes,
@@ -53,7 +73,19 @@ func RunProxy(engine rules.RuleEvaluator, cmd []string, stdin io.ReadCloser, std
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	child := exec.CommandContext(ctx, cmd[0], cmd[1:]...) //nolint:gosec // user-specified MCP server command
+	// If a process wrapper (e.g., sandbox) is available, wrap the child
+	// command under OS-level enforcement. Otherwise, run unwrapped.
+	var child *exec.Cmd
+	var wrapHandshake []byte
+	if w := cfg.Wrapper; w != nil && w.Available() && len(cfg.WrapperPolicy) > 0 {
+		if wr := w.Wrap(ctx, cmd, cfg.WrapperPolicy); wr != nil {
+			child = wr.Cmd
+			wrapHandshake = wr.Handshake
+		}
+	}
+	if child == nil {
+		child = exec.CommandContext(ctx, cmd[0], cmd[1:]...) //nolint:gosec // user-specified MCP server command
+	}
 	childStdin, err := child.StdinPipe()
 	if err != nil {
 		log.Error("Failed to create %s stdin pipe: %v", cfg.ProcessLabel, err)
@@ -87,6 +119,38 @@ func RunProxy(engine rules.RuleEvaluator, cmd []string, stdin io.ReadCloser, std
 		return 1
 	}
 	started = true
+
+	// Executor wrap handshake: send the wrap request, wait for "ready",
+	// then switch stdin/stdout to passthrough for the target command.
+	if len(wrapHandshake) > 0 {
+		if _, err := childStdin.Write(wrapHandshake); err != nil {
+			log.Error("Failed to send wrap handshake: %v", err)
+			return 1
+		}
+		// Read one line: {"result":"ready"} or {"error":"..."}
+		scanner := bufio.NewScanner(stdoutR)
+		if !scanner.Scan() {
+			log.Error("Wrap handshake: no response from executor")
+			return 1
+		}
+		var resp struct {
+			Result string `json:"result"`
+			Error  string `json:"error"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
+			log.Error("Wrap handshake: invalid response: %v", err)
+			return 1
+		}
+		if resp.Error != "" {
+			log.Error("Wrap handshake failed: %s", resp.Error)
+			return 1
+		}
+		if resp.Result != "ready" {
+			log.Error("Wrap handshake: unexpected result: %q", resp.Result)
+			return 1
+		}
+		log.Info("Executor wrap handshake complete — %s running under sandbox", cfg.ProcessLabel)
+	}
 
 	// Close parent's write end — child has its own copy via fork.
 	// When the child exits, the OS closes the child's copy, and

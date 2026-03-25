@@ -202,6 +202,40 @@ func (s *SandboxPlugin) Evaluate(ctx context.Context, req Request) *Result {
 
 func (s *SandboxPlugin) Close() error { return nil }
 
+// Wrap prepares a WrapResult for running cmd under sandbox enforcement.
+// The caller starts the returned Cmd, writes Handshake to its stdin,
+// reads "ready" from stdout, then switches to passthrough mode.
+//
+// Returns nil if the sandbox binary is not available.
+func (s *SandboxPlugin) Wrap(ctx context.Context, cmd []string, policy json.RawMessage) *WrapResult {
+	if !s.Available() || len(cmd) == 0 {
+		return nil
+	}
+
+	params, err := json.Marshal(WrapParams{
+		Policy:  policy,
+		Command: cmd,
+	})
+	if err != nil {
+		return nil
+	}
+
+	req, err := json.Marshal(WireRequest{Method: MethodWrap, Params: params})
+	if err != nil {
+		return nil
+	}
+	// Wire protocol is JSON-newline: append \n so the plugin's line scanner can read it.
+	req = append(req, '\n')
+
+	child := exec.CommandContext(ctx, s.binaryPath) //nolint:gosec // binaryPath resolved via LookPath
+	child.Env = append(os.Environ(), "PATH=/usr/bin:/bin:/usr/local/bin")
+
+	return &WrapResult{
+		Cmd:       child,
+		Handshake: req,
+	}
+}
+
 // BinaryPath returns the resolved path to the bakelens-sandbox binary.
 func (s *SandboxPlugin) BinaryPath() string { return s.binaryPath }
 

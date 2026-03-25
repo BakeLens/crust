@@ -119,6 +119,26 @@
       "additionalProperties": false
     },
 
+    "wrapParams": {
+      "type": "object",
+      "title": "WrapParams",
+      "description": "Parameters sent with method=\"wrap\". Contains the sandbox policy and target command.",
+      "required": ["policy", "command"],
+      "properties": {
+        "policy": {
+          "description": "Sandbox enforcement policy JSON. Interpretation is executor-specific.",
+          "type": "object"
+        },
+        "command": {
+          "description": "Target command to exec after applying enforcement.",
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+
     "evaluateRequest": {
       "type": "object",
       "title": "EvaluateRequest",
@@ -258,6 +278,15 @@
             "method": { "const": "close" }
           },
           "required": ["method"]
+        },
+        {
+          "title": "Wrap Request",
+          "description": "Apply OS-level enforcement and exec the target command. Plugin responds {\"result\":\"ready\"}, then stdin/stdout switch to passthrough mode for the target command. On Unix the plugin execs the target (zero overhead). On Windows the plugin spawns and forwards stdin/stdout.",
+          "properties": {
+            "method": { "const": "wrap" },
+            "params": { "$ref": "#/$defs/wrapParams" }
+          },
+          "required": ["method", "params"]
         }
       ],
       "additionalProperties": false
