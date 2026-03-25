@@ -27,6 +27,9 @@ type PipeConfig struct {
 	// tool calls and the client didn't request them).
 	// Inbound direction always sends errors to the client regardless of this flag.
 	ErrToClient bool
+	// Observer is an optional MessageObserver called after parsing each message.
+	// If nil, no observation is performed.
+	Observer MessageObserver
 }
 
 // ProxyConfig describes how to run the stdio proxy.
@@ -106,7 +109,8 @@ func RunProxy(engine rules.RuleEvaluator, cmd []string, stdin io.ReadCloser, std
 		defer childStdin.Close()
 		if cfg.Inbound.Convert != nil {
 			PipeInspect(log, engine, stdin, childWriter, clientWriter,
-				cfg.Inbound.Convert, cfg.Inbound.Protocol, cfg.Inbound.Label)
+				cfg.Inbound.Convert, cfg.Inbound.Protocol, cfg.Inbound.Label,
+				cfg.Inbound.Observer)
 		} else {
 			PipePassthrough(log, stdin, childWriter, cfg.Inbound.Label)
 		}
@@ -124,7 +128,8 @@ func RunProxy(engine rules.RuleEvaluator, cmd []string, stdin io.ReadCloser, std
 		defer stdoutR.Close()
 		if cfg.Outbound.Convert != nil {
 			PipeInspect(log, engine, stdoutR, clientWriter, outboundErrWriter,
-				cfg.Outbound.Convert, cfg.Outbound.Protocol, cfg.Outbound.Label)
+				cfg.Outbound.Convert, cfg.Outbound.Protocol, cfg.Outbound.Label,
+				cfg.Outbound.Observer)
 		} else {
 			PipePassthrough(log, stdoutR, clientWriter, cfg.Outbound.Label)
 		}

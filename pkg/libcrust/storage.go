@@ -105,6 +105,9 @@ func InitStorage(dbPath string, encryptionKey string) error {
 	// Seed in-memory metrics from persisted events so stats survive restarts.
 	telemetry.SeedMetrics(context.Background(), db)
 
+	// Initialize TOFU tracker using the same DB.
+	initTOFU()
+
 	return nil
 }
 

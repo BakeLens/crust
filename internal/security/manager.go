@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BakeLens/crust/internal/mcpgateway"
 	"github.com/BakeLens/crust/internal/plugin"
 	"github.com/BakeLens/crust/internal/telemetry"
 	"github.com/BakeLens/crust/internal/types"
@@ -33,6 +34,8 @@ type Manager struct {
 	bufferStreaming bool
 	maxBufferEvents int
 	bufferTimeout   int
+
+	tofuTracker *mcpgateway.TOFUTracker
 
 	stopChan chan struct{}
 	stopOnce sync.Once
@@ -199,6 +202,21 @@ func (m *Manager) GetRegistry() *plugin.Registry {
 		return nil
 	}
 	return m.registry
+}
+
+// SetTOFUTracker sets the TOFU tracker for MCP server pinning.
+func (m *Manager) SetTOFUTracker(t *mcpgateway.TOFUTracker) {
+	if m != nil {
+		m.tofuTracker = t
+	}
+}
+
+// GetTOFUTracker returns the TOFU tracker, or nil if not set.
+func (m *Manager) GetTOFUTracker() *mcpgateway.TOFUTracker {
+	if m == nil {
+		return nil
+	}
+	return m.tofuTracker
 }
 
 // GetStorage returns the storage recorder.

@@ -37,7 +37,7 @@ func runInspectDLP(t *testing.T, input string) (fwd, errOut string) {
 	fwdWriter := NewLockedWriter(&fwdBuf)
 	errWriter := NewLockedWriter(&errBuf)
 	PipeInspect(logger.New("test"), engine, strings.NewReader(input),
-		fwdWriter, errWriter, dlpConverter, "TEST", "test-label")
+		fwdWriter, errWriter, dlpConverter, "TEST", "test-label", nil)
 	return fwdBuf.String(), errBuf.String()
 }
 

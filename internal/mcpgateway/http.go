@@ -30,10 +30,12 @@ type HTTPGateway struct {
 	engine   rules.RuleEvaluator
 	client   *http.Client
 	sessions *SessionStore
+	tofu     *TOFUTracker
 }
 
 // NewHTTPGateway creates a new MCP HTTP gateway proxying to upstreamURL.
-func NewHTTPGateway(upstreamURL string, engine rules.RuleEvaluator) (*HTTPGateway, error) {
+// If tofu is non-nil, TOFU pin validation is applied to initialize and tools/list exchanges.
+func NewHTTPGateway(upstreamURL string, engine rules.RuleEvaluator, tofu *TOFUTracker) (*HTTPGateway, error) {
 	u, err := url.Parse(upstreamURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid upstream URL: %w", err)
@@ -48,6 +50,7 @@ func NewHTTPGateway(upstreamURL string, engine rules.RuleEvaluator) (*HTTPGatewa
 			Timeout: 5 * time.Minute,
 		},
 		sessions: NewSessionStore(),
+		tofu:     tofu,
 	}, nil
 }
 
@@ -107,6 +110,11 @@ func (g *HTTPGateway) handlePost(w http.ResponseWriter, r *http.Request) {
 		// Can't parse as JSON-RPC — reject to prevent inspection bypass
 		http.Error(w, "Invalid JSON-RPC request", http.StatusBadRequest)
 		return
+	}
+
+	// TOFU: record request IDs for initialize/tools/list correlation.
+	if g.tofu != nil {
+		g.tofu.ObserveRequest(&msg)
 	}
 
 	// Inspect the request
@@ -303,6 +311,14 @@ func (g *HTTPGateway) proxyJSONResponse(w http.ResponseWriter, upResp *http.Resp
 		log.Warn("Blocked MCP HTTP response (DLP): rule=%s", result.RuleName)
 		writeJSONRPCError(w, reqMsg.ID, result.BlockMsg)
 		return
+	}
+
+	// TOFU: validate initialize/tools/list response pins.
+	if g.tofu != nil {
+		if block, errMsg := g.tofu.CheckResponse(&respMsg); block {
+			writeJSONRPCError(w, reqMsg.ID, errMsg)
+			return
+		}
 	}
 
 	// Forward the original response

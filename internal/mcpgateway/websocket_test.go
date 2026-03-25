@@ -73,7 +73,7 @@ func TestWebSocket_UpgradeProxied(t *testing.T) {
 	defer upstream.Close()
 
 	engine := testutil.NewEngine(t)
-	gw, err := NewHTTPGateway(upstream.URL, engine)
+	gw, err := NewHTTPGateway(upstream.URL, engine, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestWebSocket_CrossOriginBlocked(t *testing.T) {
 	defer upstream.Close()
 
 	engine := testutil.NewEngine(t)
-	gw, err := NewHTTPGateway(upstream.URL, engine)
+	gw, err := NewHTTPGateway(upstream.URL, engine, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestWebSocket_LocalhostOriginAllowed(t *testing.T) {
 	defer upstream.Close()
 
 	engine := testutil.NewEngine(t)
-	gw, err := NewHTTPGateway(upstream.URL, engine)
+	gw, err := NewHTTPGateway(upstream.URL, engine, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestWebSocket_DNSRebindingBlocked(t *testing.T) {
 	defer upstream.Close()
 
 	engine := testutil.NewEngine(t)
-	gw, err := NewHTTPGateway(upstream.URL, engine)
+	gw, err := NewHTTPGateway(upstream.URL, engine, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestWebSocket_DataEcho(t *testing.T) {
 	defer upstream.Close()
 
 	engine := testutil.NewEngine(t)
-	gw, err := NewHTTPGateway(upstream.URL, engine)
+	gw, err := NewHTTPGateway(upstream.URL, engine, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestWebSocket_DataEcho(t *testing.T) {
 func TestWebSocket_UpstreamUnreachable(t *testing.T) {
 	// Point gateway at a port that is not listening.
 	engine := testutil.NewEngine(t)
-	gw, err := NewHTTPGateway("http://127.0.0.1:1", engine)
+	gw, err := NewHTTPGateway("http://127.0.0.1:1", engine, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +362,7 @@ func TestWebSocket_UpstreamRejectsUpgrade(t *testing.T) {
 	defer upstream.Close()
 
 	engine := testutil.NewEngine(t)
-	gw, err := NewHTTPGateway(upstream.URL, engine)
+	gw, err := NewHTTPGateway(upstream.URL, engine, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +449,7 @@ func TestWebSocketE2E_BrowserHijackDefense(t *testing.T) {
 	defer upstream.Close()
 
 	engine := testutil.NewEngine(t)
-	gw, err := NewHTTPGateway(upstream.URL, engine)
+	gw, err := NewHTTPGateway(upstream.URL, engine, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

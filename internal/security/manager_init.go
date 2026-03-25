@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/BakeLens/crust/internal/mcpgateway"
 	"github.com/BakeLens/crust/internal/plugin"
 	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/telemetry"
@@ -49,6 +50,13 @@ func Init(cfg Config) (*Manager, error) {
 		}
 	}
 
+	// TOFU (Trust On First Use) MCP server pinning.
+	tofuStore := mcpgateway.NewTOFUStore(storage.DB())
+	if err := tofuStore.InitSchema(); err != nil {
+		log.Warn("TOFU schema init: %v", err)
+	}
+	tofuTracker := mcpgateway.NewTOFUTracker(tofuStore, "")
+
 	// Plugin registry + wire PostChecker so plugins are evaluated on every tool call.
 	registry := plugin.InitDefaultRegistry()
 	if eng, ok := cfg.Engine.(*rules.Engine); ok && eng != nil {
@@ -75,12 +83,14 @@ func Init(cfg Config) (*Manager, error) {
 
 	// API server — created after manager so it can reference m.GetRegistry().
 	apiServer := NewAPIServer(storage, interceptor, cfg.Engine, m)
+	apiServer.SetTOFUTracker(tofuTracker)
 	ln, err := apiListener(cfg.SocketPath)
 	if err != nil {
 		storage.Close()
 		return nil, fmt.Errorf("failed to create API listener: %w", err)
 	}
 	m.SetAPI(apiServer.Handler(), ln, cfg.SocketPath)
+	m.SetTOFUTracker(tofuTracker)
 	m.Start()
 
 	initEventSink(storage)

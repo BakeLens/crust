@@ -21,7 +21,7 @@ import (
 func newGateway(t *testing.T, upstreamURL string) *HTTPGateway {
 	t.Helper()
 	engine := testutil.NewEngine(t)
-	gw, err := NewHTTPGateway(upstreamURL, engine)
+	gw, err := NewHTTPGateway(upstreamURL, engine, nil)
 	if err != nil {
 		t.Fatalf("NewHTTPGateway: %v", err)
 	}
@@ -101,12 +101,12 @@ func TestHTTP_Upstream5xx(t *testing.T) {
 
 func TestNewHTTPGateway_InvalidURL(t *testing.T) {
 	engine := testutil.NewEngine(t)
-	_, err := NewHTTPGateway("not-a-url", engine)
+	_, err := NewHTTPGateway("not-a-url", engine, nil)
 	if err == nil {
 		t.Error("expected error for invalid URL")
 	}
 
-	_, err = NewHTTPGateway("ftp://example.com", engine)
+	_, err = NewHTTPGateway("ftp://example.com", engine, nil)
 	if err == nil {
 		t.Error("expected error for non-http scheme")
 	}

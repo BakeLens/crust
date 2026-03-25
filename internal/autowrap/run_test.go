@@ -21,7 +21,7 @@ func runInboundPipe(t *testing.T, input string) (fwd, errOut string) {
 	fwdWriter := jsonrpc.NewLockedWriter(&fwdBuf)
 	errWriter := jsonrpc.NewLockedWriter(&errBuf)
 	jsonrpc.PipeInspect(testLog, engine, strings.NewReader(input),
-		fwdWriter, errWriter, mcpgateway.MCPMethodToToolCall, "MCP", "Inbound")
+		fwdWriter, errWriter, mcpgateway.MCPMethodToToolCall, "MCP", "Inbound", nil)
 	return fwdBuf.String(), errBuf.String()
 }
 
@@ -33,7 +33,7 @@ func runOutboundPipe(t *testing.T, input string) (fwd, errOut string) {
 	fwdWriter := jsonrpc.NewLockedWriter(&fwdBuf)
 	errWriter := jsonrpc.NewLockedWriter(&errBuf)
 	jsonrpc.PipeInspect(testLog, engine, strings.NewReader(input),
-		fwdWriter, errWriter, BothMethodToToolCall, "Stdio", "Outbound")
+		fwdWriter, errWriter, BothMethodToToolCall, "Stdio", "Outbound", nil)
 	return fwdBuf.String(), errBuf.String()
 }
 

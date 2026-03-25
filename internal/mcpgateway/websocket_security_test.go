@@ -77,7 +77,7 @@ func TestWebSocket_MaliciousToolCallNotInspected(t *testing.T) {
 	defer upstream.Close()
 
 	engine := testutil.NewEngine(t)
-	gw, err := NewHTTPGateway(upstream.URL, engine)
+	gw, err := NewHTTPGateway(upstream.URL, engine, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestWebSocket_NoOriginHeaders_Allowed(t *testing.T) {
 	defer upstream.Close()
 
 	engine := testutil.NewEngine(t)
-	gw, err := NewHTTPGateway(upstream.URL, engine)
+	gw, err := NewHTTPGateway(upstream.URL, engine, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

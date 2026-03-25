@@ -126,7 +126,7 @@ func runInspect(t *testing.T, input string, convert MethodConverter) (fwd, errOu
 	fwdWriter := NewLockedWriter(&fwdBuf)
 	errWriter := NewLockedWriter(&errBuf)
 	PipeInspect(testLog, engine, strings.NewReader(input),
-		fwdWriter, errWriter, convert, "TEST", "test-label")
+		fwdWriter, errWriter, convert, "TEST", "test-label", nil)
 	return fwdBuf.String(), errBuf.String()
 }
 

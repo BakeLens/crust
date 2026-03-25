@@ -220,6 +220,10 @@ func processBatch(log *logger.Logger, engine rules.RuleEvaluator, line []byte,
 	return resultForwarded
 }
 
+// MessageObserver is called for every parsed JSON-RPC message before forwarding.
+// For responses, returning block=true sends a JSON-RPC error instead.
+type MessageObserver func(msg *Message) (block bool, errMsg string)
+
 // PipeInspect reads JSONL from src, runs security-relevant messages through
 // the converter and rule engine, and either forwards or blocks them.
 //
@@ -229,8 +233,10 @@ func processBatch(log *logger.Logger, engine rules.RuleEvaluator, line []byte,
 //   - convert: the protocol-specific method converter
 //   - protocol: "ACP" or "MCP" (for log messages)
 //   - label: direction label for debug logs (e.g., "Agent->IDE")
+//   - observer: optional MessageObserver called after parsing; nil means no observation
 func PipeInspect(log *logger.Logger, engine rules.RuleEvaluator, src io.Reader,
-	fwdWriter, errWriter *LockedWriter, convert MethodConverter, protocol, label string) {
+	fwdWriter, errWriter *LockedWriter, convert MethodConverter, protocol, label string,
+	observer MessageObserver) {
 
 	w := Writers{Forward: fwdWriter, Error: errWriter}
 
@@ -264,6 +270,16 @@ func PipeInspect(log *logger.Logger, engine rules.RuleEvaluator, src io.Reader,
 				return
 			}
 			continue
+		}
+
+		// Call observer after parsing, before inspection/forwarding.
+		if observer != nil {
+			if block, errMsg := observer(&msg); block {
+				if msg.IsRequest() || (!msg.IsRequest() && !msg.IsNotification()) {
+					SendBlockError(log, w.Error, msg.ID, errMsg)
+				}
+				continue
+			}
 		}
 
 		if processMessage(log, engine, line, &msg, w, convert, protocol, label) == resultWriteErr {

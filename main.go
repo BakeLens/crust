@@ -885,7 +885,8 @@ func runMcpHTTP(args []string) {
 	}
 
 	engine := loadEngine("mcp http", cf, false)
-	if err := mcpgateway.ServeHTTPGateway(*upstream, *listen, engine); err != nil {
+	tofu := mcpgateway.NewInMemoryTOFUTracker()
+	if err := mcpgateway.ServeHTTPGateway(*upstream, *listen, engine, tofu); err != nil {
 		fmt.Fprintf(os.Stderr, "crust mcp http: %v\n", err)
 		os.Exit(1)
 	}

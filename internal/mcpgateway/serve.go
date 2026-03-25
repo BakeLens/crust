@@ -15,8 +15,9 @@ import (
 // ServeHTTPGateway creates an MCP HTTP reverse proxy with security rules and
 // runs it with graceful shutdown on SIGINT/SIGTERM. It blocks until the server
 // exits. Returns an error if the server fails to start or encounters a fatal error.
-func ServeHTTPGateway(upstream, listen string, engine rules.RuleEvaluator) error {
-	gw, err := NewHTTPGateway(upstream, engine)
+// If tofu is non-nil, TOFU pin validation is enabled for the gateway.
+func ServeHTTPGateway(upstream, listen string, engine rules.RuleEvaluator, tofu *TOFUTracker) error {
+	gw, err := NewHTTPGateway(upstream, engine, tofu)
 	if err != nil {
 		return fmt.Errorf("gateway init: %w", err)
 	}

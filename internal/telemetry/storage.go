@@ -250,6 +250,11 @@ func (s *Storage) runMigrations() {
 		`UPDATE tool_call_logs SET layer = 'proxy_response_stream' WHERE layer = 'L1_stream'`,
 		`UPDATE tool_call_logs SET layer = 'proxy_response_buffer' WHERE layer = 'L1_buffer'`,
 		`UPDATE tool_call_logs SET layer = 'stdio_pipe' WHERE layer = 'pipe'`,
+		// v0.x: TOFU server pinning table
+		`CREATE TABLE IF NOT EXISTS tofu_pins (
+			server_name TEXT PRIMARY KEY,
+			tools_hash TEXT NOT NULL
+		)`,
 	}
 	for _, m := range migrations {
 		_, err := s.conn.ExecContext(ctx, m)

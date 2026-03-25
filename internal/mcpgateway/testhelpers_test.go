@@ -27,7 +27,7 @@ func runPipe(t *testing.T, input string) (fwd, errOut string) {
 	fwdWriter := jsonrpc.NewLockedWriter(&fwdBuf)
 	errWriter := jsonrpc.NewLockedWriter(&errBuf)
 	jsonrpc.PipeInspect(testLog, engine, strings.NewReader(input),
-		fwdWriter, errWriter, MCPMethodToToolCall, "MCP", "Client->Server")
+		fwdWriter, errWriter, MCPMethodToToolCall, "MCP", "Client->Server", nil)
 	return fwdBuf.String(), errBuf.String()
 }
 
