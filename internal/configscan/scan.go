@@ -176,18 +176,20 @@ func scanClaudeSettingsInDir(dir string) []Finding {
 
 // isSuspiciousURL returns true if the URL doesn't point to a known safe domain.
 func isSuspiciousURL(rawURL string) bool {
-	// Strip protocol
-	u := rawURL
-	for _, prefix := range []string{"https://", "http://", "HTTP://", "HTTPS://"} {
-		u = strings.TrimPrefix(u, prefix)
+	if rawURL == "" {
+		return false
 	}
+
+	// Case-insensitive protocol stripping
+	u := strings.ToLower(rawURL)
+	u = strings.TrimPrefix(u, "https://")
+	u = strings.TrimPrefix(u, "http://")
 
 	// Extract host (before first / or :)
 	host := u
 	if i := strings.IndexAny(host, "/:"); i >= 0 {
 		host = host[:i]
 	}
-	host = strings.ToLower(host)
 
 	return !knownSafeDomains[host]
 }
@@ -228,8 +230,8 @@ func scanPackageManagerConfigsInDir(dir string) []Finding {
 	return findings
 }
 
-// npmrcRegistryRe matches registry=<url> in .npmrc files.
-var npmrcRegistryRe = regexp.MustCompile(`(?i)^\s*registry\s*=\s*["']?(\S+?)["']?\s*$`)
+// npmrcRegistryRe matches registry=<url> in .npmrc files, including scoped registries (@scope:registry=).
+var npmrcRegistryRe = regexp.MustCompile(`(?i)^\s*(?:@[a-z0-9_-]+:)?registry\s*=\s*["']?(\S+?)["']?\s*$`)
 
 // knownSafeRegistries are official package registries that are not suspicious.
 var knownSafeRegistries = map[string]bool{
@@ -282,7 +284,8 @@ func scanNpmrc(path string) []Finding {
 }
 
 // pyprojectIndexRe matches index-url or extra-index-url in pyproject.toml [tool.pip] or [tool.uv] sections.
-var pyprojectIndexRe = regexp.MustCompile(`(?i)^\s*(?:index-url|extra-index-url)\s*=\s*["'](\S+?)["']\s*$`)
+// pyprojectIndexRe matches index-url or extra-index-url in pyproject.toml. Handles optional inline comments.
+var pyprojectIndexRe = regexp.MustCompile(`(?i)^\s*(?:index-url|extra-index-url)\s*=\s*["'](\S+?)["']`)
 
 func scanPyprojectToml(path string) []Finding {
 	var findings []Finding
@@ -314,15 +317,19 @@ func scanPyprojectToml(path string) []Finding {
 
 // isSuspiciousRegistry returns true if the URL doesn't point to a known safe registry.
 func isSuspiciousRegistry(rawURL string) bool {
-	u := rawURL
-	for _, prefix := range []string{"https://", "http://", "HTTP://", "HTTPS://"} {
-		u = strings.TrimPrefix(u, prefix)
+	if rawURL == "" {
+		return false
 	}
+
+	// Case-insensitive protocol stripping
+	u := strings.ToLower(rawURL)
+	u = strings.TrimPrefix(u, "https://")
+	u = strings.TrimPrefix(u, "http://")
+
 	host := u
 	if i := strings.IndexAny(host, "/:"); i >= 0 {
 		host = host[:i]
 	}
-	host = strings.ToLower(host)
 	return !knownSafeRegistries[host]
 }
 

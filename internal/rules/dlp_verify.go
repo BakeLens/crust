@@ -29,7 +29,7 @@ type dlpVector struct {
 // push protection's secret scanning.
 func pad(n int) string { return strings.Repeat("0", n) }
 
-// vectors contains test vectors for all 46 DLP patterns.
+// vectors contains test vectors for all 51 DLP patterns.
 // Vectors are built with pad() to avoid triggering secret scanners.
 var vectors = []dlpVector{
 	{
@@ -519,7 +519,7 @@ var vectors = []dlpVector{
 	},
 	{
 		name:  "builtin:dlp-mailgun-api-key",
-		regex: `key-[a-f0-9]{32}`,
+		regex: `\bkey-[a-f0-9]{32}\b`,
 		mustHit: []string{
 			"key-" + pad(32),
 		},
@@ -642,7 +642,7 @@ func main() {
 
 	// 3. Verify SHA-512 of dlp.go source.
 	hash := fmt.Sprintf("%x", sha512.Sum512(data))
-	const expectedHash = "a7795c9b48ec337943d2a5a180739a3646ca3230b41e69ea3d2ac2576a72f9a4c2799115bd4ec7e1e8dfb824de43aa7257d1c365b597524afddc6f95d259851c"
+	const expectedHash = "ac45bc26a3dc2602902975ad58d39cbed5f02d13c6dbe3494d551d63a4b1fa5c310fcce2ecb4af8e9a99e5a253163c1562eb4722821e5cf027323d8a56c53cb6"
 	if hash != expectedHash {
 		fmt.Fprintf(os.Stderr, "FAIL: dlp.go SHA-512 mismatch\n  got:  %s\n  want: %s\n", hash, expectedHash)
 		failed++

@@ -375,7 +375,7 @@ var dlpPatterns = []dlpPattern{
 	// Mailgun
 	{
 		name:    "builtin:dlp-mailgun-api-key",
-		re:      regexp.MustCompile(`key-[a-f0-9]{32}`),
+		re:      regexp.MustCompile(`\bkey-[a-f0-9]{32}\b`),
 		message: "Cannot write Mailgun API key — potential credential leak",
 	},
 

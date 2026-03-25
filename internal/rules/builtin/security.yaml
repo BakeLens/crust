@@ -728,17 +728,42 @@ rules:
   # ===========================================================================
 
   # ===========================================================================
-  # 33. PERMISSION MANIPULATION DETECTION
-  # Detects chmod/chown/umask commands targeting sensitive paths or creating
-  # world-writable files. An agent using these can weaken file permissions
-  # to enable credential theft or privilege escalation.
+  # 33. WORLD-WRITABLE PERMISSION DETECTION
+  # Detects chmod creating world-writable files (777, 666) or granting
+  # others/all write access via symbolic modes.
   # ===========================================================================
-  - name: detect-permission-manipulation
+  - name: detect-chmod-world-writable
     locked: true
     match:
-      command: "re:\\bchmod\\b\\s+(?:777|666|o\\+[rwx]|a\\+[rwx]|\\+[rwx]{2,})|\\bumask\\b\\s+0{1,3}(?:\\s|$)|\\bsetcap\\b|\\bsetfacl\\b"
+      command: "re:\\bchmod\\b\\s+(?:777|666|o\\+[rwx]|a\\+[rwx])"
     actions: [execute, write]
-    message: "Blocked: permission manipulation (chmod 777, umask 0, setcap, setfacl) can weaken system security."
+    message: "Blocked: chmod creates world-writable permissions — potential security weakness."
+    severity: high
+
+  # ===========================================================================
+  # 33b. SETUID/SETGID DETECTION
+  # Detects chmod setting setuid/setgid bits via octal (4xxx, 2xxx, 6xxx)
+  # or symbolic (+s) modes — classic privilege escalation vectors.
+  # ===========================================================================
+  - name: detect-chmod-setuid
+    locked: true
+    match:
+      command: "re:\\bchmod\\b\\s+(?:[2467]\\d{3}|[ugoa]*\\+[rwxst]*s[rwxst]*)"
+    actions: [execute, write]
+    message: "Blocked: chmod sets setuid/setgid bit — privilege escalation vector."
+    severity: critical
+
+  # ===========================================================================
+  # 33c. UMASK / SETCAP / SETFACL DETECTION
+  # Detects umask 0 (world-writable default), setcap (capabilities), and
+  # setfacl (ACL manipulation).
+  # ===========================================================================
+  - name: detect-permission-tools
+    locked: true
+    match:
+      command: "re:\\bumask\\b\\s+0{1,3}(?:\\s|$)|\\bsetcap\\b|\\bsetfacl\\b"
+    actions: [execute, write]
+    message: "Blocked: umask 0/setcap/setfacl can weaken system security."
     severity: high
 
   # ===========================================================================

@@ -510,8 +510,8 @@ func TestBypassFix_ExpandedCommandDB(t *testing.T) {
 		{
 			"chmod-env", "Bash",
 			map[string]any{"command": "chmod 777 /home/user/.env"},
-			true, "detect-permission-manipulation",
-			"chmod 777 on .env — permission manipulation rule fires first (alphabetical)",
+			true, "detect-chmod-world-writable",
+			"chmod 777 on .env — world-writable rule fires first (alphabetical)",
 		},
 		{
 			"truncate-env", "Bash",

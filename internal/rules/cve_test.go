@@ -1124,46 +1124,55 @@ func TestCVE_2026_25725_SandboxEscape(t *testing.T) {
 
 // ─── Permission manipulation ──────────────────────────────────────────
 
-// Defense: detect-permission-manipulation blocks chmod 777/666, umask 0,
-// setcap, and setfacl commands that weaken file permissions.
+// Defense: detect-chmod-world-writable, detect-chmod-setuid, detect-permission-tools
+// block dangerous permission changes that weaken file security.
 func TestCVE_PermissionManipulation(t *testing.T) {
 	engine := newBuiltinEngine(t)
 
 	blocked := []struct {
-		name    string
-		command string
+		name     string
+		command  string
+		wantRule string
 	}{
-		{"chmod 777 /etc/passwd", "chmod 777 /etc/passwd"},
-		{"chmod 666 /tmp/test", "chmod 666 /tmp/test"},
-		{"umask 0", "umask 0"},
-		{"umask 000", "umask 000"},
-		{"setcap cap_net_admin", "setcap cap_net_admin+ep /usr/bin/foo"},
-		{"setfacl -m", "setfacl -m u:www-data:rwx /var/www"},
+		{"chmod 777", "chmod 777 /etc/passwd", "detect-chmod-world-writable"},
+		{"chmod 666", "chmod 666 /tmp/test", "detect-chmod-world-writable"},
+		{"chmod o+w", "chmod o+w /tmp/test", "detect-chmod-world-writable"},
+		{"chmod a+r", "chmod a+r /tmp/test", "detect-chmod-world-writable"},
+		{"chmod 4755 (setuid)", "chmod 4755 /usr/bin/foo", "detect-chmod-setuid"},
+		{"chmod 2755 (setgid)", "chmod 2755 /usr/bin/foo", "detect-chmod-setuid"},
+		{"chmod u+s", "chmod u+s /usr/bin/foo", "detect-chmod-setuid"},
+		{"chmod g+s", "chmod g+s /usr/bin/foo", "detect-chmod-setuid"},
+		{"umask 0", "umask 0", "detect-permission-tools"},
+		{"umask 000", "umask 000", "detect-permission-tools"},
+		{"setcap", "setcap cap_net_admin+ep /usr/bin/foo", "detect-permission-tools"},
+		{"setfacl", "setfacl -m u:www-data:rwx /var/www", "detect-permission-tools"},
 	}
 
 	for _, tc := range blocked {
 		t.Run(tc.name, func(t *testing.T) {
 			call := makeToolCall("Bash", map[string]any{"command": tc.command})
 			result := engine.Evaluate(call)
-			assertBlocked(t, result, "detect-permission-manipulation")
+			assertBlocked(t, result, tc.wantRule)
 		})
 	}
 
-	// Safe permission commands must NOT be blocked by this rule.
+	// Safe permission commands must NOT be blocked.
 	safe := []struct {
 		name    string
 		command string
 	}{
 		{"chmod 644 (normal)", "chmod 644 /tmp/test.txt"},
-		{"chmod +x (single flag)", "chmod +x script.sh"},
+		{"chmod 755 (normal)", "chmod 755 /usr/local/bin/app"},
 	}
 
 	for _, tc := range safe {
 		t.Run(tc.name, func(t *testing.T) {
 			call := makeToolCall("Bash", map[string]any{"command": tc.command})
 			result := engine.Evaluate(call)
-			if result.Matched && result.RuleName == "builtin:detect-permission-manipulation" {
-				t.Errorf("safe command %q should NOT be blocked by detect-permission-manipulation", tc.command)
+			if result.Matched && (result.RuleName == "detect-chmod-world-writable" ||
+				result.RuleName == "detect-chmod-setuid" ||
+				result.RuleName == "detect-permission-tools") {
+				t.Errorf("safe command %q should NOT be blocked, got rule %s", tc.command, result.RuleName)
 			}
 		})
 	}

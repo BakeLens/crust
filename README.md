@@ -223,7 +223,7 @@ Mobile and desktop rules are unified using virtual paths (`mobile://`) — the s
 
 ### Built-in Rules
 
-Crust ships with **39 security rules** (36 locked, 3 user-disablable) and **51 DLP token-detection patterns** out of the box:
+Crust ships with **41 security rules** (38 locked, 3 user-disablable) and **51 DLP token-detection patterns** out of the box:
 
 | Category | What's Protected |
 |----------|-----------------|
