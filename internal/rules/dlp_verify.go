@@ -525,7 +525,7 @@ var vectors = []dlpVector{
 		},
 		mustMis: []string{
 			"key-short",
-			"key-ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+			"key-" + strings.Repeat("ZZ", 16), // nosemgrep: detected-mailgun-api-key
 		},
 	},
 	{
