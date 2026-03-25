@@ -12,6 +12,8 @@ import (
 	"github.com/BakeLens/crust/internal/pathutil"
 )
 
+const darwinOS = "darwin"
+
 func newTestEngine(t *testing.T) *Engine {
 	t.Helper()
 	normalizer := NewNormalizerWithEnv("/home/user", "/home/user/project", nil)
@@ -794,7 +796,7 @@ func TestBypassFix_NetworkOutputWrite(t *testing.T) {
 // On macOS, /etc → /private/etc so both rules match; "test-real-path-rule" wins alphabetically.
 // On Linux/Windows, /etc/passwd is real (no symlink) so only "test-symlink-path-rule" matches.
 func symlinkExpectedRule() string {
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == darwinOS {
 		return "test-real-path-rule"
 	}
 	return "test-symlink-path-rule"
