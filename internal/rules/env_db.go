@@ -77,9 +77,11 @@ var dangerousEnvVars = map[string]EnvVarEntry{
 	"LESSCLOSE": {EnvRiskCodeExec, "all", "less executes this input postprocessor command"},
 
 	// Build tool injection
-	"MAVEN_OPTS": {EnvRiskCodeExec, "all", "JVM flags for Maven — -javaagent injects code into every build"},
-	"GOFLAGS":    {EnvRiskCodeExec, "all", "appended to every go command — -ldflags/-toolexec inject code"},
-	"RUSTFLAGS":  {EnvRiskCodeExec, "all", "appended to every rustc invocation — -C link-arg injects code"},
+	"MAVEN_OPTS":  {EnvRiskCodeExec, "all", "JVM flags for Maven — -javaagent injects code into every build"},
+	"GRADLE_OPTS": {EnvRiskCodeExec, "all", "JVM flags for Gradle — -javaagent injects code into every build"},
+	"SBT_OPTS":    {EnvRiskCodeExec, "all", "JVM flags for sbt — -javaagent injects code into every Scala build"},
+	"GOFLAGS":     {EnvRiskCodeExec, "all", "appended to every go command — -ldflags/-toolexec inject code"},
+	"RUSTFLAGS":   {EnvRiskCodeExec, "all", "appended to every rustc invocation — -C link-arg injects code"},
 
 	// Crypto library injection
 	"OPENSSL_CONF": {EnvRiskCodeExec, "all", "custom OpenSSL config — engine directive loads arbitrary shared library"},
@@ -87,6 +89,7 @@ var dangerousEnvVars = map[string]EnvVarEntry{
 	// Module path hijack
 	"PYTHONPATH": {EnvRiskPathHijack, "all", "prepends to sys.path — malicious modules shadow stdlib"},
 	"RUBYLIB":    {EnvRiskPathHijack, "all", "prepends to $LOAD_PATH — malicious gems shadow stdlib"},
+	"NODE_PATH":  {EnvRiskPathHijack, "all", "prepends to module resolution — malicious packages shadow builtins"},
 
 	// Git config override
 	"GIT_CONFIG_GLOBAL": {EnvRiskCodeExec, "all", "overrides global gitconfig — core.hooksPath/fsmonitor inject code"},

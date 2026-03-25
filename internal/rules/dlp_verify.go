@@ -488,7 +488,7 @@ var vectors = []dlpVector{
 	// ── New patterns (2026-03) ──
 	{
 		name:  "builtin:dlp-database-uri-credentials",
-		regex: `(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|rediss|amqp|amqps)://[^:/?#\s]+:[^@/?#\s]+@[^/?#\s]+`,
+		regex: `(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|mariadb|mssql|redis|rediss|amqp|amqps|couchbase(?:s)?)://[^:/?#\s]+:[^@/?#\s]+@[^/?#\s]+`,
 		mustHit: []string{
 			"mongodb://admin:" + pad(8) + "@db.example.com",
 			"postgresql://user:" + pad(8) + "@localhost:5432/mydb",
@@ -496,6 +496,9 @@ var vectors = []dlpVector{
 			"mysql://root:" + pad(4) + "@127.0.0.1/db",
 			"amqps://guest:" + pad(5) + "@rabbit.example.com",
 			"mongodb+srv://user:" + pad(8) + "@cluster0.abc.mongodb.net",
+			"mariadb://user:" + pad(8) + "@db.example.com/mydb",
+			"mssql://sa:" + pad(8) + "@sql.example.com:1433/mydb",
+			"couchbase://admin:" + pad(8) + "@cb.example.com",
 		},
 		mustMis: []string{
 			"mongodb://localhost:27017/mydb",
@@ -642,7 +645,7 @@ func main() {
 
 	// 3. Verify SHA-512 of dlp.go source.
 	hash := fmt.Sprintf("%x", sha512.Sum512(data))
-	const expectedHash = "45bda22b0e3c4eabf690b84cad272a231a884d7a1170d03b3ae46a44aed683436d35d52d80850b101648fdf8070f4e287d59e1f300711bc108dbef41a3f64dca"
+	const expectedHash = "42716d4abd2e40c6066e47686b3f45cf4697237124917ae734ebd48a836ca46cfa5fac091b07285810365228e526e3e7d53913448a4a94f3e3854c37ddd5264a"
 	if hash != expectedHash {
 		fmt.Fprintf(os.Stderr, "FAIL: dlp.go SHA-512 mismatch\n  got:  %s\n  want: %s\n", hash, expectedHash)
 		failed++

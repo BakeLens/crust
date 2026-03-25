@@ -361,7 +361,7 @@ var dlpPatterns = []dlpPattern{
 	// Database connection strings with embedded credentials
 	{
 		name:    "builtin:dlp-database-uri-credentials",
-		re:      regexp.MustCompile(`(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|rediss|amqp|amqps)://[^:/?#\s]+:[^@/?#\s]+@[^/?#\s]+`),
+		re:      regexp.MustCompile(`(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|mariadb|mssql|redis|rediss|amqp|amqps|couchbase(?:s)?)://[^:/?#\s]+:[^@/?#\s]+@[^/?#\s]+`),
 		message: "Cannot write database connection string with embedded credentials — potential credential leak",
 	},
 

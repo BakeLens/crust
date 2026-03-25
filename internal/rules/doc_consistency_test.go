@@ -76,7 +76,7 @@ func TestDocConsistency_DLPPatternCount(t *testing.T) {
 
 // ── Dangerous environment variables ──────────────────────────────────────────
 
-const wantEnvVarCount = 51
+const wantEnvVarCount = 54
 
 func TestDocConsistency_EnvVarCount(t *testing.T) {
 	got := DangerousEnvVarCount()
