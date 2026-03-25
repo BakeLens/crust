@@ -490,12 +490,12 @@ var vectors = []dlpVector{
 		name:  "builtin:dlp-database-uri-credentials",
 		regex: `(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|rediss|amqp|amqps)://[^:/?#\s]+:[^@/?#\s]+@[^/?#\s]+`,
 		mustHit: []string{
-			"mongodb://admin:password123@db.example.com",
-			"postgresql://user:secret@localhost:5432/mydb",
-			"redis://default:s3cret@cache.example.com:6379",
-			"mysql://root:pass@127.0.0.1/db",
-			"amqps://guest:guest@rabbit.example.com",
-			"mongodb+srv://user:p%40ss@cluster0.abc.mongodb.net",
+			"mongodb://admin:" + pad(8) + "@db.example.com",
+			"postgresql://user:" + pad(8) + "@localhost:5432/mydb",
+			"redis://default:" + pad(8) + "@cache.example.com:6379",
+			"mysql://root:" + pad(4) + "@127.0.0.1/db",
+			"amqps://guest:" + pad(5) + "@rabbit.example.com",
+			"mongodb+srv://user:" + pad(8) + "@cluster0.abc.mongodb.net",
 		},
 		mustMis: []string{
 			"mongodb://localhost:27017/mydb",
