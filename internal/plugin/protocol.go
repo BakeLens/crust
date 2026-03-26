@@ -17,11 +17,14 @@ import "encoding/json"
 //   6. crust sends {"method":"close"} on shutdown
 //   7. plugin responds {"result":"ok"} and exits
 
-// Method names for the wire protocol.
+// Method is a wire protocol method name.
+type Method string
+
+// Wire protocol methods.
 const (
-	MethodInit     = "init"
-	MethodEvaluate = "evaluate"
-	MethodClose    = "close"
+	MethodInit     Method = "init"
+	MethodEvaluate Method = "evaluate"
+	MethodClose    Method = "close"
 	// MethodWrap requests the plugin to apply OS-level enforcement and then
 	// exec the target command. After the plugin responds {"result":"ready"},
 	// the stdin/stdout channel switches from JSON-RPC to raw byte passthrough
@@ -32,12 +35,12 @@ const (
 	//
 	// Crust must not write to stdin between sending the wrap request and
 	// receiving the "ready" response (synchronous handshake).
-	MethodWrap = "wrap"
+	MethodWrap Method = "wrap"
 )
 
 // WireRequest is a JSON-RPC-like request sent from crust to the plugin process.
 type WireRequest struct {
-	Method string          `json:"method"`
+	Method Method          `json:"method"`
 	Params json.RawMessage `json:"params,omitempty"`
 }
 

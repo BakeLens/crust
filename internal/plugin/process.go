@@ -201,7 +201,7 @@ func (p *ProcessPlugin) startLocked() (err error) {
 }
 
 // callLocked sends a wire request and waits for a response. Caller must hold p.mu.
-func (p *ProcessPlugin) callLocked(method string, params json.RawMessage, timeout time.Duration) (WireResponse, error) {
+func (p *ProcessPlugin) callLocked(method Method, params json.RawMessage, timeout time.Duration) (WireResponse, error) {
 	if p.proc == nil {
 		return WireResponse{}, errors.New("process not running")
 	}
