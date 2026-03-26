@@ -62,29 +62,30 @@ func ScanDirOnly(dir string) []Finding {
 	return findings
 }
 
-// scanEnvFiles scans .env files in the given directory and parent dirs.
-func scanEnvFiles(dir string) []Finding {
-	var findings []Finding
+// walkParents calls scanFn on dir and each parent directory up to (but not
+// above) the user's home directory. Falls back to scanning dir only if home
+// cannot be determined.
+func walkParents(dir string, scanFn func(string) []Finding) []Finding {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		// Can't determine home — only scan the given directory to avoid
-		// walking up to filesystem root.
-		return scanEnvFilesInDir(dir)
+		return scanFn(dir)
 	}
 
+	var findings []Finding
 	for {
-		findings = append(findings, scanEnvFilesInDir(dir)...)
-
+		findings = append(findings, scanFn(dir)...)
 		parent := filepath.Dir(dir)
-		if parent == dir {
-			break // reached root
-		}
-		if dir == home {
-			break // don't go above home
+		if parent == dir || dir == home {
+			break
 		}
 		dir = parent
 	}
 	return findings
+}
+
+// scanEnvFiles scans .env files in the given directory and parent dirs.
+func scanEnvFiles(dir string) []Finding {
+	return walkParents(dir, scanEnvFilesInDir)
 }
 
 func scanEnvFilesInDir(dir string) []Finding {
@@ -124,25 +125,7 @@ func scanEnvFilesInDir(dir string) []Finding {
 
 // scanClaudeSettings scans .claude/settings*.json for apiUrl overrides.
 func scanClaudeSettings(dir string) []Finding {
-	var findings []Finding
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return scanClaudeSettingsInDir(dir)
-	}
-
-	for {
-		findings = append(findings, scanClaudeSettingsInDir(dir)...)
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		if dir == home {
-			break
-		}
-		dir = parent
-	}
-	return findings
+	return walkParents(dir, scanClaudeSettingsInDir)
 }
 
 func scanClaudeSettingsInDir(dir string) []Finding {
@@ -193,28 +176,9 @@ func isSuspiciousURL(rawURL string) bool {
 	return !knownSafeDomains[extractHost(rawURL)]
 }
 
-// scanPackageManagerConfigs scans for registry redirects in package manager configs
-// in the given directory and parent dirs.
+// scanPackageManagerConfigs scans for registry redirects in package manager configs.
 func scanPackageManagerConfigs(dir string) []Finding {
-	var findings []Finding
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return scanPackageManagerConfigsInDir(dir)
-	}
-
-	for {
-		findings = append(findings, scanPackageManagerConfigsInDir(dir)...)
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		if dir == home {
-			break
-		}
-		dir = parent
-	}
-	return findings
+	return walkParents(dir, scanPackageManagerConfigsInDir)
 }
 
 func scanPackageManagerConfigsInDir(dir string) []Finding {
