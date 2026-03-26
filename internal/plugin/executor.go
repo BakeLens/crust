@@ -21,11 +21,10 @@ type ExecResult struct {
 //
 // Two execution modes:
 //   - Exec: runs a command and captures stdout/stderr (short-lived commands).
-//   - Wrap: returns an *exec.Cmd for the caller to manage stdin/stdout
+//   - Wrap: returns a WrapResult for the caller to manage stdin/stdout
 //     (long-running processes like MCP servers). Policy is delivered via
-//     an extra fd to keep stdin free for the process's communication.
-//     Returns nil if the executor binary is not available. The caller
-//     must close any ExtraFiles on the returned Cmd after Start().
+//     JSON-RPC handshake on stdin before switching to passthrough mode.
+//     Returns nil if the executor binary is not available.
 type Executor interface {
 	// Name returns a unique identifier (e.g. "sandbox").
 	Name() string

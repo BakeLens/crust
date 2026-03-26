@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -123,30 +124,8 @@ func RunProxy(engine rules.RuleEvaluator, cmd []string, stdin io.ReadCloser, std
 	// Executor wrap handshake: send the wrap request, wait for "ready",
 	// then switch stdin/stdout to passthrough for the target command.
 	if len(wrapHandshake) > 0 {
-		if _, err := childStdin.Write(wrapHandshake); err != nil {
-			log.Error("Failed to send wrap handshake: %v", err)
-			return 1
-		}
-		// Read one line: {"result":"ready"} or {"error":"..."}
-		scanner := bufio.NewScanner(stdoutR)
-		if !scanner.Scan() {
-			log.Error("Wrap handshake: no response from executor")
-			return 1
-		}
-		var resp struct {
-			Result string `json:"result"`
-			Error  string `json:"error"`
-		}
-		if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
-			log.Error("Wrap handshake: invalid response: %v", err)
-			return 1
-		}
-		if resp.Error != "" {
-			log.Error("Wrap handshake failed: %s", resp.Error)
-			return 1
-		}
-		if resp.Result != "ready" {
-			log.Error("Wrap handshake: unexpected result: %q", resp.Result)
+		if err := doWrapHandshake(childStdin, stdoutR, wrapHandshake); err != nil {
+			log.Error("Wrap handshake: %v", err)
 			return 1
 		}
 		log.Info("Executor wrap handshake complete — %s running under sandbox", cfg.ProcessLabel)
@@ -232,4 +211,32 @@ func RunProxy(engine rules.RuleEvaluator, cmd []string, stdin io.ReadCloser, std
 		return 1
 	}
 	return 0
+}
+
+// doWrapHandshake performs the executor wrap protocol handshake.
+// Writes the handshake request to stdin, reads "ready" from stdout.
+func doWrapHandshake(stdin io.Writer, stdout io.Reader, handshake []byte) error {
+	if _, err := stdin.Write(handshake); err != nil {
+		return fmt.Errorf("write request: %w", err)
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	if !scanner.Scan() {
+		return errors.New("no response from executor")
+	}
+
+	var resp struct {
+		Result string `json:"result"`
+		Error  string `json:"error"`
+	}
+	if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
+		return fmt.Errorf("invalid response: %w", err)
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("executor error: %s", resp.Error)
+	}
+	if resp.Result != "ready" {
+		return fmt.Errorf("unexpected result: %q (want \"ready\")", resp.Result)
+	}
+	return nil
 }
