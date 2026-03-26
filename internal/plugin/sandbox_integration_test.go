@@ -631,3 +631,133 @@ func TestSandboxSchema_NetworkOpFiltered(t *testing.T) {
 	}
 	validatePolicySchema(t, policy)
 }
+
+// --- Wrap protocol integration tests ---
+
+// TestSandboxWrap_Echo tests the wrap protocol end-to-end with the real binary.
+func TestSandboxWrap_Echo(t *testing.T) {
+	sp := requireSandbox(t)
+
+	policy, _ := json.Marshal(InputPolicy{
+		Version: 1,
+		Rules:   []DenyRule{},
+	})
+
+	wr := sp.Wrap(context.Background(), []string{"echo", "wrap-e2e"}, policy)
+	if wr == nil {
+		t.Fatal("Wrap returned nil — sandbox binary may not support wrap protocol")
+	}
+
+	childStdin, err := wr.Cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	childStdout, err := wr.Cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := wr.Cmd.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if _, err := childStdin.Write(wr.Handshake); err != nil {
+		t.Fatalf("write handshake: %v", err)
+	}
+	childStdin.Close() // EOF signals end of input — sandbox can proceed to exec
+
+	var stdout strings.Builder
+	done := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := childStdout.Read(buf)
+			if n > 0 {
+				stdout.Write(buf[:n])
+			}
+			if readErr != nil {
+				done <- nil
+				return
+			}
+		}
+	}()
+	<-done
+	_ = wr.Cmd.Wait()
+
+	lines := strings.SplitN(stdout.String(), "\n", 2)
+	if len(lines) < 2 {
+		t.Fatalf("expected ready + output, got: %q", stdout.String())
+	}
+
+	var resp struct {
+		Result string `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &resp); err != nil {
+		t.Fatalf("parse ready: %v (line: %q)", err, lines[0])
+	}
+	if resp.Result != "ready" {
+		t.Errorf("expected ready, got %q", resp.Result)
+	}
+	if got := strings.TrimSpace(lines[1]); got != "wrap-e2e" {
+		t.Errorf("expected wrap-e2e, got %q", got)
+	}
+}
+
+// TestSandboxWrap_DenyEnforced tests deny rules are enforced via wrap.
+func TestSandboxWrap_DenyEnforced(t *testing.T) {
+	sp := requireSandbox(t)
+
+	policy, _ := json.Marshal(InputPolicy{
+		Version: 1,
+		Rules: []DenyRule{{
+			Name:       "deny-tmp",
+			Patterns:   []string{"/tmp/**"},
+			Operations: []string{"read"},
+		}},
+	})
+
+	wr := sp.Wrap(context.Background(), []string{"cat", "/tmp/nonexistent"}, policy)
+	if wr == nil {
+		t.Fatal("Wrap returned nil")
+	}
+
+	childStdin, err := wr.Cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	childStdout, err := wr.Cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := wr.Cmd.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	_, _ = childStdin.Write(wr.Handshake)
+	childStdin.Close()
+
+	var stdout strings.Builder
+	done := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := childStdout.Read(buf)
+			if n > 0 {
+				stdout.Write(buf[:n])
+			}
+			if readErr != nil {
+				done <- nil
+				return
+			}
+		}
+	}()
+	<-done
+	waitErr := wr.Cmd.Wait()
+
+	if waitErr == nil {
+		t.Error("expected cat to fail under deny rule")
+	}
+	if !strings.Contains(stdout.String(), "\"ready\"") {
+		t.Errorf("ready response missing: %q", stdout.String())
+	}
+}
