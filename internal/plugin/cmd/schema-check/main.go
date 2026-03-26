@@ -118,7 +118,7 @@ func main() {
 			}
 		}
 
-		goConsts, err := schemacheck.ConstValues(goDir, []string{"MethodInit", "MethodEvaluate", "MethodClose"})
+		goConsts, err := schemacheck.ConstValues(goDir, []string{"MethodInit", "MethodEvaluate", "MethodClose", "MethodWrap"})
 		if err != nil {
 			c.Check("method constants: parse error: %v", err)
 		} else {
