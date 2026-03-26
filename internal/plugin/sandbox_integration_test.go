@@ -712,7 +712,7 @@ func TestSandboxWrap_DenyEnforced(t *testing.T) {
 		Rules: []DenyRule{{
 			Name:       "deny-tmp",
 			Patterns:   []string{"/tmp/**"},
-			Operations: []string{"read"},
+			Operations: []rules.Operation{rules.OpRead},
 		}},
 	})
 

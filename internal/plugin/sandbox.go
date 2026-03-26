@@ -37,12 +37,14 @@ type HostEntry struct {
 }
 
 // DenyRule is a single deny rule in the sandbox input policy.
+// Operations uses rules.Operation (type string) — JSON-serializes to the
+// same "read", "write", etc. strings expected by the sandbox schema.
 type DenyRule struct {
-	Name       string      `json:"name"`
-	Patterns   []string    `json:"patterns,omitempty"`
-	Except     []string    `json:"except,omitempty"`
-	Operations []string    `json:"operations"`
-	Hosts      []HostEntry `json:"hosts,omitempty"`
+	Name       string            `json:"name"`
+	Patterns   []string          `json:"patterns,omitempty"`
+	Except     []string          `json:"except,omitempty"`
+	Operations []rules.Operation `json:"operations"`
+	Hosts      []HostEntry       `json:"hosts,omitempty"`
 }
 
 // InputPolicy is the JSON policy sent to bakelens-sandbox on stdin.
@@ -347,7 +349,7 @@ func buildDenyRules(ctx context.Context, snapshots []RuleSnapshot) []DenyRule {
 		// Build filesystem deny rule if paths are present and at least one
 		// sandbox-supported operation exists (filters out network-only rules).
 		if len(snap.BlockPaths) > 0 {
-			ops := operationsToStrings(snap.Actions)
+			ops := filterSandboxOps(snap.Actions)
 			if len(ops) > 0 {
 				name := clampName(snap.Name, seen)
 				dr := DenyRule{
@@ -368,7 +370,7 @@ func buildDenyRules(ctx context.Context, snapshots []RuleSnapshot) []DenyRule {
 			}
 			dr := DenyRule{
 				Name:       name,
-				Operations: []string{}, // network-only rule; filesystem ops empty
+				Operations: []rules.Operation{}, // network-only rule; filesystem ops empty
 				Hosts:      hosts,
 			}
 			denyRules = append(denyRules, dr)
@@ -505,16 +507,15 @@ var sandboxOperations = map[rules.Operation]bool{
 	rules.OpExecute: true,
 }
 
-// operationsToStrings converts []rules.Operation to []string,
-// filtering out operations not supported by the sandbox schema
-// and deduplicating (sandbox requires uniqueItems).
-func operationsToStrings(ops []rules.Operation) []string {
+// filterSandboxOps filters rules.Operation values to those supported by
+// the sandbox schema, deduplicating (sandbox requires uniqueItems).
+func filterSandboxOps(ops []rules.Operation) []rules.Operation {
 	seen := make(map[rules.Operation]bool, len(ops))
-	out := make([]string, 0, len(ops))
+	out := make([]rules.Operation, 0, len(ops))
 	for _, op := range ops {
 		if sandboxOperations[op] && !seen[op] {
 			seen[op] = true
-			out = append(out, string(op))
+			out = append(out, op)
 		}
 	}
 	return out

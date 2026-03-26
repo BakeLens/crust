@@ -407,9 +407,9 @@ func TestClampPatterns_DedupsAndCaps(t *testing.T) {
 	}
 }
 
-func TestOperationsToStrings_Dedup(t *testing.T) {
+func TestFilterSandboxOps_Dedup(t *testing.T) {
 	ops := []rules.Operation{rules.OpRead, rules.OpWrite, rules.OpRead}
-	got := operationsToStrings(ops)
+	got := filterSandboxOps(ops)
 	if len(got) != 2 {
 		t.Errorf("expected 2 unique ops, got %d: %v", len(got), got)
 	}
