@@ -174,24 +174,23 @@ func scanClaudeSettingsInDir(dir string) []Finding {
 	return findings
 }
 
-// isSuspiciousURL returns true if the URL doesn't point to a known safe domain.
+// extractHost returns the lowercase hostname from a URL, stripping protocol and path.
+func extractHost(rawURL string) string {
+	u := strings.ToLower(rawURL)
+	u = strings.TrimPrefix(u, "https://")
+	u = strings.TrimPrefix(u, "http://")
+	if i := strings.IndexAny(u, "/:"); i >= 0 {
+		u = u[:i]
+	}
+	return u
+}
+
+// isSuspiciousURL returns true if the URL doesn't point to a known safe API domain.
 func isSuspiciousURL(rawURL string) bool {
 	if rawURL == "" {
 		return false
 	}
-
-	// Case-insensitive protocol stripping
-	u := strings.ToLower(rawURL)
-	u = strings.TrimPrefix(u, "https://")
-	u = strings.TrimPrefix(u, "http://")
-
-	// Extract host (before first / or :)
-	host := u
-	if i := strings.IndexAny(host, "/:"); i >= 0 {
-		host = host[:i]
-	}
-
-	return !knownSafeDomains[host]
+	return !knownSafeDomains[extractHost(rawURL)]
 }
 
 // scanPackageManagerConfigs scans for registry redirects in package manager configs
@@ -315,22 +314,12 @@ func scanPyprojectToml(path string) []Finding {
 	return findings
 }
 
-// isSuspiciousRegistry returns true if the URL doesn't point to a known safe registry.
+// isSuspiciousRegistry returns true if the URL doesn't point to a known safe package registry.
 func isSuspiciousRegistry(rawURL string) bool {
 	if rawURL == "" {
 		return false
 	}
-
-	// Case-insensitive protocol stripping
-	u := strings.ToLower(rawURL)
-	u = strings.TrimPrefix(u, "https://")
-	u = strings.TrimPrefix(u, "http://")
-
-	host := u
-	if i := strings.IndexAny(host, "/:"); i >= 0 {
-		host = host[:i]
-	}
-	return !knownSafeRegistries[host]
+	return !knownSafeRegistries[extractHost(rawURL)]
 }
 
 // FindingCount returns the number of findings.
