@@ -92,7 +92,6 @@ func TestValidate_PortRange(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "server.port") {
 		t.Errorf("port 99999 should fail: %v", err)
 	}
-
 }
 
 func TestValidate_LogLevel(t *testing.T) {
@@ -207,6 +206,63 @@ func TestValidate_RetentionDays(t *testing.T) {
 	}
 }
 
+func TestLoad_AbsentFieldsUseDefaults(t *testing.T) {
+	// Fields absent from YAML should keep defaults (rawConfig pointers are nil).
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	data := []byte("security:\n  enabled: true\n  buffer_streaming: true\n  block_mode: replace\n")
+	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	// Absent → defaults preserved
+	if cfg.Server.Port != 9090 {
+		t.Errorf("Port = %d, want default 9090", cfg.Server.Port)
+	}
+	if cfg.Security.MaxBufferEvents != 50000 {
+		t.Errorf("MaxBufferEvents = %d, want default 50000", cfg.Security.MaxBufferEvents)
+	}
+	if cfg.Security.BufferTimeout != 120 {
+		t.Errorf("BufferTimeout = %d, want default 120", cfg.Security.BufferTimeout)
+	}
+	if cfg.Telemetry.SampleRate != 1.0 {
+		t.Errorf("SampleRate = %g, want default 1.0", cfg.Telemetry.SampleRate)
+	}
+}
+
+func TestLoad_ExplicitZeroPreserved(t *testing.T) {
+	// Explicit zero in YAML must be preserved (not replaced with default)
+	// so that Validate() can reject it.
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	data := []byte("server:\n  port: 0\nsecurity:\n  buffer_streaming: true\n  max_buffer_events: 0\n  buffer_timeout: 0\n")
+	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Server.Port != 0 {
+		t.Errorf("Port = %d, want explicit 0", cfg.Server.Port)
+	}
+	if cfg.Security.MaxBufferEvents != 0 {
+		t.Errorf("MaxBufferEvents = %d, want explicit 0", cfg.Security.MaxBufferEvents)
+	}
+	if cfg.Security.BufferTimeout != 0 {
+		t.Errorf("BufferTimeout = %d, want explicit 0", cfg.Security.BufferTimeout)
+	}
+	// Validate should reject these
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected validation error for explicit zeros")
+	}
+}
+
 func TestValidate_ProviderURL(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Upstream.Providers = map[string]ProviderConfig{
@@ -244,7 +300,7 @@ func TestValidate_BlockMode(t *testing.T) {
 
 func TestValidate_MultipleErrors(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.Server.Port = 0
+	cfg.Server.Port = -1 // use -1 since mergeConfig would skip 0
 	cfg.Server.LogLevel = types.LogLevel("invalid")
 	cfg.Upstream.Timeout = -1
 	cfg.Telemetry.SampleRate = 5.0

@@ -4,10 +4,11 @@
 
 ```bash
 # Gateway
-crust start --auto                          # Auto mode (recommended)
-crust start --endpoint URL --api-key KEY    # Manual mode
-crust start --auto --block-mode replace     # Show block messages to agent
-crust start --foreground --auto             # Foreground mode (for Docker)
+crust start                                 # Auto mode (default, zero interaction)
+crust start --manual                        # Prompt for endpoint URL + API key
+crust start --endpoint URL --api-key KEY    # Manual mode via flags
+crust start --block-mode replace            # Show block messages to agent
+crust start --foreground                    # Foreground mode (for Docker)
 crust stop                                  # Stop the gateway
 crust status [--json] [--live]              # Check if running
 crust status --live --api-addr HOST:PORT    # Remote dashboard (Docker)
@@ -38,7 +39,8 @@ crust uninstall                             # Complete removal
 
 | Flag | Description |
 |------|-------------|
-| `--auto` | Resolve providers from model names |
+| `--auto` | Resolve providers from model names (default when no flags given) |
+| `--manual` | Prompt interactively for endpoint URL and API key |
 | `--endpoint URL` | LLM API endpoint URL |
 | `--api-key KEY` | API key (prefer `LLM_API_KEY` env var) |
 | `--foreground` | Run in foreground (for Docker/containers) |
@@ -108,17 +110,17 @@ Works with or without the daemon running. When the daemon is running, `crust sta
 ## Examples
 
 ```bash
-# Interactive setup
+# Auto mode (default, zero interaction)
 crust start
 
-# Auto mode with env-based auth
-crust start --auto
+# Manual mode — interactive prompt for endpoint + API key
+crust start --manual
 
-# Manual mode with explicit endpoint
+# Manual mode with explicit flags
 LLM_API_KEY=sk-xxx crust start --endpoint https://openrouter.ai/api/v1
 
 # Docker/container mode
-crust start --foreground --auto --listen-address 0.0.0.0
+crust start --foreground --listen-address 0.0.0.0
 
 # Follow logs
 crust logs -f

@@ -164,6 +164,7 @@ func runStart(args []string) {
 	apiKey := startFlags.String("api-key", "", "API key for the endpoint (saved to OS keyring)")
 	dbKey := startFlags.String("db-key", "", "Database encryption key (auto-generated if not set)")
 	autoMode := startFlags.Bool("auto", false, "Auto mode: resolve providers from model names (per-provider keys or client auth)")
+	manualMode := startFlags.Bool("manual", false, "Manual mode: prompt for endpoint URL and API key")
 
 	// Advanced options
 	proxyPort := startFlags.Int("proxy-port", 0, "Proxy server port (default from config)")
@@ -220,34 +221,42 @@ func runStart(args []string) {
 	// Interactive mode - collect configuration via TUI
 	var startupCfg startup.Config
 
-	if *autoMode || (*endpoint != "" && *apiKey != "") {
-		// Flags provided — skip interactive prompts, but still show the banner
-		fmt.Println()
-		banner.PrintBanner(Version)
-		fmt.Println()
-		startupCfg = startup.Config{
-			AutoMode:            *autoMode,
-			EndpointURL:         *endpoint,
-			APIKey:              *apiKey,
-			EncryptionKey:       *dbKey,
-			TelemetryEnabled:    *telemetryEnabled,
-			RetentionDays:       *retentionDays,
-			DisableBuiltinRules: *disableBuiltin,
-			ProxyPort:           *proxyPort,
-		}
-	} else {
-		// Run interactive prompts (asks auto vs manual mode first)
-		startupCfg, err = startup.RunStartupWithPort(cfg.Upstream.URL, cfg.Server.Port)
+	fmt.Println()
+	banner.PrintBanner(Version)
+	fmt.Println()
+
+	switch {
+	case *manualMode && *endpoint == "":
+		// --manual without --endpoint: prompt for endpoint + API key
+		startupCfg, err = startup.RunManualSetup(cfg.Upstream.URL)
 		if err != nil {
 			tui.PrintError(fmt.Sprintf("Startup error: %v", err))
 			os.Exit(1)
 		}
-
 		if startupCfg.Canceled {
 			tui.PrintInfo("Startup canceled")
 			os.Exit(0)
 		}
+
+	case *endpoint != "" && *apiKey != "":
+		// Explicit endpoint + key via flags
+		startupCfg = startup.Config{
+			EndpointURL: *endpoint,
+			APIKey:      *apiKey,
+		}
+
+	default:
+		// Default: auto mode (zero interaction)
+		startupCfg = startup.Config{AutoMode: true}
+		tui.PrintInfo("Auto mode — providers resolved from model names")
 	}
+
+	// Apply CLI flag overrides
+	startupCfg.EncryptionKey = *dbKey
+	startupCfg.TelemetryEnabled = *telemetryEnabled
+	startupCfg.RetentionDays = *retentionDays
+	startupCfg.DisableBuiltinRules = *disableBuiltin
+	startupCfg.ProxyPort = *proxyPort
 
 	// Build args for daemon process
 	daemonArgs := daemon.StartArgs{

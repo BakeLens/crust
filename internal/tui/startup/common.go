@@ -6,16 +6,14 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 
 	"golang.org/x/term"
 
-	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/tui"
 )
 
-// Config holds the configuration collected from the startup prompts
+// Config holds the configuration collected from startup.
 type Config struct {
 	// Mode
 	AutoMode bool // auto mode: resolve provider from model name (per-provider keys or client auth)
@@ -34,7 +32,7 @@ type Config struct {
 	Canceled bool
 }
 
-// Validate validates the startup configuration
+// Validate validates the startup configuration.
 func (c *Config) Validate() error {
 	if !c.AutoMode {
 		if c.EndpointURL == "" {
@@ -59,21 +57,13 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// ValidationErrors returns human-readable validation errors
+// ValidationErrors returns human-readable validation errors.
 func (c *Config) ValidationErrors() []string {
 	err := c.Validate()
 	if err == nil {
 		return nil
 	}
 	return []string{err.Error()}
-}
-
-// DefaultProxyPort should match config.DefaultConfig
-const DefaultProxyPort = 9090
-
-// RunStartup runs the startup prompts and returns the configuration
-func RunStartup(defaultEndpoint string) (Config, error) {
-	return RunStartupWithPort(defaultEndpoint, DefaultProxyPort)
 }
 
 // readPassword reads a password from the terminal without echoing.
@@ -96,104 +86,38 @@ func readPassword() (string, error) {
 	return strings.TrimSpace(password), nil
 }
 
-// runStartupReader runs plain text prompts using bufio.Reader.
+// runManualReader prompts for endpoint URL and API key using plain text.
 // Used as fallback when plain mode is active (piped, NO_COLOR, etc.)
 // and as the sole implementation in notui builds.
-func runStartupReader(defaultEndpoint string, defaultProxyPort int) (Config, error) {
+func runManualReader(defaultEndpoint string) (Config, error) {
 	reader := bufio.NewReader(os.Stdin)
-	config := Config{
-		ProxyPort:     defaultProxyPort,
-		RetentionDays: 7,
-	}
+	var config Config
 
-	fmt.Println(tui.Separator("Configuration"))
+	fmt.Println(tui.Separator("Manual Endpoint"))
 	fmt.Println()
 
 	prompt := ">"
-	fmt.Printf("  %s Use auto mode? (resolve provider from model name, per-provider keys or client auth) [Y/n]: ", prompt)
-	modeAnswer, _ := reader.ReadString('\n')
-	modeAnswer = strings.TrimSpace(strings.ToLower(modeAnswer))
-
-	if modeAnswer == "" || modeAnswer == "y" || modeAnswer == "yes" { //nolint:goconst
-		config.AutoMode = true
-		fmt.Println()
-		tui.PrintInfo("Auto mode enabled")
-		tui.PrintInfo("Providers will be resolved from model names")
-		tui.PrintInfo("Clients must provide their own auth headers")
-		fmt.Println()
-	} else {
-		config.AutoMode = false
-
-		fmt.Printf("  %s Endpoint URL [%s]: ", prompt, defaultEndpoint)
-		endpoint, err := reader.ReadString('\n')
-		if err != nil {
-			return config, fmt.Errorf("failed to read endpoint: %w", err)
-		}
-		endpoint = strings.TrimSpace(endpoint)
-		if endpoint == "" {
-			endpoint = defaultEndpoint
-		}
-		config.EndpointURL = endpoint
-
-		fmt.Printf("  %s API Key: ", prompt)
-		apiKey, err := readPassword()
-		if err != nil {
-			return config, fmt.Errorf("failed to read API key: %w", err)
-		}
-		config.APIKey = apiKey
-		fmt.Println()
-	}
-
-	fmt.Println(tui.Separator("Security"))
-	fmt.Println()
-
-	fmt.Printf("  %s DB Encryption Key (optional, press Enter to skip): ", prompt)
-	dbKey, err := readPassword()
+	fmt.Printf("  %s Endpoint URL [%s]: ", prompt, defaultEndpoint)
+	endpoint, err := reader.ReadString('\n')
 	if err != nil {
-		return config, fmt.Errorf("failed to read DB key: %w", err)
+		return config, fmt.Errorf("failed to read endpoint: %w", err)
 	}
-	config.EncryptionKey = dbKey
-	fmt.Println()
-
-	fmt.Println(tui.Separator("Advanced"))
-	fmt.Println()
-	fmt.Printf("  %s Configure advanced options? [y/N]: ", prompt)
-	advAnswer, _ := reader.ReadString('\n')
-	advAnswer = strings.TrimSpace(strings.ToLower(advAnswer))
-
-	if advAnswer == "y" || advAnswer == "yes" {
-		fmt.Println()
-
-		fmt.Printf("  %s Enable telemetry? [y/N]: ", prompt)
-		telAnswer, _ := reader.ReadString('\n')
-		telAnswer = strings.TrimSpace(strings.ToLower(telAnswer))
-		config.TelemetryEnabled = telAnswer == "y" || telAnswer == "yes"
-
-		fmt.Printf("  %s Retention days (0=forever) [%d]: ", prompt, config.RetentionDays)
-		retStr, _ := reader.ReadString('\n')
-		retStr = strings.TrimSpace(retStr)
-		if retStr != "" {
-			if days, err := strconv.Atoi(retStr); err == nil && days >= 0 && days <= 36500 {
-				config.RetentionDays = days
-			}
-		}
-
-		fmt.Printf("  %s Disable builtin rules? (%d locked rules remain active) [y/N]: ", prompt, rules.CountLockedBuiltinRules())
-		rulesAnswer, _ := reader.ReadString('\n')
-		rulesAnswer = strings.TrimSpace(strings.ToLower(rulesAnswer))
-		config.DisableBuiltinRules = rulesAnswer == "y" || rulesAnswer == "yes"
-
-		fmt.Printf("  %s Proxy port [%d]: ", prompt, config.ProxyPort)
-		proxyStr, _ := reader.ReadString('\n')
-		proxyStr = strings.TrimSpace(proxyStr)
-		if proxyStr != "" {
-			if port, err := strconv.Atoi(proxyStr); err == nil && port >= 1 && port <= 65535 {
-				config.ProxyPort = port
-			}
-		}
-
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		endpoint = defaultEndpoint
 	}
+	config.EndpointURL = endpoint
+
+	fmt.Printf("  %s API Key: ", prompt)
+	apiKey, err := readPassword()
+	if err != nil {
+		return config, fmt.Errorf("failed to read API key: %w", err)
+	}
+	config.APIKey = apiKey
+	fmt.Println()
 
 	fmt.Println()
+	tui.PrintInfo("Manual mode — " + config.EndpointURL)
+
 	return config, nil
 }

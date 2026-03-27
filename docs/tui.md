@@ -34,7 +34,7 @@ internal/tui/
   columns.go        AlignColumns() for ANSI-aware two-column alignment
   banner/           Gradient ASCII art banner with reveal animation + RevealLines
   spinner/          Animated dot spinner with success glow effect
-  startup/          Interactive huh-based setup wizard with themed forms
+  startup/          Manual endpoint setup (huh form for --manual mode)
   terminal/         Terminal emulator detection and capability bitfield
   progress/         Determinate progress bar for multi-step operations
   dashboard/        Live status dashboard with auto-refreshing metrics + stats tab
@@ -238,8 +238,8 @@ docker run -d -t -p 9090:9090 crust
 # Production: plain text logs (no -t)
 docker run -d -p 9090:9090 crust
 
-# Interactive setup inside container
-docker run -it --entrypoint crust crust start --foreground
+# Interactive setup inside container (manual mode)
+docker run -it --entrypoint crust crust start --foreground --manual
 
 # View logs (styled with -t, plain without)
 docker logs <container>

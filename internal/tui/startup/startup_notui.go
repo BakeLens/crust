@@ -2,12 +2,7 @@
 
 package startup
 
-import "fmt"
-
-// RunStartupWithPort runs the startup prompts with a custom default proxy port (plain text, no TUI).
-func RunStartupWithPort(defaultEndpoint string, defaultProxyPort int) (Config, error) {
-	fmt.Println()
-	fmt.Println("CRUST - Secure Gateway for AI Agents")
-	fmt.Println()
-	return runStartupReader(defaultEndpoint, defaultProxyPort)
+// RunManualSetup prompts for endpoint URL and API key (plain text, no TUI).
+func RunManualSetup(defaultEndpoint string) (Config, error) {
+	return runManualReader(defaultEndpoint)
 }

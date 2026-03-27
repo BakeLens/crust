@@ -89,10 +89,10 @@ docker run -p 9090:9090 crust
 Then start the gateway:
 
 ```bash
-crust start --auto
+crust start
 ```
 
-Auto mode detects your LLM provider from the model name — no endpoint URL or API key configuration needed. Your agent's existing auth is passed through.
+Auto mode is the default — it detects your LLM provider from the model name with zero configuration. Your agent's existing auth is passed through.
 
 ## Agent Setup
 

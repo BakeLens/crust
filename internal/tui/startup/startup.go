@@ -6,28 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"strconv"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/BakeLens/crust/internal/rules"
 	"github.com/BakeLens/crust/internal/tui"
-	"github.com/BakeLens/crust/internal/tui/banner"
 )
 
-// RunStartupWithPort runs the startup prompts with a custom default proxy port.
-// Uses huh forms for interactive input when a TTY is available.
-// Falls back to plain mode for non-interactive contexts.
-func RunStartupWithPort(defaultEndpoint string, defaultProxyPort int) (Config, error) {
-	fmt.Println()
-	banner.PrintBanner("")
-	fmt.Println()
-
+// RunManualSetup prompts for endpoint URL and API key using a huh form.
+// Falls back to plain-text prompts for non-interactive contexts.
+func RunManualSetup(defaultEndpoint string) (Config, error) {
 	if tui.IsPlainMode() {
-		return runStartupReader(defaultEndpoint, defaultProxyPort)
+		return runManualReader(defaultEndpoint)
 	}
-	return runStartupForm(defaultEndpoint, defaultProxyPort)
+	return runManualForm(defaultEndpoint)
 }
 
 // crustTheme returns a huh theme using the Crust synthwave color palette.
@@ -71,38 +63,13 @@ func crustTheme() *huh.Theme {
 	return t
 }
 
-// runStartupForm runs the interactive huh form-based wizard.
-func runStartupForm(defaultEndpoint string, defaultProxyPort int) (Config, error) {
-	cfg := Config{
-		ProxyPort:     defaultProxyPort,
-		RetentionDays: 7,
-	}
-
-	// Form field values (huh binds to pointers)
-	var mode = "auto"
+// runManualForm prompts for endpoint URL and API key via huh form.
+func runManualForm(defaultEndpoint string) (Config, error) {
+	var cfg Config
 	var endpointURL = defaultEndpoint
 	var apiKey string
-	var encryptionKey string
-	var showAdvanced bool
-	var telemetryEnabled bool
-	var retentionStr = "7"
-	var disableBuiltin bool
-	var proxyPortStr = strconv.Itoa(defaultProxyPort)
 
 	form := huh.NewForm(
-		// Group 1: Mode selection
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Connection Mode").
-				Description("How should Crust connect to LLM providers?").
-				Options(
-					huh.NewOption("Auto — resolve provider from model name, clients bring own auth", "auto"),
-					huh.NewOption("Manual — specify endpoint URL and API key", "manual"),
-				).
-				Value(&mode),
-		).Title("Configuration"),
-
-		// Group 2: Manual mode settings (hidden in auto mode)
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Endpoint URL").
@@ -129,74 +96,10 @@ func runStartupForm(defaultEndpoint string, defaultProxyPort int) (Config, error
 					}
 					return nil
 				}),
-		).Title("Endpoint").WithHideFunc(func() bool {
-			return mode == "auto"
-		}),
-
-		// Group 3: Security
-		huh.NewGroup(
-			huh.NewInput().
-				Title("DB Encryption Key").
-				Description("Optional — protects telemetry database (min 16 chars, Enter to skip)").
-				EchoMode(huh.EchoModePassword).
-				Value(&encryptionKey).
-				Validate(func(s string) error {
-					if s != "" && len(s) < 16 {
-						return errors.New("must be at least 16 characters")
-					}
-					return nil
-				}),
-		).Title("Security"),
-
-		// Group 4: Advanced options toggle
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Configure advanced options?").
-				Description("Telemetry, retention, rules, and port settings").
-				Value(&showAdvanced),
-		).Title("Advanced"),
-
-		// Group 5: Advanced settings (hidden unless toggled)
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Enable telemetry?").
-				Description("Record API traces and tool call logs").
-				Value(&telemetryEnabled),
-			huh.NewInput().
-				Title("Retention days").
-				Description("How long to keep telemetry data (0 = forever)").
-				Placeholder("7").
-				Value(&retentionStr).
-				Validate(func(s string) error {
-					if s == "" {
-						return nil
-					}
-					days, err := strconv.Atoi(s)
-					if err != nil {
-						return errors.New("must be a number")
-					}
-					if days < 0 || days > 36500 {
-						return errors.New("must be 0-36500")
-					}
-					return nil
-				}),
-			huh.NewConfirm().
-				Title("Disable builtin rules?").
-				Description(fmt.Sprintf("Only use user-defined rules (%d locked rules remain active)", rules.CountLockedBuiltinRules())).
-				Value(&disableBuiltin),
-			huh.NewInput().
-				Title("Proxy port").
-				Description("Port for the proxy server").
-				Placeholder(strconv.Itoa(defaultProxyPort)).
-				Value(&proxyPortStr).
-				Validate(validatePort),
-		).Title("Advanced Settings").WithHideFunc(func() bool {
-			return !showAdvanced
-		}),
+		).Title("Manual Endpoint"),
 	).WithTheme(crustTheme())
 
-	err := form.Run()
-	if err != nil {
+	if err := form.Run(); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			cfg.Canceled = true
 			return cfg, nil
@@ -204,47 +107,11 @@ func runStartupForm(defaultEndpoint string, defaultProxyPort int) (Config, error
 		return cfg, fmt.Errorf("startup form error: %w", err)
 	}
 
-	// Map form values to config
-	cfg.AutoMode = mode == "auto"
-	if !cfg.AutoMode {
-		cfg.EndpointURL = endpointURL
-		cfg.APIKey = apiKey
-	}
-	cfg.EncryptionKey = encryptionKey
+	cfg.EndpointURL = endpointURL
+	cfg.APIKey = apiKey
 
-	if showAdvanced {
-		cfg.TelemetryEnabled = telemetryEnabled
-		cfg.DisableBuiltinRules = disableBuiltin
-		if days, err := strconv.Atoi(retentionStr); err == nil {
-			cfg.RetentionDays = days
-		}
-		if port, err := strconv.Atoi(proxyPortStr); err == nil {
-			cfg.ProxyPort = port
-		}
-	}
-
-	// Print summary
 	fmt.Println()
-	if cfg.AutoMode {
-		tui.PrintInfo("Auto mode — providers resolved from model names")
-	} else {
-		tui.PrintInfo("Manual mode — " + cfg.EndpointURL)
-	}
+	tui.PrintInfo("Manual mode — " + cfg.EndpointURL)
 
 	return cfg, nil
-}
-
-// validatePort validates a port number string.
-func validatePort(s string) error {
-	if s == "" {
-		return nil
-	}
-	port, err := strconv.Atoi(s)
-	if err != nil {
-		return errors.New("must be a number")
-	}
-	if port < 1 || port > 65535 {
-		return errors.New("must be 1-65535")
-	}
-	return nil
 }

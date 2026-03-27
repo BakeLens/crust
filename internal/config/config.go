@@ -131,7 +131,7 @@ type SecurityConfig struct {
 	BlockMode       types.BlockMode `yaml:"block_mode"`        // "remove" (default) or "replace" (substitute with a text warning block)
 }
 
-// Validate validates the SecurityConfig and sets defaults.
+// Validate validates the SecurityConfig and sets defaults for nil fields.
 func (c *SecurityConfig) Validate() error {
 	// Validate and default BlockMode
 	if c.BlockMode == types.BlockModeUnset {
@@ -282,6 +282,93 @@ func (c *Config) Validate() error {
 	return errors.New(sb.String())
 }
 
+// rawConfig mirrors Config but uses pointers for fields where zero is
+// invalid so YAML can distinguish "absent" (nil → use default) from
+// "explicitly set to 0" (non-nil → copy, let Validate() reject).
+type rawConfig struct {
+	Server struct {
+		Port     *int           `yaml:"port"`
+		LogLevel types.LogLevel `yaml:"log_level"`
+		NoColor  bool           `yaml:"no_color"`
+	} `yaml:"server"`
+	Upstream  UpstreamConfig `yaml:"upstream"`
+	Storage   StorageConfig  `yaml:"storage"`
+	API       APIConfig      `yaml:"api"`
+	Telemetry struct {
+		Enabled       bool     `yaml:"enabled"`
+		RetentionDays int      `yaml:"retention_days"`
+		ServiceName   string   `yaml:"service_name"`
+		SampleRate    *float64 `yaml:"sample_rate"`
+	} `yaml:"telemetry"`
+	Security struct {
+		Enabled         bool            `yaml:"enabled"`
+		BufferStreaming bool            `yaml:"buffer_streaming"`
+		MaxBufferEvents *int            `yaml:"max_buffer_events"`
+		BufferTimeout   *int            `yaml:"buffer_timeout"`
+		BlockMode       types.BlockMode `yaml:"block_mode"`
+	} `yaml:"security"`
+	Rules RulesConfig `yaml:"rules"`
+}
+
+// applyTo merges parsed YAML onto defaults.
+// nil = absent in YAML → keep default. non-nil = explicitly set → copy.
+func (r *rawConfig) applyTo(dst *Config) {
+	if r.Server.Port != nil {
+		dst.Server.Port = *r.Server.Port
+	}
+	if r.Server.LogLevel != "" {
+		dst.Server.LogLevel = r.Server.LogLevel
+	}
+	dst.Server.NoColor = r.Server.NoColor
+
+	if r.Upstream.URL != "" {
+		dst.Upstream.URL = r.Upstream.URL
+	}
+	dst.Upstream.Timeout = r.Upstream.Timeout
+	if len(r.Upstream.Providers) > 0 {
+		dst.Upstream.Providers = r.Upstream.Providers
+	}
+
+	if r.Storage.DBPath != "" {
+		dst.Storage.DBPath = r.Storage.DBPath
+	}
+	if r.Storage.EncryptionKey != "" {
+		dst.Storage.EncryptionKey = r.Storage.EncryptionKey
+	}
+
+	if r.API.SocketPath != "" {
+		dst.API.SocketPath = r.API.SocketPath
+	}
+
+	dst.Telemetry.Enabled = r.Telemetry.Enabled
+	dst.Telemetry.RetentionDays = r.Telemetry.RetentionDays
+	if r.Telemetry.ServiceName != "" {
+		dst.Telemetry.ServiceName = r.Telemetry.ServiceName
+	}
+	if r.Telemetry.SampleRate != nil {
+		dst.Telemetry.SampleRate = *r.Telemetry.SampleRate
+	}
+
+	dst.Security.Enabled = r.Security.Enabled
+	dst.Security.BufferStreaming = r.Security.BufferStreaming
+	if r.Security.MaxBufferEvents != nil {
+		dst.Security.MaxBufferEvents = *r.Security.MaxBufferEvents
+	}
+	if r.Security.BufferTimeout != nil {
+		dst.Security.BufferTimeout = *r.Security.BufferTimeout
+	}
+	if r.Security.BlockMode != types.BlockModeUnset {
+		dst.Security.BlockMode = r.Security.BlockMode
+	}
+
+	dst.Rules.Enabled = r.Rules.Enabled
+	if r.Rules.UserDir != "" {
+		dst.Rules.UserDir = r.Rules.UserDir
+	}
+	dst.Rules.DisableBuiltin = r.Rules.DisableBuiltin
+	dst.Rules.Watch = r.Rules.Watch
+}
+
 // isUnknownFieldError returns true if the error is from yaml.Decoder.KnownFields(true)
 // detecting an unrecognized key (e.g. typo like "servr:").
 func isUnknownFieldError(err error) bool {
@@ -302,21 +389,24 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
-	// Try strict decode to warn about unknown fields (typos like "servr:")
+	// Parse into rawConfig (pointer fields detect absent vs explicit zero).
+	var raw rawConfig
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
-	if err := dec.Decode(cfg); err != nil {
+	if err := dec.Decode(&raw); err != nil {
 		if isUnknownFieldError(err) {
 			cfgLog.Warn("config has unknown fields (ignored): %v", err)
-			// Re-parse without strict mode for forward compatibility
-			cfg = DefaultConfig()
-			if err2 := yaml.Unmarshal(data, cfg); err2 != nil {
+			raw = rawConfig{}
+			if err2 := yaml.Unmarshal(data, &raw); err2 != nil {
 				return nil, fmt.Errorf("config parse error: %w", err2)
 			}
 		} else {
 			return nil, fmt.Errorf("config parse error: %w", err)
 		}
 	}
+
+	// Merge: nil → keep default, non-nil → copy (Validate catches bad values).
+	raw.applyTo(cfg)
 
 	// Expand environment variables in provider API keys.
 	// Collect referenced env var names so the daemon can propagate them.
