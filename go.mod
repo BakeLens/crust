@@ -22,7 +22,7 @@ require (
 	golang.org/x/term v0.41.0
 	golang.org/x/text v0.35.0
 	gopkg.in/yaml.v3 v3.0.1
-	mvdan.cc/sh/v3 v3.13.1-0.20260321230027-916eaf543095
+	mvdan.cc/sh/v3 v3.13.1-0.20260326224822-2315483a6fdb
 )
 
 require (

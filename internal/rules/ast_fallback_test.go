@@ -27,7 +27,7 @@ func TestASTFallbackEscapes(t *testing.T) {
 		{
 			name:      "trailing backslash with U+FFFD",
 			cmd:       "cat /etc/\ufffd\\",
-			wantPaths: []string{"/etc/\ufffd"},
+			wantPaths: []string{"/etc/\ufffd\\"}, // interpreter preserves escaped backslash
 		},
 		{
 			name:      "escaped backslash in path with background",
@@ -356,9 +356,12 @@ func TestCategoryBRedirectExtraction(t *testing.T) {
 }
 
 // =============================================================================
-// TestCategoryABuiltinPanics: verifies that newly discovered interpreter panics
-// (shopt -p/-q, nameref array append) are caught by nodeHasUnsafe and paths
-// are still extracted through the AST fallback path.
+// TestCategoryABuiltinPanics: verifies that interpreter panics still present
+// upstream (shopt -p/-q) are caught by nodeHasUnsafe and paths are still
+// extracted through the AST fallback path.
+//
+// Nameref (declare -n) panics were fixed in mvdan.cc/sh v3.13.1-0.20260326
+// and no longer need nodeHasUnsafe guards — they're caught by defer/recover.
 // =============================================================================
 
 func TestCategoryABuiltinPanics(t *testing.T) {
@@ -383,22 +386,10 @@ func TestCategoryABuiltinPanics(t *testing.T) {
 			t.Error("nodeHasUnsafe should NOT flag shopt -s")
 		}
 	})
-	t.Run("nodeHasUnsafe detects declare -n", func(t *testing.T) {
+	t.Run("nodeHasUnsafe allows declare -n (fixed upstream)", func(t *testing.T) {
 		file, _ := parser.Parse(strings.NewReader("declare -n ref=arr"), "")
-		if !nodeHasUnsafe(file) {
-			t.Error("nodeHasUnsafe should flag declare -n")
-		}
-	})
-	t.Run("nodeHasUnsafe detects declare -rn", func(t *testing.T) {
-		file, _ := parser.Parse(strings.NewReader("declare -rn ref=arr"), "")
-		if !nodeHasUnsafe(file) {
-			t.Error("nodeHasUnsafe should flag declare -rn")
-		}
-	})
-	t.Run("nodeHasUnsafe detects local -n", func(t *testing.T) {
-		file, _ := parser.Parse(strings.NewReader("local -n ref=arr"), "")
-		if !nodeHasUnsafe(file) {
-			t.Error("nodeHasUnsafe should flag local -n")
+		if nodeHasUnsafe(file) {
+			t.Error("nodeHasUnsafe should NOT flag declare -n (fixed upstream)")
 		}
 	})
 	t.Run("nodeHasUnsafe allows declare -a", func(t *testing.T) {
@@ -408,7 +399,7 @@ func TestCategoryABuiltinPanics(t *testing.T) {
 		}
 	})
 
-	// Bypass hardening: combined flags, command prefix, quoted flags
+	// Bypass hardening: combined flags, command prefix
 	t.Run("nodeHasUnsafe detects shopt -sp (combined)", func(t *testing.T) {
 		file, _ := parser.Parse(strings.NewReader("shopt -sp extglob"), "")
 		if !nodeHasUnsafe(file) {
@@ -427,16 +418,43 @@ func TestCategoryABuiltinPanics(t *testing.T) {
 			t.Error("nodeHasUnsafe should flag builtin shopt -q")
 		}
 	})
-	t.Run("nodeHasUnsafe detects declare quoted -n", func(t *testing.T) {
-		file, _ := parser.Parse(strings.NewReader(`declare "-n" ref=arr`), "")
-		if !nodeHasUnsafe(file) {
-			t.Error("nodeHasUnsafe should flag declare with quoted -n")
-		}
-	})
 	t.Run("nodeHasUnsafe allows command shopt -s", func(t *testing.T) {
 		file, _ := parser.Parse(strings.NewReader("command shopt -s extglob"), "")
 		if nodeHasUnsafe(file) {
 			t.Error("nodeHasUnsafe should NOT flag command shopt -s")
+		}
+	})
+
+	// test -N / [ -N / [[ -N: panics with "unhandled unary test op: -N"
+	t.Run("nodeHasUnsafe detects test -N", func(t *testing.T) {
+		file, _ := parser.Parse(strings.NewReader("test -N /tmp"), "")
+		if !nodeHasUnsafe(file) {
+			t.Error("nodeHasUnsafe should flag test -N")
+		}
+	})
+	t.Run("nodeHasUnsafe detects [ -N ]", func(t *testing.T) {
+		file, _ := parser.Parse(strings.NewReader("[ -N /tmp ]"), "")
+		if !nodeHasUnsafe(file) {
+			t.Error("nodeHasUnsafe should flag [ -N ]")
+		}
+	})
+	t.Run("nodeHasUnsafe detects [[ -N ]]", func(t *testing.T) {
+		file, _ := parser.Parse(strings.NewReader("[[ -N /tmp ]]"), "")
+		if !nodeHasUnsafe(file) {
+			t.Error("nodeHasUnsafe should flag [[ -N ]]")
+		}
+	})
+	t.Run("nodeHasUnsafe allows [[ -f ]]", func(t *testing.T) {
+		file, _ := parser.Parse(strings.NewReader("[[ -f /tmp ]]"), "")
+		if nodeHasUnsafe(file) {
+			t.Error("nodeHasUnsafe should NOT flag [[ -f ]]")
+		}
+	})
+	t.Run("test -N with path extraction", func(t *testing.T) {
+		args, _ := json.Marshal(map[string]string{"command": "test -N /etc/passwd && cat /etc/shadow"})
+		info := ext.Extract("Bash", json.RawMessage(args))
+		if !slices.Contains(info.Paths, "/etc/shadow") {
+			t.Errorf("path /etc/shadow not found in %v", info.Paths)
 		}
 	})
 
@@ -456,16 +474,17 @@ func TestCategoryABuiltinPanics(t *testing.T) {
 		}
 	})
 
-	// Verify interpreter does NOT panic (guarded by nodeHasUnsafe)
+	// shopt -p: guarded by nodeHasUnsafe (still panics upstream)
 	t.Run("shopt -p does not reach interpreter", func(t *testing.T) {
 		args, _ := json.Marshal(map[string]string{"command": "shopt -p"})
 		info := ext.Extract("Bash", json.RawMessage(args))
 		_ = info // must not panic
 	})
-	t.Run("nameref array append does not reach interpreter", func(t *testing.T) {
+	// nameref: fixed upstream, reaches interpreter safely now
+	t.Run("nameref array append handled by interpreter", func(t *testing.T) {
 		args, _ := json.Marshal(map[string]string{"command": "declare -n ref=arr; ref+=(x)"})
 		info := ext.Extract("Bash", json.RawMessage(args))
-		_ = info // must not panic
+		_ = info // must not panic (fixed in mvdan.cc/sh v3.13.1-0.20260326)
 	})
 }
 

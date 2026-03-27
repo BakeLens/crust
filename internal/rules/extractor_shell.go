@@ -1861,15 +1861,22 @@ func wordHasExpansion(w *syntax.Word) bool {
 // Two categories of guards:
 //
 // Category A — CRASH / HANG (must skip interpreter entirely):
-//   - Background (cmd &): spawns goroutines where pattern.go panics are
-//     unrecoverable via defer/recover
+//
+//   - Background (cmd &): spawns goroutines where panics are unrecoverable
+//     via defer/recover
+//
 //   - CoprocClause: same goroutine issue
+//
 //   - ProcSubst >(cmd)/<(cmd): hangs in dry-run (FIFO deadlock)
-//   - Lit with U+FFFD, control chars, or non-ASCII globs: crashes
-//     regexp.MustCompile in pattern/pattern.go (unfixed upstream)
+//
 //   - shopt -p / shopt -q: panics "unhandled shopt flag" (builtin.go:795)
-//   - declare/local/typeset -n (nameref): panics on subsequent array append
-//     ref+=(x) with "unhandled conversion of kind" (vars.go:423)
+//
+//     Previously guarded but fixed upstream (v3.13.1-0.20260326):
+//
+//   - Non-ASCII globs, U+FFFD, control chars in Lit (pattern.go panic)
+//
+//   - declare -n (nameref) + array append (vars.go:423 panic)
+//     These are now caught by the general defer/recover in runShellFileInterp.
 //
 // Category B — UNSUPPORTED REDIRECT (no crash, but command not executed):
 //   - fd >= 3 redirects, fd dup (DplIn/DplOut), RdrClob, RdrInOut, etc.
@@ -1899,19 +1906,14 @@ func nodeHasUnsafe(root syntax.Node) bool {
 		case *syntax.ProcSubst:
 			found = true
 			return false
-		case *syntax.Lit:
-			if litHasUnsafeChars(n.Value) {
-				found = true
-				return false
-			}
 
 		case *syntax.CallExpr:
 			if callHasUnsafeBuiltin(n) {
 				found = true
 				return false
 			}
-		case *syntax.DeclClause:
-			if declHasUnsafeNameref(n) {
+		case *syntax.TestClause:
+			if testClauseHasUnsafeOp(n) {
 				found = true
 				return false
 			}
@@ -1929,34 +1931,10 @@ func nodeHasUnsafe(root syntax.Node) bool {
 	return found
 }
 
-// litHasUnsafeChars returns true if the literal value contains characters that
-// crash the interpreter's glob expansion (pattern/pattern.go bugs, unfixed).
-func litHasUnsafeChars(s string) bool {
-	// U+FFFD crashes regexp.MustCompile during glob expansion.
-	if strings.ContainsRune(s, '\uFFFD') {
-		return true
-	}
-	// Control characters (except \t, \n, \r) crash glob expansion in pipes.
-	for _, r := range s {
-		if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
-			return true
-		}
-	}
-	// Non-ASCII bytes in glob patterns crash regexp.MustCompile: the
-	// glob-to-regex converter splits multi-byte UTF-8 into invalid sequences.
-	if strings.ContainsAny(s, "*?[") {
-		for _, b := range []byte(s) {
-			if b > 0x7F {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // callHasUnsafeBuiltin returns true if a CallExpr invokes a builtin that
 // panics in the interpreter. Currently detects:
 //   - shopt -p / shopt -q: panics with "unhandled shopt flag" (builtin.go:795)
+//   - test -N / [ -N: panics with "unhandled unary test op: -N" (test.go:215)
 //
 // Checks all arg positions for the command name to handle "command shopt -p"
 // and "builtin shopt -p". Also detects combined flags like "-sp".
@@ -1967,59 +1945,57 @@ func callHasUnsafeBuiltin(call *syntax.CallExpr) bool {
 	if len(call.Args) < 2 {
 		return false
 	}
-	// Find "shopt" in any position to handle "command shopt" / "builtin shopt".
-	shoptIdx := -1
-	for i, arg := range call.Args {
-		v := wordToLiteral(arg)
-		if v == "shopt" {
-			shoptIdx = i
-			break
-		}
-		// Stop scanning after the first non-prefix command (command/builtin).
+
+	// Resolve command name past "command" / "builtin" prefixes.
+	cmdIdx := 0
+	for cmdIdx < len(call.Args) {
+		v := wordToLiteral(call.Args[cmdIdx])
 		if v != "command" && v != "builtin" {
 			break
 		}
+		cmdIdx++
 	}
-	if shoptIdx < 0 {
+	if cmdIdx >= len(call.Args) {
 		return false
 	}
-	for _, arg := range call.Args[shoptIdx+1:] {
-		v := wordToLiteral(arg)
-		// Check for -p, -q, or combined flags containing p/q (e.g., -sp, -qo).
-		if strings.HasPrefix(v, "-") && (strings.ContainsAny(v, "pq")) {
-			return true
+	cmd := wordToLiteral(call.Args[cmdIdx])
+	args := call.Args[cmdIdx+1:]
+
+	switch cmd {
+	case "shopt":
+		for _, arg := range args {
+			v := wordToLiteral(arg)
+			if strings.HasPrefix(v, "-") && strings.ContainsAny(v, "pq") {
+				return true
+			}
+		}
+	case "test", "[":
+		for _, arg := range args {
+			if wordToLiteral(arg) == "-N" {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-// declHasUnsafeNameref returns true if a DeclClause uses -n (nameref), which
-// can panic on subsequent array append (ref+=(x)) due to an unhandled Kind in
-// assignVal (vars.go:423). Conservative: flags the declare -n itself since the
-// panic requires a separate statement (ref+=(x)) that we can't link statically.
-//
-// Handles bare (-n), combined (-rn), and quoted ("-n") flags.
-// Bypasses via variable indirection (declare $F) or eval are caught by the
-// defer/recover in runShellFileInterp.
-func declHasUnsafeNameref(decl *syntax.DeclClause) bool {
-	if decl.Variant == nil {
-		return false
-	}
-	v := decl.Variant.Value
-	if v != "declare" && v != "typeset" && v != "local" {
-		return false
-	}
-	for _, assign := range decl.Args {
-		if assign.Name != nil {
-			continue // this is a name=value, not a flag
+// testClauseHasUnsafeOp returns true if a [[ ]] test clause uses a unary
+// operator that panics in the interpreter.
+//   - -N: panics with "unhandled unary test op: -N" (test.go:215)
+func testClauseHasUnsafeOp(tc *syntax.TestClause) bool {
+	unsafe := false
+	syntax.Walk(tc, func(node syntax.Node) bool {
+		if unsafe {
+			return false
 		}
-		// Use wordToLiteral to handle both bare and quoted flags.
-		w := wordToLiteral(assign.Value)
-		if strings.HasPrefix(w, "-") && strings.ContainsRune(w, 'n') {
-			return true
+		ue, ok := node.(*syntax.UnaryTest)
+		if ok && ue.Op == syntax.TsModif {
+			unsafe = true
+			return false
 		}
-	}
-	return false
+		return true
+	})
+	return unsafe
 }
 
 // interpSupportsRedirect returns true if the mvdan.cc/sh interpreter can
