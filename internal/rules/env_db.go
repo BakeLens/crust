@@ -125,20 +125,14 @@ var dangerousEnvVars = map[string]EnvVarEntry{
 	"CORECLR_PROFILER_PATH": {EnvRiskLibInject, "all", ".NET Core profiler library path"},
 }
 
-// dangerousEnvVarsLower is the case-folded lookup table, built once at init.
-var dangerousEnvVarsLower map[string]EnvVarEntry
-
-func init() {
-	dangerousEnvVarsLower = make(map[string]EnvVarEntry, len(dangerousEnvVars))
-	for k, v := range dangerousEnvVars {
-		dangerousEnvVarsLower[strings.ToUpper(k)] = v
-	}
-}
-
 // LookupDangerousEnv checks if a variable name is in the dangerous env var database.
-// Returns the entry and true if found, or zero value and false if safe.
+// On Windows, lookup is case-insensitive (env vars are case-insensitive on Windows).
+// On Unix, lookup is case-sensitive (exact match only).
 func LookupDangerousEnv(name string) (EnvVarEntry, bool) {
-	e, ok := dangerousEnvVarsLower[strings.ToUpper(name)]
+	if ShellEnvironment().IsWindows() {
+		name = strings.ToUpper(name)
+	}
+	e, ok := dangerousEnvVars[name]
 	return e, ok
 }
 
