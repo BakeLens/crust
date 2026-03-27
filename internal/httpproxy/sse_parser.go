@@ -13,6 +13,7 @@ import (
 const (
 	contentTypeToolUse      = "tool_use"         // Anthropic
 	contentTypeFunctionCall = "function_call"    // OpenAI Responses
+	contentTypeComputerCall = "computer_call"    // OpenAI Responses (computer use)
 	deltaTypeText           = "text_delta"       // Anthropic
 	deltaTypeInputJSON      = "input_json_delta" // Anthropic
 )
@@ -306,8 +307,11 @@ func (p *SSEParser) ParseOpenAIResponsesEvent(eventType string, data []byte) Par
 	case "response.output_item.added":
 		var event OpenAIResponsesOutputItemAdded
 		if err := json.Unmarshal(data, &event); err == nil {
-			if event.Item.Type == contentTypeFunctionCall {
+			if event.Item.Type == contentTypeFunctionCall || event.Item.Type == contentTypeComputerCall {
 				name := event.Item.Name
+				if event.Item.Type == contentTypeComputerCall && name == "" {
+					name = "computer" // Normalize: computer_call items may omit name
+				}
 				if p.sanitize && name != "" {
 					name = rules.SanitizeToolName(name)
 				}

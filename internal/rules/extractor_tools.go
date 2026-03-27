@@ -37,6 +37,37 @@ func (e *Extractor) extractDeleteTool(info *ExtractedInfo) {
 	e.extractPathFields(info)
 }
 
+// extractComputerTool handles Claude/OpenAI computer use tool calls.
+// The "type" action types text into the active application — this may be a shell
+// command, file path, or URL. Parse it through the shell AST extractor.
+// Other actions (screenshot, click, scroll, key) are not security-relevant.
+func (e *Extractor) extractComputerTool(info *ExtractedInfo) {
+	action, _ := info.RawArgs["action"].(string)
+	if action == "" {
+		// OpenAI uses "type" as both the action field name and an action value.
+		// After field normalization, check the "type" field too.
+		action, _ = info.RawArgs["type"].(string)
+	}
+
+	switch action {
+	case "type":
+		// Text typed into active app — may be a shell command or file path.
+		// Inject into the "command" field so extractBashCommand can parse it
+		// through the full shell AST pipeline (variable expansion, pipes, etc.).
+		text, _ := info.RawArgs["text"].(string)
+		if text == "" {
+			return
+		}
+		info.RawArgs["command"] = text
+		info.addOperation(OpExecute)
+		e.extractBashCommand(info)
+	case "key", "keypress":
+		// Keyboard shortcuts — not extractable as paths/commands.
+	default:
+		// screenshot, click, scroll, mouse_move, drag, wait — not security-relevant.
+	}
+}
+
 // extractUnknownTool handles the default case in Layer 1: tools with unrecognized names.
 // It actively tries all extraction strategies based on argument field shapes, in priority
 // order, to infer what the tool does. Unlike augmentFromArgShape (Layer 2), this runs

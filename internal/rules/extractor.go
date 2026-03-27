@@ -394,6 +394,8 @@ func (e *Extractor) Extract(toolName string, args json.RawMessage) ExtractedInfo
 		e.extractEditTool(&info)
 	case "delete_file": // Cursor
 		e.extractDeleteTool(&info)
+	case "computer": // Claude / OpenAI computer use
+		e.extractComputerTool(&info)
 	case "webfetch", "web_fetch", "websearch", "web_search", "browser",
 		"read_url_content",                // Windsurf
 		"view_web_document_content_chunk", // Windsurf

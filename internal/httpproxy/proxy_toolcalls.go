@@ -78,10 +78,14 @@ func extractToolCalls(bodyBytes []byte, apiType types.APIType) []telemetry.ToolC
 		}
 		if err := json.Unmarshal(bodyBytes, &resp); err == nil {
 			for _, item := range resp.Output {
-				if item.Type == contentTypeFunctionCall {
+				if item.Type == contentTypeFunctionCall || item.Type == contentTypeComputerCall {
+					name := item.Name
+					if item.Type == contentTypeComputerCall && name == "" {
+						name = "computer"
+					}
 					toolCalls = append(toolCalls, telemetry.ToolCall{
 						ID:        item.CallID,
-						Name:      item.Name,
+						Name:      name,
 						Arguments: json.RawMessage(item.Arguments),
 					})
 				}
