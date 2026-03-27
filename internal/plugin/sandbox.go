@@ -68,12 +68,31 @@ const SandboxPluginName = "sandbox"
 // and can execute commands under the sandbox via Exec.
 type SandboxPlugin struct {
 	binaryPath string
+	binaryArgs []string
 	config     SandboxConfig
 }
 
-// NewSandboxPlugin creates a SandboxPlugin if the sandbox binary is on $PATH.
-// Returns an error if the binary is not found.
+var sandboxBinaryOverride string
+
+// SetSandboxBinary sets a custom executor command as a JSON array
+// (e.g. ["/path/to/app", "sandbox-wrap"]). Must be called before init.
+func SetSandboxBinary(commandJSON string) {
+	sandboxBinaryOverride = commandJSON
+}
+
+// NewSandboxPlugin creates a SandboxPlugin, checking SetSandboxBinary
+// override first, then exec.LookPath("bakelens-sandbox").
 func NewSandboxPlugin() (*SandboxPlugin, error) {
+	if sandboxBinaryOverride != "" {
+		var parts []string
+		if err := json.Unmarshal([]byte(sandboxBinaryOverride), &parts); err != nil {
+			return nil, fmt.Errorf("invalid sandbox binary override JSON: %w", err)
+		}
+		if len(parts) == 0 {
+			return nil, errors.New("sandbox binary override is empty")
+		}
+		return &SandboxPlugin{binaryPath: parts[0], binaryArgs: parts[1:]}, nil
+	}
 	path, err := exec.LookPath("bakelens-sandbox")
 	if err != nil {
 		return nil, fmt.Errorf("sandbox binary not found: %w", err)
@@ -226,7 +245,7 @@ func (s *SandboxPlugin) Wrap(ctx context.Context, cmd []string, policy json.RawM
 	// Wire protocol is JSON-newline: append \n so the plugin's line scanner can read it.
 	req = append(req, '\n')
 
-	child := exec.CommandContext(ctx, s.binaryPath) //nolint:gosec // binaryPath resolved via LookPath
+	child := exec.CommandContext(ctx, s.binaryPath, s.binaryArgs...) //nolint:gosec
 	child.Env = append(os.Environ(), "PATH=/usr/bin:/bin:/usr/local/bin")
 
 	return &WrapResult{
@@ -280,7 +299,7 @@ func (s *SandboxPlugin) ExecPolicy(ctx context.Context, policy InputPolicy) (*Sa
 		return nil, fmt.Errorf("failed to marshal sandbox policy: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, s.binaryPath) //nolint:gosec // binaryPath is resolved via LookPath at construction time
+	cmd := exec.CommandContext(ctx, s.binaryPath, s.binaryArgs...) //nolint:gosec
 	cmd.Stdin = bytes.NewReader(policyJSON)
 	cmd.Env = append(os.Environ(), "PATH=/usr/bin:/bin:/usr/local/bin")
 

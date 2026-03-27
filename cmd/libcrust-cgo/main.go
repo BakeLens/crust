@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"unsafe"
 
+	"github.com/BakeLens/crust/internal/plugin"
 	"github.com/BakeLens/crust/pkg/libcrust"
 )
 
@@ -570,6 +571,14 @@ func LibcrustFormatHookResponse(evalResult *C.char) (result *C.char) {
 // =============================================================================
 // Wrap (stdio proxy)
 // =============================================================================
+
+// LibcrustSetSandboxBinary sets a custom executor (JSON array).
+// Must be called before LibcrustStartProtect.
+//
+//export LibcrustSetSandboxBinary
+func LibcrustSetSandboxBinary(command *C.char) {
+	plugin.SetSandboxBinary(C.GoString(command))
+}
 
 // LibcrustWrap runs the auto-detecting stdio proxy ("crust wrap" equivalent).
 // argsJSON is a JSON-encoded string array: ["--", "npx", "mcp-server"].
