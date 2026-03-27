@@ -136,20 +136,20 @@ jobs:
           /tmp/rules.fuzz -test.fuzz=FuzzMCPToolBypass -test.fuzztime=30s -test.short -test.fuzzcachedir=/tmp/fuzz-cache
           /tmp/rules.fuzz -test.fuzz=FuzzConfusableBypass -test.fuzztime=30s -test.short -test.fuzzcachedir=/tmp/fuzz-cache
 
-      - name: Fuzz tests (full suite, 12s each — parallelized)
+      - name: Fuzz tests (full suite, 15s each — parallelized)
         run: |
           # Run full suite in parallel batches (2 at a time) to cut wall time
           # while keeping enough CPU per fuzzer for meaningful coverage.
           # Each fuzz target gets its own process so failures are isolated.
-          # 12s (not 10s) to avoid spurious "context deadline exceeded" from
-          # the Go fuzz framework when CPU-contended shutdown races the timer.
+          # 15s to avoid spurious "context deadline exceeded" from the Go fuzz
+          # framework when CPU-contended shutdown races the timer.
           parallel_fuzz() {
             local bin="$1"; shift
             local pids=()
             local targets=()
             local failed=0
             for target in "$@"; do
-              "$bin" -test.fuzz="$target" -test.fuzztime=12s -test.short -test.fuzzcachedir=/tmp/fuzz-cache &
+              "$bin" -test.fuzz="$target" -test.fuzztime=15s -test.short -test.fuzzcachedir=/tmp/fuzz-cache &
               pids+=($!)
               targets+=("$target")
               # Cap concurrency at 2 for better per-target CPU utilization.
@@ -179,15 +179,17 @@ jobs:
             FuzzCommandRegexBypass FuzzHostRegexBypass \
             FuzzJSONUnicodeEscapeBypass FuzzEvasionDetectionBypass FuzzGlobCommandBypass \
             FuzzPipelineExtraction FuzzContentConfusableBypass FuzzVariableExpansionEvasion \
-            FuzzShapeDetectionBypass FuzzWebSearchURLBypass \
+            FuzzShapeDetectionBypass \
             || rc=1
-          # FuzzNormalAgentFalsePositive creates a full engine per iteration
-          # (with DLP/gitleaks) — too slow for the 12s parallel batch.
+          # FuzzNormalAgentFalsePositive and FuzzWebSearchURLBypass create a
+          # full engine per iteration (with DLP/gitleaks) — too slow for the
+          # 12s parallel batch. Run sequentially with more time.
           /tmp/rules.fuzz -test.fuzz=FuzzNormalAgentFalsePositive -test.fuzztime=15s -test.short -test.fuzzcachedir=/tmp/fuzz-cache || rc=1
+          /tmp/rules.fuzz -test.fuzz=FuzzWebSearchURLBypass -test.fuzztime=15s -test.short -test.fuzzcachedir=/tmp/fuzz-cache || rc=1
           # FuzzPipeBypass and FuzzForkBombDetection need constrained memory and
           # single worker to avoid OOM when running alongside other fuzz targets.
-          GOMEMLIMIT=2GiB /tmp/rules.fuzz -test.fuzz=FuzzPipeBypass -test.fuzztime=12s -test.short -test.fuzzcachedir=/tmp/fuzz-cache -test.parallel=1 || rc=1
-          GOMEMLIMIT=2GiB /tmp/rules.fuzz -test.fuzz=FuzzForkBombDetection -test.fuzztime=12s -test.short -test.fuzzcachedir=/tmp/fuzz-cache -test.parallel=1 || rc=1
+          GOMEMLIMIT=2GiB /tmp/rules.fuzz -test.fuzz=FuzzPipeBypass -test.fuzztime=15s -test.short -test.fuzzcachedir=/tmp/fuzz-cache -test.parallel=1 || rc=1
+          GOMEMLIMIT=2GiB /tmp/rules.fuzz -test.fuzz=FuzzForkBombDetection -test.fuzztime=15s -test.short -test.fuzzcachedir=/tmp/fuzz-cache -test.parallel=1 || rc=1
           parallel_fuzz /tmp/httpproxy.fuzz \
             FuzzParseSSEEventData FuzzCopyHeaders FuzzStripHopByHopHeaders \
             FuzzParseEvent FuzzApplyResultToToolCalls \
