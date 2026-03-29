@@ -15,7 +15,7 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/mutecomm/go-sqlcipher/v4 v4.4.2
 	github.com/posener/complete/v2 v2.1.0
-	github.com/zalando/go-keyring v0.2.7
+	github.com/zalando/go-keyring v0.2.8
 	github.com/zricethezav/gitleaks/v8 v8.30.1
 	golang.org/x/mobile v0.0.0-20260312152759-81488f6aeb60
 	golang.org/x/sys v0.42.0
