@@ -285,8 +285,8 @@ scenarios:
   - tool: exec
     args:
       command: "curl http://0177.0.0.1:9100/crust/api/rules"
-    expect: SELFPROTECT
-    description: "Octal IP bypass — handled by selfprotect pre-filter"
+    expect: BLOCKED
+    description: "Octal IP bypass — blocked by private network rule (defense in depth with selfprotect)"
 
   # ============================================================================
   # 10. Double-slash file:// path normalization
@@ -306,13 +306,13 @@ scenarios:
     args:
       command: "curl http://localhost:9090/%63%72%75%73%74/api/rules"
     expect: SELFPROTECT
-    description: "URL-encoded crust — handled by selfprotect pre-filter"
+    description: "URL-encoded crust — handled by selfprotect pre-filter (localhost not in private IP regex)"
 
   - tool: Bash
     args:
       command: "curl http://127.0.0.1:9090/%63rust/api"
-    expect: SELFPROTECT
-    description: "Partially URL-encoded crust — handled by selfprotect pre-filter"
+    expect: BLOCKED
+    description: "Partially URL-encoded crust — blocked by private network rule (defense in depth with selfprotect)"
 
   # ============================================================================
   # 12. nc/ncat Unix socket bypass

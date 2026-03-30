@@ -13,8 +13,8 @@ import (
 
 const (
 	file          = "builtin/security.yaml"
-	expectedHash  = "277ec9344841a336e555ed9ca541af5edbdf40ae80892beca0ec9e46a14aa47cac76fe5fb1f976910ed47845e973e52f87b959c47a5e9244ab7a6fbaf227badc"
-	expectedCount = 38
+	expectedHash  = "28c8de6d63e7258042c30e6f074c11beb789d83eb83376d37473f77270d75e401652dc64a38bf2eec51a10ad3aef3bbe1b96e66b92d4a8b8ece9c5351adb996c"
+	expectedCount = 39
 )
 
 // Critical rules that must be present — removal would silently disable
@@ -43,6 +43,7 @@ var criticalRules = []string{
 	"detect-exfil-redirect",
 	"detect-reverse-shell",
 	"block-ssrf-metadata",
+	"block-ssrf-private-network",
 	"protect-agent-config",
 	"protect-vscode-settings",
 	"protect-git-hooks",

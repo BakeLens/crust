@@ -135,8 +135,8 @@ func TestBypassVerification(t *testing.T) {
 		// 7. Wrapper chain (sudo env sh) → protect-ssh-keys
 		{"promo-7-wrapper-chain", "Bash", map[string]any{"command": "sudo env F=~/.ssh/id_rsa sh -c 'cat $F'"}, true, "protect-ssh-keys", "sudo env wrapper chain reads SSH key"},
 
-		// 8. Hex IP bypass (0x7f000001) → selfprotect pre-filter (not engine)
-		{"promo-8-hex-ip", "Bash", map[string]any{"command": "curl http://0x7f000001:9100/api/crust/rules"}, false, "", "hex IP — handled by selfprotect pre-filter, not engine"},
+		// 8. Hex IP bypass (0x7f000001) → block-ssrf-private-network (defense in depth with selfprotect)
+		{"promo-8-hex-ip", "Bash", map[string]any{"command": "curl http://0x7f000001:9100/api/crust/rules"}, true, "block-ssrf-private-network", "hex IP normalized to 127.0.0.1 — blocked as private network"},
 
 		// 9. file:// URL bypass (AWS creds) → protect-cloud-credentials
 		{"promo-9-file-url", "WebFetch", map[string]any{"url": "file:///home/user/.aws/credentials"}, true, "protect-cloud-credentials", "file:// URL reads AWS creds"},

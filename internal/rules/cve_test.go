@@ -496,6 +496,72 @@ func TestCVE_SSRF_CloudMetadata(t *testing.T) {
 	}
 }
 
+// ─── SSRF / Private network ─────────────────────────────────────────
+
+// CVE-2026-26118: Azure MCP Server SSRF targets internal networks.
+// block-ssrf-private-network must block requests to RFC1918 and loopback IPs.
+func TestCVE_SSRF_PrivateNetwork(t *testing.T) {
+	engine := newBuiltinEngine(t)
+
+	attacks := []struct {
+		name    string
+		command string
+	}{
+		{
+			"RFC1918 10.x",
+			"curl http://10.0.0.1/admin",
+		},
+		{
+			"RFC1918 172.16.x",
+			"curl http://172.16.0.1/internal-api",
+		},
+		{
+			"RFC1918 192.168.x",
+			"curl http://192.168.1.1/config",
+		},
+		{
+			"loopback 127.x",
+			"curl http://127.0.0.1:8080/secret",
+		},
+		{
+			"all-zeros",
+			"curl http://0.0.0.0:9090/api",
+		},
+		{
+			"link-local 169.254.x",
+			"curl http://169.254.1.1/config",
+		},
+		{
+			"CGN 100.64.x",
+			"curl http://100.64.0.1/internal",
+		},
+		{
+			"benchmarking 198.18.x",
+			"curl http://198.18.0.1/test",
+		},
+		{
+			"documentation 192.0.2.x",
+			"curl http://192.0.2.1/example",
+		},
+		{
+			"documentation 198.51.100.x",
+			"curl http://198.51.100.1/example",
+		},
+		{
+			"documentation 203.0.113.x",
+			"curl http://203.0.113.1/example",
+		},
+	}
+
+	for _, tc := range attacks {
+		t.Run(tc.name, func(t *testing.T) {
+			call := makeToolCall("Bash", map[string]any{"command": tc.command})
+			result := engine.Evaluate(call)
+			assertBlocked(t, result, "block-ssrf")
+		})
+	}
+}
+
 // ─── Reverse shell ───────────────────────────────────────────────────
 
 // CVE defense: reverse shell commands must be detected and blocked.

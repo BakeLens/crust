@@ -115,6 +115,7 @@ func TestLockedRulesSurviveDisableBuiltin(t *testing.T) {
 		"protect-persistence",
 		"detect-reverse-shell",
 		"block-ssrf-metadata",
+		"block-ssrf-private-network",
 		"protect-agent-config",
 		"protect-git-hooks",
 		"protect-env-files",
