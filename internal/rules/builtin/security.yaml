@@ -522,6 +522,18 @@ rules:
     message: "Blocked: cloud metadata endpoint exposes IAM credentials — SSRF attack vector."
     severity: critical
 
+  - name: block-ssrf-private-network
+    locked: true
+    match:
+      # RFC1918 (10/8, 172.16/12, 192.168/16), loopback (127/8), link-local (169.254/16),
+      # CGN/shared (100.64/10), benchmarking (198.18/15), documentation (192.0.2/24,
+      # 198.51.100/24, 203.0.113/24), IETF protocol (192.0.0/24), all-zeros,
+      # IPv6 private (fc/fd ULA, fe80 link-local)
+      host: "re:^10\\.|^172\\.(1[6-9]|2[0-9]|3[01])\\.|^192\\.168\\.|^127\\.|^0\\.0\\.0\\.0$|^169\\.254\\.|^100\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.|^198\\.1[89]\\.|^192\\.0\\.[02]\\.|^198\\.51\\.100\\.|^203\\.0\\.113\\.|^\\[?fc|^\\[?fd|^\\[?fe80"
+    actions: [network]
+    message: "Blocked: request targets private/reserved network — potential SSRF attack."
+    severity: high
+
   # ===========================================================================
   # 21. AGENT CONFIGURATION PROTECTION
   # Prevents agents from modifying their own IDE/agent config to escalate

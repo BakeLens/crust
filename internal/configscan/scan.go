@@ -190,6 +190,9 @@ func scanPackageManagerConfigsInDir(dir string) []Finding {
 	// pyproject.toml — index-url = "https://evil.com/simple"
 	findings = append(findings, scanPyprojectToml(filepath.Join(dir, "pyproject.toml"))...)
 
+	// .yarnrc.yml — yarnPath or npmRegistryServer pointing to malicious code/registry
+	findings = append(findings, scanYarnrc(filepath.Join(dir, ".yarnrc.yml"))...)
+
 	return findings
 }
 
@@ -273,6 +276,53 @@ func scanPyprojectToml(path string) []Finding {
 				Value:    url,
 				Risk:     "Python package index redirected to non-official endpoint",
 			})
+		}
+	}
+	return findings
+}
+
+// yarnrcRe matches yarnPath, npmRegistryServer, or plugin entries in .yarnrc.yml.
+// yarnPath: attacker replaces the Yarn binary with a malicious script (CVE-2025-59828).
+// npmRegistryServer: redirects npm installs to attacker-controlled registry.
+var yarnrcRe = regexp.MustCompile(`(?i)^\s*(yarnPath|npmRegistryServer)\s*:\s*["']?(\S+?)["']?\s*$`)
+
+func scanYarnrc(path string) []Finding {
+	var findings []Finding
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		m := yarnrcRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		key, value := m[1], m[2]
+		switch strings.ToLower(key) {
+		case "yarnpath":
+			// Any yarnPath is suspicious — it replaces the Yarn binary
+			findings = append(findings, Finding{
+				File:     path,
+				Variable: "yarnPath",
+				Value:    value,
+				Risk:     "Yarn binary overridden via yarnPath — potential arbitrary code execution",
+			})
+		case "npmregistryserver":
+			if isSuspiciousRegistry(value) {
+				findings = append(findings, Finding{
+					File:     path,
+					Variable: "npmRegistryServer",
+					Value:    value,
+					Risk:     "Yarn registry redirected to non-official endpoint",
+				})
+			}
 		}
 	}
 	return findings

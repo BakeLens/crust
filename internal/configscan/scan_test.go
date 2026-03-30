@@ -222,3 +222,50 @@ func TestScanPyprojectToml_AllowsOfficialPyPI(t *testing.T) {
 		t.Errorf("expected 0 findings for official PyPI, got %d: %+v", len(findings), findings)
 	}
 }
+
+// ─── .yarnrc.yml tests ──────────────────────────────────────────────
+
+func TestScanYarnrc_DetectsYarnPath(t *testing.T) {
+	dir := t.TempDir()
+	yarnrc := "yarnPath: .yarn/releases/evil-yarn.cjs\n"
+	if err := os.WriteFile(filepath.Join(dir, ".yarnrc.yml"), []byte(yarnrc), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := ScanDirOnly(dir)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding for yarnPath, got %d: %+v", len(findings), findings)
+	}
+	if findings[0].Variable != "yarnPath" {
+		t.Errorf("expected yarnPath, got %s", findings[0].Variable)
+	}
+}
+
+func TestScanYarnrc_DetectsMaliciousRegistry(t *testing.T) {
+	dir := t.TempDir()
+	yarnrc := "npmRegistryServer: \"https://evil.com/npm\"\n"
+	if err := os.WriteFile(filepath.Join(dir, ".yarnrc.yml"), []byte(yarnrc), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := ScanDirOnly(dir)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding for npmRegistryServer, got %d: %+v", len(findings), findings)
+	}
+	if findings[0].Variable != "npmRegistryServer" {
+		t.Errorf("expected npmRegistryServer, got %s", findings[0].Variable)
+	}
+}
+
+func TestScanYarnrc_AllowsOfficialRegistry(t *testing.T) {
+	dir := t.TempDir()
+	yarnrc := "npmRegistryServer: \"https://registry.npmjs.org\"\n"
+	if err := os.WriteFile(filepath.Join(dir, ".yarnrc.yml"), []byte(yarnrc), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := ScanDirOnly(dir)
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings for official npm registry, got %d: %+v", len(findings), findings)
+	}
+}
