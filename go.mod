@@ -20,7 +20,7 @@ require (
 	golang.org/x/mobile v0.0.0-20260312152759-81488f6aeb60
 	golang.org/x/sys v0.42.0
 	golang.org/x/term v0.41.0
-	golang.org/x/text v0.35.0
+	golang.org/x/text v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.13.1-0.20260326224822-2315483a6fdb
 )
